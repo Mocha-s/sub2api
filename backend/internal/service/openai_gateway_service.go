@@ -6206,6 +6206,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
+	accountRateMultiplier := account.BillingRateMultiplier()
+	multiplier = effectiveRequestRateMultiplier(account, multiplier)
 	imageMultiplier := resolveImageRateMultiplier(apiKey, multiplier)
 
 	var cost *CostBreakdown
@@ -6258,7 +6260,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
-	accountRateMultiplier := account.BillingRateMultiplier()
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	if result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {

@@ -36,6 +36,23 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Nil(t, got.Extra["unused_large_field"])
 }
 
+func TestBuildSchedulerMetadataAccount_KeepsPricingManagedByMarker(t *testing.T) {
+	account := service.Account{
+		ID: 188,
+		Credentials: map[string]any{
+			"pricing_managed_by": "api-pricing-sync",
+			"api_key":            "sk-live",
+			"unused_secret":      "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, "api-pricing-sync", got.Credentials["pricing_managed_by"])
+	require.Equal(t, "sk-live", got.Credentials["api_key"])
+	require.Nil(t, got.Credentials["unused_secret"])
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsSlimGroupMembership(t *testing.T) {
 	account := service.Account{
 		ID:       42,

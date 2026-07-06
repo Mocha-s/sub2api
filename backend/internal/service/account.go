@@ -118,6 +118,21 @@ func (a *Account) BillingRateMultiplier() float64 {
 	return *a.RateMultiplier
 }
 
+func (a *Account) UsesManagedBillingRate() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	managedBy, _ := a.Credentials["pricing_managed_by"].(string)
+	return strings.EqualFold(strings.TrimSpace(managedBy), "api-pricing-sync")
+}
+
+func effectiveRequestRateMultiplier(account *Account, fallback float64) float64 {
+	if account != nil && account.UsesManagedBillingRate() {
+		return account.BillingRateMultiplier()
+	}
+	return fallback
+}
+
 func (a *Account) EffectiveLoadFactor() int {
 	if a == nil {
 		return 1

@@ -116,6 +116,51 @@ func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
 	require.NoError(t, quotaSvc.lastQuotaCtxErr)
 }
 
+func TestGatewayServiceRecordUsage_ManagedAccountRateBillsActualAccount(t *testing.T) {
+	groupID := int64(21)
+	groupRate := 0.1223
+	accountRate := 0.03
+	usage := ClaudeUsage{InputTokens: 1200, OutputTokens: 300}
+
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_managed_account_rate",
+			Usage:     usage,
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      502,
+			GroupID: &groupID,
+			Group: &Group{
+				ID:             groupID,
+				RateMultiplier: groupRate,
+			},
+		},
+		User: &User{ID: 602},
+		Account: &Account{
+			ID:             702,
+			RateMultiplier: &accountRate,
+			Credentials:    map[string]any{"pricing_managed_by": "api-pricing-sync"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, accountRate, usageRepo.lastLog.RateMultiplier)
+	require.NotNil(t, usageRepo.lastLog.AccountRateMultiplier)
+	require.Equal(t, accountRate, *usageRepo.lastLog.AccountRateMultiplier)
+
+	expected, err := svc.billingService.CalculateCost("claude-sonnet-4", UsageTokens{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens}, accountRate)
+	require.NoError(t, err)
+	require.InDelta(t, expected.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expected.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
 func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
