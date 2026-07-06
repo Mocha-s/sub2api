@@ -354,6 +354,7 @@ func TestAPIContracts(t *testing.T) {
 						"image_price_2k": null,
 						"image_price_4k": null,
 						"allow_image_generation": false,
+						"allow_video_generation": false,
 						"image_rate_independent": false,
 						"image_rate_multiplier": 0,
 						"claude_code_only": false,
