@@ -237,6 +237,13 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			wantType:   "invalid_request_error",
 		},
 		{
+			name:       "unsupported video model parse error",
+			method:     "create",
+			err:        errors.New("model must be video-ds-2.0-fast or video-ds-2.0"),
+			wantStatus: http.StatusBadRequest,
+			wantType:   "invalid_request_error",
+		},
+		{
 			name:       "upstream rate limit",
 			method:     "fetch",
 			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusTooManyRequests, Body: `{"error":"rate limited"}`},

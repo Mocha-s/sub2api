@@ -255,7 +255,7 @@ func isVideoTaskBadRequestError(err error) bool {
 		return true
 	}
 	switch strings.TrimSpace(err.Error()) {
-	case "model is required", "prompt is required", "unexpected end of JSON input":
+	case "model is required", "model must be video-ds-2.0-fast or video-ds-2.0", "prompt is required", "unexpected end of JSON input":
 		return true
 	default:
 		return strings.HasSuffix(strings.TrimSpace(err.Error()), " is not supported by /v1/videos")
