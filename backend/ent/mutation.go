@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json/jsontext"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -52,6 +52,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
 
@@ -103,6 +104,7 @@ const (
 	TypeUserAttributeValue            = "UserAttributeValue"
 	TypeUserPlatformQuota             = "UserPlatformQuota"
 	TypeUserSubscription              = "UserSubscription"
+	TypeVideoTask                     = "VideoTask"
 )
 
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
@@ -22107,6 +22109,7 @@ type GroupMutation struct {
 	default_validity_days                   *int
 	adddefault_validity_days                *int
 	allow_image_generation                  *bool
+	allow_video_generation                  *bool
 	allow_batch_image_generation            *bool
 	image_rate_independent                  *bool
 	image_rate_multiplier                   *float64
@@ -22142,8 +22145,8 @@ type GroupMutation struct {
 	audio_stt_price_per_hour                *float64
 	addaudio_stt_price_per_hour             *float64
 	long_context_pricing_enabled            *bool
-	model_pricing                           *jsontext.Value
-	appendmodel_pricing                     jsontext.Value
+	model_pricing                           *json.RawMessage
+	appendmodel_pricing                     json.RawMessage
 	claude_code_only                        *bool
 	fallback_group_id                       *int64
 	addfallback_group_id                    *int64
@@ -22158,18 +22161,14 @@ type GroupMutation struct {
 	addsort_order                           *int
 	allow_messages_dispatch                 *bool
 	allow_live                              *bool
-	force_openai_fast                       *bool
-	free_openai_fast                        *bool
 	require_oauth_only                      *bool
 	require_privacy_set                     *bool
 	default_mapped_model                    *string
 	messages_dispatch_model_config          *domain.OpenAIMessagesDispatchModelConfig
-	model_allowlist                         *domain.GroupModelAllowlist
-	codex_models_manifest_config            *domain.GroupCodexModelsManifestConfig
+	models_list_config                      *domain.GroupModelsListConfig
 	rpm_limit                               *int
 	addrpm_limit                            *int
 	max_reasoning_effort                    *string
-	max_reasoning_effort_over_limit         *string
 	reasoning_effort_mappings               *[]domain.ReasoningEffortMapping
 	appendreasoning_effort_mappings         []domain.ReasoningEffortMapping
 	profit_control_enabled                  *bool
@@ -23218,6 +23217,42 @@ func (m *GroupMutation) OldAllowImageGeneration(ctx context.Context) (v bool, er
 // ResetAllowImageGeneration resets all changes to the "allow_image_generation" field.
 func (m *GroupMutation) ResetAllowImageGeneration() {
 	m.allow_image_generation = nil
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (m *GroupMutation) SetAllowVideoGeneration(b bool) {
+	m.allow_video_generation = &b
+}
+
+// AllowVideoGeneration returns the value of the "allow_video_generation" field in the mutation.
+func (m *GroupMutation) AllowVideoGeneration() (r bool, exists bool) {
+	v := m.allow_video_generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAllowVideoGeneration returns the old "allow_video_generation" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldAllowVideoGeneration(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAllowVideoGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAllowVideoGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAllowVideoGeneration: %w", err)
+	}
+	return oldValue.AllowVideoGeneration, nil
+}
+
+// ResetAllowVideoGeneration resets all changes to the "allow_video_generation" field.
+func (m *GroupMutation) ResetAllowVideoGeneration() {
+	m.allow_video_generation = nil
 }
 
 // SetAllowBatchImageGeneration sets the "allow_batch_image_generation" field.
@@ -24408,13 +24443,13 @@ func (m *GroupMutation) ResetLongContextPricingEnabled() {
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (m *GroupMutation) SetModelPricing(j jsontext.Value) {
-	m.model_pricing = &j
+func (m *GroupMutation) SetModelPricing(jm json.RawMessage) {
+	m.model_pricing = &jm
 	m.appendmodel_pricing = nil
 }
 
 // ModelPricing returns the value of the "model_pricing" field in the mutation.
-func (m *GroupMutation) ModelPricing() (r jsontext.Value, exists bool) {
+func (m *GroupMutation) ModelPricing() (r json.RawMessage, exists bool) {
 	v := m.model_pricing
 	if v == nil {
 		return
@@ -24425,7 +24460,7 @@ func (m *GroupMutation) ModelPricing() (r jsontext.Value, exists bool) {
 // OldModelPricing returns the old "model_pricing" field's value of the Group entity.
 // If the Group object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldModelPricing(ctx context.Context) (v jsontext.Value, err error) {
+func (m *GroupMutation) OldModelPricing(ctx context.Context) (v json.RawMessage, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldModelPricing is only allowed on UpdateOne operations")
 	}
@@ -24439,13 +24474,13 @@ func (m *GroupMutation) OldModelPricing(ctx context.Context) (v jsontext.Value, 
 	return oldValue.ModelPricing, nil
 }
 
-// AppendModelPricing adds j to the "model_pricing" field.
-func (m *GroupMutation) AppendModelPricing(j jsontext.Value) {
-	m.appendmodel_pricing = append(m.appendmodel_pricing, j...)
+// AppendModelPricing adds jm to the "model_pricing" field.
+func (m *GroupMutation) AppendModelPricing(jm json.RawMessage) {
+	m.appendmodel_pricing = append(m.appendmodel_pricing, jm...)
 }
 
 // AppendedModelPricing returns the list of values that were appended to the "model_pricing" field in this mutation.
-func (m *GroupMutation) AppendedModelPricing() (jsontext.Value, bool) {
+func (m *GroupMutation) AppendedModelPricing() (json.RawMessage, bool) {
 	if len(m.appendmodel_pricing) == 0 {
 		return nil, false
 	}
@@ -24948,78 +24983,6 @@ func (m *GroupMutation) ResetAllowLive() {
 	m.allow_live = nil
 }
 
-// SetForceOpenaiFast sets the "force_openai_fast" field.
-func (m *GroupMutation) SetForceOpenaiFast(b bool) {
-	m.force_openai_fast = &b
-}
-
-// ForceOpenaiFast returns the value of the "force_openai_fast" field in the mutation.
-func (m *GroupMutation) ForceOpenaiFast() (r bool, exists bool) {
-	v := m.force_openai_fast
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldForceOpenaiFast returns the old "force_openai_fast" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldForceOpenaiFast(ctx context.Context) (v bool, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldForceOpenaiFast is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldForceOpenaiFast requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldForceOpenaiFast: %w", err)
-	}
-	return oldValue.ForceOpenaiFast, nil
-}
-
-// ResetForceOpenaiFast resets all changes to the "force_openai_fast" field.
-func (m *GroupMutation) ResetForceOpenaiFast() {
-	m.force_openai_fast = nil
-}
-
-// SetFreeOpenaiFast sets the "free_openai_fast" field.
-func (m *GroupMutation) SetFreeOpenaiFast(b bool) {
-	m.free_openai_fast = &b
-}
-
-// FreeOpenaiFast returns the value of the "free_openai_fast" field in the mutation.
-func (m *GroupMutation) FreeOpenaiFast() (r bool, exists bool) {
-	v := m.free_openai_fast
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldFreeOpenaiFast returns the old "free_openai_fast" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldFreeOpenaiFast(ctx context.Context) (v bool, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldFreeOpenaiFast is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldFreeOpenaiFast requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldFreeOpenaiFast: %w", err)
-	}
-	return oldValue.FreeOpenaiFast, nil
-}
-
-// ResetFreeOpenaiFast resets all changes to the "free_openai_fast" field.
-func (m *GroupMutation) ResetFreeOpenaiFast() {
-	m.free_openai_fast = nil
-}
-
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (m *GroupMutation) SetRequireOauthOnly(b bool) {
 	m.require_oauth_only = &b
@@ -25164,76 +25127,40 @@ func (m *GroupMutation) ResetMessagesDispatchModelConfig() {
 	m.messages_dispatch_model_config = nil
 }
 
-// SetModelAllowlist sets the "model_allowlist" field.
-func (m *GroupMutation) SetModelAllowlist(dma domain.GroupModelAllowlist) {
-	m.model_allowlist = &dma
+// SetModelsListConfig sets the "models_list_config" field.
+func (m *GroupMutation) SetModelsListConfig(dmlc domain.GroupModelsListConfig) {
+	m.models_list_config = &dmlc
 }
 
-// ModelAllowlist returns the value of the "model_allowlist" field in the mutation.
-func (m *GroupMutation) ModelAllowlist() (r domain.GroupModelAllowlist, exists bool) {
-	v := m.model_allowlist
+// ModelsListConfig returns the value of the "models_list_config" field in the mutation.
+func (m *GroupMutation) ModelsListConfig() (r domain.GroupModelsListConfig, exists bool) {
+	v := m.models_list_config
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldModelAllowlist returns the old "model_allowlist" field's value of the Group entity.
+// OldModelsListConfig returns the old "models_list_config" field's value of the Group entity.
 // If the Group object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldModelAllowlist(ctx context.Context) (v domain.GroupModelAllowlist, err error) {
+func (m *GroupMutation) OldModelsListConfig(ctx context.Context) (v domain.GroupModelsListConfig, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldModelAllowlist is only allowed on UpdateOne operations")
+		return v, errors.New("OldModelsListConfig is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldModelAllowlist requires an ID field in the mutation")
+		return v, errors.New("OldModelsListConfig requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldModelAllowlist: %w", err)
+		return v, fmt.Errorf("querying old value for OldModelsListConfig: %w", err)
 	}
-	return oldValue.ModelAllowlist, nil
+	return oldValue.ModelsListConfig, nil
 }
 
-// ResetModelAllowlist resets all changes to the "model_allowlist" field.
-func (m *GroupMutation) ResetModelAllowlist() {
-	m.model_allowlist = nil
-}
-
-// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
-func (m *GroupMutation) SetCodexModelsManifestConfig(dcmmc domain.GroupCodexModelsManifestConfig) {
-	m.codex_models_manifest_config = &dcmmc
-}
-
-// CodexModelsManifestConfig returns the value of the "codex_models_manifest_config" field in the mutation.
-func (m *GroupMutation) CodexModelsManifestConfig() (r domain.GroupCodexModelsManifestConfig, exists bool) {
-	v := m.codex_models_manifest_config
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCodexModelsManifestConfig returns the old "codex_models_manifest_config" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldCodexModelsManifestConfig(ctx context.Context) (v domain.GroupCodexModelsManifestConfig, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCodexModelsManifestConfig is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCodexModelsManifestConfig requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCodexModelsManifestConfig: %w", err)
-	}
-	return oldValue.CodexModelsManifestConfig, nil
-}
-
-// ResetCodexModelsManifestConfig resets all changes to the "codex_models_manifest_config" field.
-func (m *GroupMutation) ResetCodexModelsManifestConfig() {
-	m.codex_models_manifest_config = nil
+// ResetModelsListConfig resets all changes to the "models_list_config" field.
+func (m *GroupMutation) ResetModelsListConfig() {
+	m.models_list_config = nil
 }
 
 // SetRpmLimit sets the "rpm_limit" field.
@@ -25326,42 +25253,6 @@ func (m *GroupMutation) OldMaxReasoningEffort(ctx context.Context) (v string, er
 // ResetMaxReasoningEffort resets all changes to the "max_reasoning_effort" field.
 func (m *GroupMutation) ResetMaxReasoningEffort() {
 	m.max_reasoning_effort = nil
-}
-
-// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
-func (m *GroupMutation) SetMaxReasoningEffortOverLimit(s string) {
-	m.max_reasoning_effort_over_limit = &s
-}
-
-// MaxReasoningEffortOverLimit returns the value of the "max_reasoning_effort_over_limit" field in the mutation.
-func (m *GroupMutation) MaxReasoningEffortOverLimit() (r string, exists bool) {
-	v := m.max_reasoning_effort_over_limit
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldMaxReasoningEffortOverLimit returns the old "max_reasoning_effort_over_limit" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldMaxReasoningEffortOverLimit(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldMaxReasoningEffortOverLimit is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldMaxReasoningEffortOverLimit requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldMaxReasoningEffortOverLimit: %w", err)
-	}
-	return oldValue.MaxReasoningEffortOverLimit, nil
-}
-
-// ResetMaxReasoningEffortOverLimit resets all changes to the "max_reasoning_effort_over_limit" field.
-func (m *GroupMutation) ResetMaxReasoningEffortOverLimit() {
-	m.max_reasoning_effort_over_limit = nil
 }
 
 // SetReasoningEffortMappings sets the "reasoning_effort_mappings" field.
@@ -25921,7 +25812,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 66)
+	fields := make([]string, 0, 63)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -25981,6 +25872,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.allow_image_generation != nil {
 		fields = append(fields, group.FieldAllowImageGeneration)
+	}
+	if m.allow_video_generation != nil {
+		fields = append(fields, group.FieldAllowVideoGeneration)
 	}
 	if m.allow_batch_image_generation != nil {
 		fields = append(fields, group.FieldAllowBatchImageGeneration)
@@ -26075,12 +25969,6 @@ func (m *GroupMutation) Fields() []string {
 	if m.allow_live != nil {
 		fields = append(fields, group.FieldAllowLive)
 	}
-	if m.force_openai_fast != nil {
-		fields = append(fields, group.FieldForceOpenaiFast)
-	}
-	if m.free_openai_fast != nil {
-		fields = append(fields, group.FieldFreeOpenaiFast)
-	}
 	if m.require_oauth_only != nil {
 		fields = append(fields, group.FieldRequireOauthOnly)
 	}
@@ -26093,20 +25981,14 @@ func (m *GroupMutation) Fields() []string {
 	if m.messages_dispatch_model_config != nil {
 		fields = append(fields, group.FieldMessagesDispatchModelConfig)
 	}
-	if m.model_allowlist != nil {
-		fields = append(fields, group.FieldModelAllowlist)
-	}
-	if m.codex_models_manifest_config != nil {
-		fields = append(fields, group.FieldCodexModelsManifestConfig)
+	if m.models_list_config != nil {
+		fields = append(fields, group.FieldModelsListConfig)
 	}
 	if m.rpm_limit != nil {
 		fields = append(fields, group.FieldRpmLimit)
 	}
 	if m.max_reasoning_effort != nil {
 		fields = append(fields, group.FieldMaxReasoningEffort)
-	}
-	if m.max_reasoning_effort_over_limit != nil {
-		fields = append(fields, group.FieldMaxReasoningEffortOverLimit)
 	}
 	if m.reasoning_effort_mappings != nil {
 		fields = append(fields, group.FieldReasoningEffortMappings)
@@ -26168,6 +26050,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DefaultValidityDays()
 	case group.FieldAllowImageGeneration:
 		return m.AllowImageGeneration()
+	case group.FieldAllowVideoGeneration:
+		return m.AllowVideoGeneration()
 	case group.FieldAllowBatchImageGeneration:
 		return m.AllowBatchImageGeneration()
 	case group.FieldImageRateIndependent:
@@ -26230,10 +26114,6 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.AllowMessagesDispatch()
 	case group.FieldAllowLive:
 		return m.AllowLive()
-	case group.FieldForceOpenaiFast:
-		return m.ForceOpenaiFast()
-	case group.FieldFreeOpenaiFast:
-		return m.FreeOpenaiFast()
 	case group.FieldRequireOauthOnly:
 		return m.RequireOauthOnly()
 	case group.FieldRequirePrivacySet:
@@ -26242,16 +26122,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DefaultMappedModel()
 	case group.FieldMessagesDispatchModelConfig:
 		return m.MessagesDispatchModelConfig()
-	case group.FieldModelAllowlist:
-		return m.ModelAllowlist()
-	case group.FieldCodexModelsManifestConfig:
-		return m.CodexModelsManifestConfig()
+	case group.FieldModelsListConfig:
+		return m.ModelsListConfig()
 	case group.FieldRpmLimit:
 		return m.RpmLimit()
 	case group.FieldMaxReasoningEffort:
 		return m.MaxReasoningEffort()
-	case group.FieldMaxReasoningEffortOverLimit:
-		return m.MaxReasoningEffortOverLimit()
 	case group.FieldReasoningEffortMappings:
 		return m.ReasoningEffortMappings()
 	case group.FieldProfitControlEnabled:
@@ -26309,6 +26185,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDefaultValidityDays(ctx)
 	case group.FieldAllowImageGeneration:
 		return m.OldAllowImageGeneration(ctx)
+	case group.FieldAllowVideoGeneration:
+		return m.OldAllowVideoGeneration(ctx)
 	case group.FieldAllowBatchImageGeneration:
 		return m.OldAllowBatchImageGeneration(ctx)
 	case group.FieldImageRateIndependent:
@@ -26371,10 +26249,6 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldAllowMessagesDispatch(ctx)
 	case group.FieldAllowLive:
 		return m.OldAllowLive(ctx)
-	case group.FieldForceOpenaiFast:
-		return m.OldForceOpenaiFast(ctx)
-	case group.FieldFreeOpenaiFast:
-		return m.OldFreeOpenaiFast(ctx)
 	case group.FieldRequireOauthOnly:
 		return m.OldRequireOauthOnly(ctx)
 	case group.FieldRequirePrivacySet:
@@ -26383,16 +26257,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDefaultMappedModel(ctx)
 	case group.FieldMessagesDispatchModelConfig:
 		return m.OldMessagesDispatchModelConfig(ctx)
-	case group.FieldModelAllowlist:
-		return m.OldModelAllowlist(ctx)
-	case group.FieldCodexModelsManifestConfig:
-		return m.OldCodexModelsManifestConfig(ctx)
+	case group.FieldModelsListConfig:
+		return m.OldModelsListConfig(ctx)
 	case group.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
 	case group.FieldMaxReasoningEffort:
 		return m.OldMaxReasoningEffort(ctx)
-	case group.FieldMaxReasoningEffortOverLimit:
-		return m.OldMaxReasoningEffortOverLimit(ctx)
 	case group.FieldReasoningEffortMappings:
 		return m.OldReasoningEffortMappings(ctx)
 	case group.FieldProfitControlEnabled:
@@ -26550,6 +26420,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAllowImageGeneration(v)
 		return nil
+	case group.FieldAllowVideoGeneration:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAllowVideoGeneration(v)
+		return nil
 	case group.FieldAllowBatchImageGeneration:
 		v, ok := value.(bool)
 		if !ok {
@@ -26691,7 +26568,7 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		m.SetLongContextPricingEnabled(v)
 		return nil
 	case group.FieldModelPricing:
-		v, ok := value.(jsontext.Value)
+		v, ok := value.(json.RawMessage)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -26767,20 +26644,6 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAllowLive(v)
 		return nil
-	case group.FieldForceOpenaiFast:
-		v, ok := value.(bool)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetForceOpenaiFast(v)
-		return nil
-	case group.FieldFreeOpenaiFast:
-		v, ok := value.(bool)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetFreeOpenaiFast(v)
-		return nil
 	case group.FieldRequireOauthOnly:
 		v, ok := value.(bool)
 		if !ok {
@@ -26809,19 +26672,12 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMessagesDispatchModelConfig(v)
 		return nil
-	case group.FieldModelAllowlist:
-		v, ok := value.(domain.GroupModelAllowlist)
+	case group.FieldModelsListConfig:
+		v, ok := value.(domain.GroupModelsListConfig)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetModelAllowlist(v)
-		return nil
-	case group.FieldCodexModelsManifestConfig:
-		v, ok := value.(domain.GroupCodexModelsManifestConfig)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCodexModelsManifestConfig(v)
+		m.SetModelsListConfig(v)
 		return nil
 	case group.FieldRpmLimit:
 		v, ok := value.(int)
@@ -26836,13 +26692,6 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMaxReasoningEffort(v)
-		return nil
-	case group.FieldMaxReasoningEffortOverLimit:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetMaxReasoningEffortOverLimit(v)
 		return nil
 	case group.FieldReasoningEffortMappings:
 		v, ok := value.([]domain.ReasoningEffortMapping)
@@ -27443,6 +27292,9 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldAllowImageGeneration:
 		m.ResetAllowImageGeneration()
 		return nil
+	case group.FieldAllowVideoGeneration:
+		m.ResetAllowVideoGeneration()
+		return nil
 	case group.FieldAllowBatchImageGeneration:
 		m.ResetAllowBatchImageGeneration()
 		return nil
@@ -27536,12 +27388,6 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldAllowLive:
 		m.ResetAllowLive()
 		return nil
-	case group.FieldForceOpenaiFast:
-		m.ResetForceOpenaiFast()
-		return nil
-	case group.FieldFreeOpenaiFast:
-		m.ResetFreeOpenaiFast()
-		return nil
 	case group.FieldRequireOauthOnly:
 		m.ResetRequireOauthOnly()
 		return nil
@@ -27554,20 +27400,14 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldMessagesDispatchModelConfig:
 		m.ResetMessagesDispatchModelConfig()
 		return nil
-	case group.FieldModelAllowlist:
-		m.ResetModelAllowlist()
-		return nil
-	case group.FieldCodexModelsManifestConfig:
-		m.ResetCodexModelsManifestConfig()
+	case group.FieldModelsListConfig:
+		m.ResetModelsListConfig()
 		return nil
 	case group.FieldRpmLimit:
 		m.ResetRpmLimit()
 		return nil
 	case group.FieldMaxReasoningEffort:
 		m.ResetMaxReasoningEffort()
-		return nil
-	case group.FieldMaxReasoningEffortOverLimit:
-		m.ResetMaxReasoningEffortOverLimit()
 		return nil
 	case group.FieldReasoningEffortMappings:
 		m.ResetReasoningEffortMappings()
@@ -37366,36 +37206,33 @@ func (m *PromoCodeUsageMutation) ResetEdge(name string) error {
 // ProxyMutation represents an operation that mutates the Proxy nodes in the graph.
 type ProxyMutation struct {
 	config
-	op                     Op
-	typ                    string
-	id                     *int64
-	created_at             *time.Time
-	updated_at             *time.Time
-	deleted_at             *time.Time
-	name                   *string
-	protocol               *string
-	host                   *string
-	port                   *int
-	addport                *int
-	username               *string
-	password               *string
-	status                 *string
-	expires_at             *time.Time
-	fallback_mode          *string
-	expiry_warn_days       *int
-	addexpiry_warn_days    *int
-	clearedFields          map[string]struct{}
-	accounts               map[int64]struct{}
-	removedaccounts        map[int64]struct{}
-	clearedaccounts        bool
-	primary_proxies        map[int64]struct{}
-	removedprimary_proxies map[int64]struct{}
-	clearedprimary_proxies bool
-	backup_proxy           *int64
-	clearedbackup_proxy    bool
-	done                   bool
-	oldValue               func(context.Context) (*Proxy, error)
-	predicates             []predicate.Proxy
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	deleted_at          *time.Time
+	name                *string
+	protocol            *string
+	host                *string
+	port                *int
+	addport             *int
+	username            *string
+	password            *string
+	status              *string
+	expires_at          *time.Time
+	fallback_mode       *string
+	expiry_warn_days    *int
+	addexpiry_warn_days *int
+	clearedFields       map[string]struct{}
+	accounts            map[int64]struct{}
+	removedaccounts     map[int64]struct{}
+	clearedaccounts     bool
+	backup_proxy        *int64
+	clearedbackup_proxy bool
+	done                bool
+	oldValue            func(context.Context) (*Proxy, error)
+	predicates          []predicate.Proxy
 }
 
 var _ ent.Mutation = (*ProxyMutation)(nil)
@@ -38159,60 +37996,6 @@ func (m *ProxyMutation) ResetAccounts() {
 	m.removedaccounts = nil
 }
 
-// AddPrimaryProxyIDs adds the "primary_proxies" edge to the Proxy entity by ids.
-func (m *ProxyMutation) AddPrimaryProxyIDs(ids ...int64) {
-	if m.primary_proxies == nil {
-		m.primary_proxies = make(map[int64]struct{})
-	}
-	for i := range ids {
-		m.primary_proxies[ids[i]] = struct{}{}
-	}
-}
-
-// ClearPrimaryProxies clears the "primary_proxies" edge to the Proxy entity.
-func (m *ProxyMutation) ClearPrimaryProxies() {
-	m.clearedprimary_proxies = true
-}
-
-// PrimaryProxiesCleared reports if the "primary_proxies" edge to the Proxy entity was cleared.
-func (m *ProxyMutation) PrimaryProxiesCleared() bool {
-	return m.clearedprimary_proxies
-}
-
-// RemovePrimaryProxyIDs removes the "primary_proxies" edge to the Proxy entity by IDs.
-func (m *ProxyMutation) RemovePrimaryProxyIDs(ids ...int64) {
-	if m.removedprimary_proxies == nil {
-		m.removedprimary_proxies = make(map[int64]struct{})
-	}
-	for i := range ids {
-		delete(m.primary_proxies, ids[i])
-		m.removedprimary_proxies[ids[i]] = struct{}{}
-	}
-}
-
-// RemovedPrimaryProxies returns the removed IDs of the "primary_proxies" edge to the Proxy entity.
-func (m *ProxyMutation) RemovedPrimaryProxiesIDs() (ids []int64) {
-	for id := range m.removedprimary_proxies {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// PrimaryProxiesIDs returns the "primary_proxies" edge IDs in the mutation.
-func (m *ProxyMutation) PrimaryProxiesIDs() (ids []int64) {
-	for id := range m.primary_proxies {
-		ids = append(ids, id)
-	}
-	return
-}
-
-// ResetPrimaryProxies resets all changes to the "primary_proxies" edge.
-func (m *ProxyMutation) ResetPrimaryProxies() {
-	m.primary_proxies = nil
-	m.clearedprimary_proxies = false
-	m.removedprimary_proxies = nil
-}
-
 // ClearBackupProxy clears the "backup_proxy" edge to the Proxy entity.
 func (m *ProxyMutation) ClearBackupProxy() {
 	m.clearedbackup_proxy = true
@@ -38654,12 +38437,9 @@ func (m *ProxyMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ProxyMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 2)
 	if m.accounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
-	}
-	if m.primary_proxies != nil {
-		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	if m.backup_proxy != nil {
 		edges = append(edges, proxy.EdgeBackupProxy)
@@ -38677,12 +38457,6 @@ func (m *ProxyMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case proxy.EdgePrimaryProxies:
-		ids := make([]ent.Value, 0, len(m.primary_proxies))
-		for id := range m.primary_proxies {
-			ids = append(ids, id)
-		}
-		return ids
 	case proxy.EdgeBackupProxy:
 		if id := m.backup_proxy; id != nil {
 			return []ent.Value{*id}
@@ -38693,12 +38467,9 @@ func (m *ProxyMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ProxyMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 2)
 	if m.removedaccounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
-	}
-	if m.removedprimary_proxies != nil {
-		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	return edges
 }
@@ -38713,24 +38484,15 @@ func (m *ProxyMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
-	case proxy.EdgePrimaryProxies:
-		ids := make([]ent.Value, 0, len(m.removedprimary_proxies))
-		for id := range m.removedprimary_proxies {
-			ids = append(ids, id)
-		}
-		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ProxyMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 2)
 	if m.clearedaccounts {
 		edges = append(edges, proxy.EdgeAccounts)
-	}
-	if m.clearedprimary_proxies {
-		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	if m.clearedbackup_proxy {
 		edges = append(edges, proxy.EdgeBackupProxy)
@@ -38744,8 +38506,6 @@ func (m *ProxyMutation) EdgeCleared(name string) bool {
 	switch name {
 	case proxy.EdgeAccounts:
 		return m.clearedaccounts
-	case proxy.EdgePrimaryProxies:
-		return m.clearedprimary_proxies
 	case proxy.EdgeBackupProxy:
 		return m.clearedbackup_proxy
 	}
@@ -38769,9 +38529,6 @@ func (m *ProxyMutation) ResetEdge(name string) error {
 	switch name {
 	case proxy.EdgeAccounts:
 		m.ResetAccounts()
-		return nil
-	case proxy.EdgePrimaryProxies:
-		m.ResetPrimaryProxies()
 		return nil
 	case proxy.EdgeBackupProxy:
 		m.ResetBackupProxy()
@@ -43450,8 +43207,8 @@ type UsageCleanupTaskMutation struct {
 	created_at      *time.Time
 	updated_at      *time.Time
 	status          *string
-	filters         *jsontext.Value
-	appendfilters   jsontext.Value
+	filters         *json.RawMessage
+	appendfilters   json.RawMessage
 	created_by      *int64
 	addcreated_by   *int64
 	deleted_rows    *int64
@@ -43675,13 +43432,13 @@ func (m *UsageCleanupTaskMutation) ResetStatus() {
 }
 
 // SetFilters sets the "filters" field.
-func (m *UsageCleanupTaskMutation) SetFilters(j jsontext.Value) {
-	m.filters = &j
+func (m *UsageCleanupTaskMutation) SetFilters(jm json.RawMessage) {
+	m.filters = &jm
 	m.appendfilters = nil
 }
 
 // Filters returns the value of the "filters" field in the mutation.
-func (m *UsageCleanupTaskMutation) Filters() (r jsontext.Value, exists bool) {
+func (m *UsageCleanupTaskMutation) Filters() (r json.RawMessage, exists bool) {
 	v := m.filters
 	if v == nil {
 		return
@@ -43692,7 +43449,7 @@ func (m *UsageCleanupTaskMutation) Filters() (r jsontext.Value, exists bool) {
 // OldFilters returns the old "filters" field's value of the UsageCleanupTask entity.
 // If the UsageCleanupTask object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v jsontext.Value, err error) {
+func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v json.RawMessage, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldFilters is only allowed on UpdateOne operations")
 	}
@@ -43706,13 +43463,13 @@ func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v jsontext.V
 	return oldValue.Filters, nil
 }
 
-// AppendFilters adds j to the "filters" field.
-func (m *UsageCleanupTaskMutation) AppendFilters(j jsontext.Value) {
-	m.appendfilters = append(m.appendfilters, j...)
+// AppendFilters adds jm to the "filters" field.
+func (m *UsageCleanupTaskMutation) AppendFilters(jm json.RawMessage) {
+	m.appendfilters = append(m.appendfilters, jm...)
 }
 
 // AppendedFilters returns the list of values that were appended to the "filters" field in this mutation.
-func (m *UsageCleanupTaskMutation) AppendedFilters() (jsontext.Value, bool) {
+func (m *UsageCleanupTaskMutation) AppendedFilters() (json.RawMessage, bool) {
 	if len(m.appendfilters) == 0 {
 		return nil, false
 	}
@@ -44263,7 +44020,7 @@ func (m *UsageCleanupTaskMutation) SetField(name string, value ent.Value) error 
 		m.SetStatus(v)
 		return nil
 	case usagecleanuptask.FieldFilters:
-		v, ok := value.(jsontext.Value)
+		v, ok := value.(json.RawMessage)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -48721,7 +48478,6 @@ type UserMutation struct {
 	signup_source                 *string
 	last_login_at                 *time.Time
 	last_active_at                *time.Time
-	restrict_public_groups        *bool
 	balance_notify_enabled        *bool
 	balance_notify_threshold_type *string
 	balance_notify_threshold      *float64
@@ -49645,42 +49401,6 @@ func (m *UserMutation) LastActiveAtCleared() bool {
 func (m *UserMutation) ResetLastActiveAt() {
 	m.last_active_at = nil
 	delete(m.clearedFields, user.FieldLastActiveAt)
-}
-
-// SetRestrictPublicGroups sets the "restrict_public_groups" field.
-func (m *UserMutation) SetRestrictPublicGroups(b bool) {
-	m.restrict_public_groups = &b
-}
-
-// RestrictPublicGroups returns the value of the "restrict_public_groups" field in the mutation.
-func (m *UserMutation) RestrictPublicGroups() (r bool, exists bool) {
-	v := m.restrict_public_groups
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldRestrictPublicGroups returns the old "restrict_public_groups" field's value of the User entity.
-// If the User object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UserMutation) OldRestrictPublicGroups(ctx context.Context) (v bool, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldRestrictPublicGroups is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldRestrictPublicGroups requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldRestrictPublicGroups: %w", err)
-	}
-	return oldValue.RestrictPublicGroups, nil
-}
-
-// ResetRestrictPublicGroups resets all changes to the "restrict_public_groups" field.
-func (m *UserMutation) ResetRestrictPublicGroups() {
-	m.restrict_public_groups = nil
 }
 
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
@@ -50709,7 +50429,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -50763,9 +50483,6 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.last_active_at != nil {
 		fields = append(fields, user.FieldLastActiveAt)
-	}
-	if m.restrict_public_groups != nil {
-		fields = append(fields, user.FieldRestrictPublicGroups)
 	}
 	if m.balance_notify_enabled != nil {
 		fields = append(fields, user.FieldBalanceNotifyEnabled)
@@ -50829,8 +50546,6 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.LastLoginAt()
 	case user.FieldLastActiveAt:
 		return m.LastActiveAt()
-	case user.FieldRestrictPublicGroups:
-		return m.RestrictPublicGroups()
 	case user.FieldBalanceNotifyEnabled:
 		return m.BalanceNotifyEnabled()
 	case user.FieldBalanceNotifyThresholdType:
@@ -50888,8 +50603,6 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldLastLoginAt(ctx)
 	case user.FieldLastActiveAt:
 		return m.OldLastActiveAt(ctx)
-	case user.FieldRestrictPublicGroups:
-		return m.OldRestrictPublicGroups(ctx)
 	case user.FieldBalanceNotifyEnabled:
 		return m.OldBalanceNotifyEnabled(ctx)
 	case user.FieldBalanceNotifyThresholdType:
@@ -51036,13 +50749,6 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastActiveAt(v)
-		return nil
-	case user.FieldRestrictPublicGroups:
-		v, ok := value.(bool)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetRestrictPublicGroups(v)
 		return nil
 	case user.FieldBalanceNotifyEnabled:
 		v, ok := value.(bool)
@@ -51302,9 +51008,6 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldLastActiveAt:
 		m.ResetLastActiveAt()
-		return nil
-	case user.FieldRestrictPublicGroups:
-		m.ResetRestrictPublicGroups()
 		return nil
 	case user.FieldBalanceNotifyEnabled:
 		m.ResetBalanceNotifyEnabled()
@@ -57013,4 +56716,3786 @@ func (m *UserSubscriptionMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown UserSubscription edge %s", name)
+}
+
+// VideoTaskMutation represents an operation that mutates the VideoTask nodes in the graph.
+type VideoTaskMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int64
+	created_at             *time.Time
+	updated_at             *time.Time
+	public_task_id         *string
+	upstream_task_id       *string
+	provider               *string
+	platform               *string
+	user_id                *int64
+	adduser_id             *int64
+	api_key_id             *int64
+	addapi_key_id          *int64
+	group_id               *int64
+	addgroup_id            *int64
+	subscription_id        *int64
+	addsubscription_id     *int64
+	account_id             *int64
+	addaccount_id          *int64
+	channel_id             *int64
+	addchannel_id          *int64
+	requested_model        *string
+	upstream_model         *string
+	billing_model          *string
+	model_mapping_chain    *string
+	status                 *string
+	provider_status        *string
+	progress               *int
+	addprogress            *int
+	prompt                 *string
+	request_hash           *string
+	prompt_hash            *string
+	request_body           *[]byte
+	request_metadata       *map[string]interface{}
+	upstream_base_url      *string
+	upstream_response      *map[string]interface{}
+	upstream_response_body *[]byte
+	result_url             *string
+	result_content_type    *string
+	result_metadata        *map[string]interface{}
+	error_code             *string
+	error_message          *string
+	idempotency_key        *string
+	idempotency_key_hash   *string
+	usage_metadata         *map[string]interface{}
+	usage_log_id           *int64
+	addusage_log_id        *int64
+	input_tokens           *int
+	addinput_tokens        *int
+	output_tokens          *int
+	addoutput_tokens       *int
+	billed_usd             *float64
+	addbilled_usd          *float64
+	submitted_at           *time.Time
+	started_at             *time.Time
+	completed_at           *time.Time
+	expires_at             *time.Time
+	next_poll_at           *time.Time
+	last_polled_at         *time.Time
+	locked_until           *time.Time
+	locked_by              *string
+	poll_attempts          *int
+	addpoll_attempts       *int
+	clearedFields          map[string]struct{}
+	done                   bool
+	oldValue               func(context.Context) (*VideoTask, error)
+	predicates             []predicate.VideoTask
+}
+
+var _ ent.Mutation = (*VideoTaskMutation)(nil)
+
+// videotaskOption allows management of the mutation configuration using functional options.
+type videotaskOption func(*VideoTaskMutation)
+
+// newVideoTaskMutation creates new mutation for the VideoTask entity.
+func newVideoTaskMutation(c config, op Op, opts ...videotaskOption) *VideoTaskMutation {
+	m := &VideoTaskMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeVideoTask,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withVideoTaskID sets the ID field of the mutation.
+func withVideoTaskID(id int64) videotaskOption {
+	return func(m *VideoTaskMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *VideoTask
+		)
+		m.oldValue = func(ctx context.Context) (*VideoTask, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().VideoTask.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withVideoTask sets the old VideoTask of the mutation.
+func withVideoTask(node *VideoTask) videotaskOption {
+	return func(m *VideoTaskMutation) {
+		m.oldValue = func(context.Context) (*VideoTask, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m VideoTaskMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m VideoTaskMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *VideoTaskMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *VideoTaskMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().VideoTask.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *VideoTaskMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *VideoTaskMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *VideoTaskMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *VideoTaskMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *VideoTaskMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *VideoTaskMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetPublicTaskID sets the "public_task_id" field.
+func (m *VideoTaskMutation) SetPublicTaskID(s string) {
+	m.public_task_id = &s
+}
+
+// PublicTaskID returns the value of the "public_task_id" field in the mutation.
+func (m *VideoTaskMutation) PublicTaskID() (r string, exists bool) {
+	v := m.public_task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicTaskID returns the old "public_task_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldPublicTaskID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicTaskID: %w", err)
+	}
+	return oldValue.PublicTaskID, nil
+}
+
+// ResetPublicTaskID resets all changes to the "public_task_id" field.
+func (m *VideoTaskMutation) ResetPublicTaskID() {
+	m.public_task_id = nil
+}
+
+// SetUpstreamTaskID sets the "upstream_task_id" field.
+func (m *VideoTaskMutation) SetUpstreamTaskID(s string) {
+	m.upstream_task_id = &s
+}
+
+// UpstreamTaskID returns the value of the "upstream_task_id" field in the mutation.
+func (m *VideoTaskMutation) UpstreamTaskID() (r string, exists bool) {
+	v := m.upstream_task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamTaskID returns the old "upstream_task_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpstreamTaskID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamTaskID: %w", err)
+	}
+	return oldValue.UpstreamTaskID, nil
+}
+
+// ClearUpstreamTaskID clears the value of the "upstream_task_id" field.
+func (m *VideoTaskMutation) ClearUpstreamTaskID() {
+	m.upstream_task_id = nil
+	m.clearedFields[videotask.FieldUpstreamTaskID] = struct{}{}
+}
+
+// UpstreamTaskIDCleared returns if the "upstream_task_id" field was cleared in this mutation.
+func (m *VideoTaskMutation) UpstreamTaskIDCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUpstreamTaskID]
+	return ok
+}
+
+// ResetUpstreamTaskID resets all changes to the "upstream_task_id" field.
+func (m *VideoTaskMutation) ResetUpstreamTaskID() {
+	m.upstream_task_id = nil
+	delete(m.clearedFields, videotask.FieldUpstreamTaskID)
+}
+
+// SetProvider sets the "provider" field.
+func (m *VideoTaskMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *VideoTaskMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *VideoTaskMutation) ResetProvider() {
+	m.provider = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *VideoTaskMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *VideoTaskMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *VideoTaskMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *VideoTaskMutation) SetUserID(i int64) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *VideoTaskMutation) UserID() (r int64, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *VideoTaskMutation) AddUserID(i int64) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *VideoTaskMutation) AddedUserID() (r int64, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *VideoTaskMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetAPIKeyID sets the "api_key_id" field.
+func (m *VideoTaskMutation) SetAPIKeyID(i int64) {
+	m.api_key_id = &i
+	m.addapi_key_id = nil
+}
+
+// APIKeyID returns the value of the "api_key_id" field in the mutation.
+func (m *VideoTaskMutation) APIKeyID() (r int64, exists bool) {
+	v := m.api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIKeyID returns the old "api_key_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldAPIKeyID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIKeyID: %w", err)
+	}
+	return oldValue.APIKeyID, nil
+}
+
+// AddAPIKeyID adds i to the "api_key_id" field.
+func (m *VideoTaskMutation) AddAPIKeyID(i int64) {
+	if m.addapi_key_id != nil {
+		*m.addapi_key_id += i
+	} else {
+		m.addapi_key_id = &i
+	}
+}
+
+// AddedAPIKeyID returns the value that was added to the "api_key_id" field in this mutation.
+func (m *VideoTaskMutation) AddedAPIKeyID() (r int64, exists bool) {
+	v := m.addapi_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAPIKeyID resets all changes to the "api_key_id" field.
+func (m *VideoTaskMutation) ResetAPIKeyID() {
+	m.api_key_id = nil
+	m.addapi_key_id = nil
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *VideoTaskMutation) SetGroupID(i int64) {
+	m.group_id = &i
+	m.addgroup_id = nil
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *VideoTaskMutation) GroupID() (r int64, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// AddGroupID adds i to the "group_id" field.
+func (m *VideoTaskMutation) AddGroupID(i int64) {
+	if m.addgroup_id != nil {
+		*m.addgroup_id += i
+	} else {
+		m.addgroup_id = &i
+	}
+}
+
+// AddedGroupID returns the value that was added to the "group_id" field in this mutation.
+func (m *VideoTaskMutation) AddedGroupID() (r int64, exists bool) {
+	v := m.addgroup_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *VideoTaskMutation) ResetGroupID() {
+	m.group_id = nil
+	m.addgroup_id = nil
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (m *VideoTaskMutation) SetSubscriptionID(i int64) {
+	m.subscription_id = &i
+	m.addsubscription_id = nil
+}
+
+// SubscriptionID returns the value of the "subscription_id" field in the mutation.
+func (m *VideoTaskMutation) SubscriptionID() (r int64, exists bool) {
+	v := m.subscription_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionID returns the old "subscription_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldSubscriptionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionID: %w", err)
+	}
+	return oldValue.SubscriptionID, nil
+}
+
+// AddSubscriptionID adds i to the "subscription_id" field.
+func (m *VideoTaskMutation) AddSubscriptionID(i int64) {
+	if m.addsubscription_id != nil {
+		*m.addsubscription_id += i
+	} else {
+		m.addsubscription_id = &i
+	}
+}
+
+// AddedSubscriptionID returns the value that was added to the "subscription_id" field in this mutation.
+func (m *VideoTaskMutation) AddedSubscriptionID() (r int64, exists bool) {
+	v := m.addsubscription_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (m *VideoTaskMutation) ClearSubscriptionID() {
+	m.subscription_id = nil
+	m.addsubscription_id = nil
+	m.clearedFields[videotask.FieldSubscriptionID] = struct{}{}
+}
+
+// SubscriptionIDCleared returns if the "subscription_id" field was cleared in this mutation.
+func (m *VideoTaskMutation) SubscriptionIDCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldSubscriptionID]
+	return ok
+}
+
+// ResetSubscriptionID resets all changes to the "subscription_id" field.
+func (m *VideoTaskMutation) ResetSubscriptionID() {
+	m.subscription_id = nil
+	m.addsubscription_id = nil
+	delete(m.clearedFields, videotask.FieldSubscriptionID)
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *VideoTaskMutation) SetAccountID(i int64) {
+	m.account_id = &i
+	m.addaccount_id = nil
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *VideoTaskMutation) AccountID() (r int64, exists bool) {
+	v := m.account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// AddAccountID adds i to the "account_id" field.
+func (m *VideoTaskMutation) AddAccountID(i int64) {
+	if m.addaccount_id != nil {
+		*m.addaccount_id += i
+	} else {
+		m.addaccount_id = &i
+	}
+}
+
+// AddedAccountID returns the value that was added to the "account_id" field in this mutation.
+func (m *VideoTaskMutation) AddedAccountID() (r int64, exists bool) {
+	v := m.addaccount_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *VideoTaskMutation) ResetAccountID() {
+	m.account_id = nil
+	m.addaccount_id = nil
+}
+
+// SetChannelID sets the "channel_id" field.
+func (m *VideoTaskMutation) SetChannelID(i int64) {
+	m.channel_id = &i
+	m.addchannel_id = nil
+}
+
+// ChannelID returns the value of the "channel_id" field in the mutation.
+func (m *VideoTaskMutation) ChannelID() (r int64, exists bool) {
+	v := m.channel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelID returns the old "channel_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldChannelID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelID: %w", err)
+	}
+	return oldValue.ChannelID, nil
+}
+
+// AddChannelID adds i to the "channel_id" field.
+func (m *VideoTaskMutation) AddChannelID(i int64) {
+	if m.addchannel_id != nil {
+		*m.addchannel_id += i
+	} else {
+		m.addchannel_id = &i
+	}
+}
+
+// AddedChannelID returns the value that was added to the "channel_id" field in this mutation.
+func (m *VideoTaskMutation) AddedChannelID() (r int64, exists bool) {
+	v := m.addchannel_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearChannelID clears the value of the "channel_id" field.
+func (m *VideoTaskMutation) ClearChannelID() {
+	m.channel_id = nil
+	m.addchannel_id = nil
+	m.clearedFields[videotask.FieldChannelID] = struct{}{}
+}
+
+// ChannelIDCleared returns if the "channel_id" field was cleared in this mutation.
+func (m *VideoTaskMutation) ChannelIDCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldChannelID]
+	return ok
+}
+
+// ResetChannelID resets all changes to the "channel_id" field.
+func (m *VideoTaskMutation) ResetChannelID() {
+	m.channel_id = nil
+	m.addchannel_id = nil
+	delete(m.clearedFields, videotask.FieldChannelID)
+}
+
+// SetRequestedModel sets the "requested_model" field.
+func (m *VideoTaskMutation) SetRequestedModel(s string) {
+	m.requested_model = &s
+}
+
+// RequestedModel returns the value of the "requested_model" field in the mutation.
+func (m *VideoTaskMutation) RequestedModel() (r string, exists bool) {
+	v := m.requested_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestedModel returns the old "requested_model" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldRequestedModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestedModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestedModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestedModel: %w", err)
+	}
+	return oldValue.RequestedModel, nil
+}
+
+// ResetRequestedModel resets all changes to the "requested_model" field.
+func (m *VideoTaskMutation) ResetRequestedModel() {
+	m.requested_model = nil
+}
+
+// SetUpstreamModel sets the "upstream_model" field.
+func (m *VideoTaskMutation) SetUpstreamModel(s string) {
+	m.upstream_model = &s
+}
+
+// UpstreamModel returns the value of the "upstream_model" field in the mutation.
+func (m *VideoTaskMutation) UpstreamModel() (r string, exists bool) {
+	v := m.upstream_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamModel returns the old "upstream_model" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpstreamModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamModel: %w", err)
+	}
+	return oldValue.UpstreamModel, nil
+}
+
+// ResetUpstreamModel resets all changes to the "upstream_model" field.
+func (m *VideoTaskMutation) ResetUpstreamModel() {
+	m.upstream_model = nil
+}
+
+// SetBillingModel sets the "billing_model" field.
+func (m *VideoTaskMutation) SetBillingModel(s string) {
+	m.billing_model = &s
+}
+
+// BillingModel returns the value of the "billing_model" field in the mutation.
+func (m *VideoTaskMutation) BillingModel() (r string, exists bool) {
+	v := m.billing_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingModel returns the old "billing_model" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldBillingModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingModel: %w", err)
+	}
+	return oldValue.BillingModel, nil
+}
+
+// ResetBillingModel resets all changes to the "billing_model" field.
+func (m *VideoTaskMutation) ResetBillingModel() {
+	m.billing_model = nil
+}
+
+// SetModelMappingChain sets the "model_mapping_chain" field.
+func (m *VideoTaskMutation) SetModelMappingChain(s string) {
+	m.model_mapping_chain = &s
+}
+
+// ModelMappingChain returns the value of the "model_mapping_chain" field in the mutation.
+func (m *VideoTaskMutation) ModelMappingChain() (r string, exists bool) {
+	v := m.model_mapping_chain
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelMappingChain returns the old "model_mapping_chain" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldModelMappingChain(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelMappingChain is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelMappingChain requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelMappingChain: %w", err)
+	}
+	return oldValue.ModelMappingChain, nil
+}
+
+// ClearModelMappingChain clears the value of the "model_mapping_chain" field.
+func (m *VideoTaskMutation) ClearModelMappingChain() {
+	m.model_mapping_chain = nil
+	m.clearedFields[videotask.FieldModelMappingChain] = struct{}{}
+}
+
+// ModelMappingChainCleared returns if the "model_mapping_chain" field was cleared in this mutation.
+func (m *VideoTaskMutation) ModelMappingChainCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldModelMappingChain]
+	return ok
+}
+
+// ResetModelMappingChain resets all changes to the "model_mapping_chain" field.
+func (m *VideoTaskMutation) ResetModelMappingChain() {
+	m.model_mapping_chain = nil
+	delete(m.clearedFields, videotask.FieldModelMappingChain)
+}
+
+// SetStatus sets the "status" field.
+func (m *VideoTaskMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *VideoTaskMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *VideoTaskMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetProviderStatus sets the "provider_status" field.
+func (m *VideoTaskMutation) SetProviderStatus(s string) {
+	m.provider_status = &s
+}
+
+// ProviderStatus returns the value of the "provider_status" field in the mutation.
+func (m *VideoTaskMutation) ProviderStatus() (r string, exists bool) {
+	v := m.provider_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderStatus returns the old "provider_status" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldProviderStatus(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderStatus: %w", err)
+	}
+	return oldValue.ProviderStatus, nil
+}
+
+// ClearProviderStatus clears the value of the "provider_status" field.
+func (m *VideoTaskMutation) ClearProviderStatus() {
+	m.provider_status = nil
+	m.clearedFields[videotask.FieldProviderStatus] = struct{}{}
+}
+
+// ProviderStatusCleared returns if the "provider_status" field was cleared in this mutation.
+func (m *VideoTaskMutation) ProviderStatusCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldProviderStatus]
+	return ok
+}
+
+// ResetProviderStatus resets all changes to the "provider_status" field.
+func (m *VideoTaskMutation) ResetProviderStatus() {
+	m.provider_status = nil
+	delete(m.clearedFields, videotask.FieldProviderStatus)
+}
+
+// SetProgress sets the "progress" field.
+func (m *VideoTaskMutation) SetProgress(i int) {
+	m.progress = &i
+	m.addprogress = nil
+}
+
+// Progress returns the value of the "progress" field in the mutation.
+func (m *VideoTaskMutation) Progress() (r int, exists bool) {
+	v := m.progress
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProgress returns the old "progress" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldProgress(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProgress is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProgress requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProgress: %w", err)
+	}
+	return oldValue.Progress, nil
+}
+
+// AddProgress adds i to the "progress" field.
+func (m *VideoTaskMutation) AddProgress(i int) {
+	if m.addprogress != nil {
+		*m.addprogress += i
+	} else {
+		m.addprogress = &i
+	}
+}
+
+// AddedProgress returns the value that was added to the "progress" field in this mutation.
+func (m *VideoTaskMutation) AddedProgress() (r int, exists bool) {
+	v := m.addprogress
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProgress resets all changes to the "progress" field.
+func (m *VideoTaskMutation) ResetProgress() {
+	m.progress = nil
+	m.addprogress = nil
+}
+
+// SetPrompt sets the "prompt" field.
+func (m *VideoTaskMutation) SetPrompt(s string) {
+	m.prompt = &s
+}
+
+// Prompt returns the value of the "prompt" field in the mutation.
+func (m *VideoTaskMutation) Prompt() (r string, exists bool) {
+	v := m.prompt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrompt returns the old "prompt" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldPrompt(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrompt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrompt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrompt: %w", err)
+	}
+	return oldValue.Prompt, nil
+}
+
+// ResetPrompt resets all changes to the "prompt" field.
+func (m *VideoTaskMutation) ResetPrompt() {
+	m.prompt = nil
+}
+
+// SetRequestHash sets the "request_hash" field.
+func (m *VideoTaskMutation) SetRequestHash(s string) {
+	m.request_hash = &s
+}
+
+// RequestHash returns the value of the "request_hash" field in the mutation.
+func (m *VideoTaskMutation) RequestHash() (r string, exists bool) {
+	v := m.request_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestHash returns the old "request_hash" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldRequestHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestHash: %w", err)
+	}
+	return oldValue.RequestHash, nil
+}
+
+// ResetRequestHash resets all changes to the "request_hash" field.
+func (m *VideoTaskMutation) ResetRequestHash() {
+	m.request_hash = nil
+}
+
+// SetPromptHash sets the "prompt_hash" field.
+func (m *VideoTaskMutation) SetPromptHash(s string) {
+	m.prompt_hash = &s
+}
+
+// PromptHash returns the value of the "prompt_hash" field in the mutation.
+func (m *VideoTaskMutation) PromptHash() (r string, exists bool) {
+	v := m.prompt_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPromptHash returns the old "prompt_hash" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldPromptHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPromptHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPromptHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPromptHash: %w", err)
+	}
+	return oldValue.PromptHash, nil
+}
+
+// ClearPromptHash clears the value of the "prompt_hash" field.
+func (m *VideoTaskMutation) ClearPromptHash() {
+	m.prompt_hash = nil
+	m.clearedFields[videotask.FieldPromptHash] = struct{}{}
+}
+
+// PromptHashCleared returns if the "prompt_hash" field was cleared in this mutation.
+func (m *VideoTaskMutation) PromptHashCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldPromptHash]
+	return ok
+}
+
+// ResetPromptHash resets all changes to the "prompt_hash" field.
+func (m *VideoTaskMutation) ResetPromptHash() {
+	m.prompt_hash = nil
+	delete(m.clearedFields, videotask.FieldPromptHash)
+}
+
+// SetRequestBody sets the "request_body" field.
+func (m *VideoTaskMutation) SetRequestBody(b []byte) {
+	m.request_body = &b
+}
+
+// RequestBody returns the value of the "request_body" field in the mutation.
+func (m *VideoTaskMutation) RequestBody() (r []byte, exists bool) {
+	v := m.request_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestBody returns the old "request_body" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldRequestBody(ctx context.Context) (v *[]byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestBody: %w", err)
+	}
+	return oldValue.RequestBody, nil
+}
+
+// ClearRequestBody clears the value of the "request_body" field.
+func (m *VideoTaskMutation) ClearRequestBody() {
+	m.request_body = nil
+	m.clearedFields[videotask.FieldRequestBody] = struct{}{}
+}
+
+// RequestBodyCleared returns if the "request_body" field was cleared in this mutation.
+func (m *VideoTaskMutation) RequestBodyCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldRequestBody]
+	return ok
+}
+
+// ResetRequestBody resets all changes to the "request_body" field.
+func (m *VideoTaskMutation) ResetRequestBody() {
+	m.request_body = nil
+	delete(m.clearedFields, videotask.FieldRequestBody)
+}
+
+// SetRequestMetadata sets the "request_metadata" field.
+func (m *VideoTaskMutation) SetRequestMetadata(value map[string]interface{}) {
+	m.request_metadata = &value
+}
+
+// RequestMetadata returns the value of the "request_metadata" field in the mutation.
+func (m *VideoTaskMutation) RequestMetadata() (r map[string]interface{}, exists bool) {
+	v := m.request_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestMetadata returns the old "request_metadata" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldRequestMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestMetadata: %w", err)
+	}
+	return oldValue.RequestMetadata, nil
+}
+
+// ResetRequestMetadata resets all changes to the "request_metadata" field.
+func (m *VideoTaskMutation) ResetRequestMetadata() {
+	m.request_metadata = nil
+}
+
+// SetUpstreamBaseURL sets the "upstream_base_url" field.
+func (m *VideoTaskMutation) SetUpstreamBaseURL(s string) {
+	m.upstream_base_url = &s
+}
+
+// UpstreamBaseURL returns the value of the "upstream_base_url" field in the mutation.
+func (m *VideoTaskMutation) UpstreamBaseURL() (r string, exists bool) {
+	v := m.upstream_base_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamBaseURL returns the old "upstream_base_url" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpstreamBaseURL(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamBaseURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamBaseURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamBaseURL: %w", err)
+	}
+	return oldValue.UpstreamBaseURL, nil
+}
+
+// ClearUpstreamBaseURL clears the value of the "upstream_base_url" field.
+func (m *VideoTaskMutation) ClearUpstreamBaseURL() {
+	m.upstream_base_url = nil
+	m.clearedFields[videotask.FieldUpstreamBaseURL] = struct{}{}
+}
+
+// UpstreamBaseURLCleared returns if the "upstream_base_url" field was cleared in this mutation.
+func (m *VideoTaskMutation) UpstreamBaseURLCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUpstreamBaseURL]
+	return ok
+}
+
+// ResetUpstreamBaseURL resets all changes to the "upstream_base_url" field.
+func (m *VideoTaskMutation) ResetUpstreamBaseURL() {
+	m.upstream_base_url = nil
+	delete(m.clearedFields, videotask.FieldUpstreamBaseURL)
+}
+
+// SetUpstreamResponse sets the "upstream_response" field.
+func (m *VideoTaskMutation) SetUpstreamResponse(value map[string]interface{}) {
+	m.upstream_response = &value
+}
+
+// UpstreamResponse returns the value of the "upstream_response" field in the mutation.
+func (m *VideoTaskMutation) UpstreamResponse() (r map[string]interface{}, exists bool) {
+	v := m.upstream_response
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamResponse returns the old "upstream_response" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpstreamResponse(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamResponse is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamResponse requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamResponse: %w", err)
+	}
+	return oldValue.UpstreamResponse, nil
+}
+
+// ClearUpstreamResponse clears the value of the "upstream_response" field.
+func (m *VideoTaskMutation) ClearUpstreamResponse() {
+	m.upstream_response = nil
+	m.clearedFields[videotask.FieldUpstreamResponse] = struct{}{}
+}
+
+// UpstreamResponseCleared returns if the "upstream_response" field was cleared in this mutation.
+func (m *VideoTaskMutation) UpstreamResponseCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUpstreamResponse]
+	return ok
+}
+
+// ResetUpstreamResponse resets all changes to the "upstream_response" field.
+func (m *VideoTaskMutation) ResetUpstreamResponse() {
+	m.upstream_response = nil
+	delete(m.clearedFields, videotask.FieldUpstreamResponse)
+}
+
+// SetUpstreamResponseBody sets the "upstream_response_body" field.
+func (m *VideoTaskMutation) SetUpstreamResponseBody(b []byte) {
+	m.upstream_response_body = &b
+}
+
+// UpstreamResponseBody returns the value of the "upstream_response_body" field in the mutation.
+func (m *VideoTaskMutation) UpstreamResponseBody() (r []byte, exists bool) {
+	v := m.upstream_response_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamResponseBody returns the old "upstream_response_body" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUpstreamResponseBody(ctx context.Context) (v *[]byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamResponseBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamResponseBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamResponseBody: %w", err)
+	}
+	return oldValue.UpstreamResponseBody, nil
+}
+
+// ClearUpstreamResponseBody clears the value of the "upstream_response_body" field.
+func (m *VideoTaskMutation) ClearUpstreamResponseBody() {
+	m.upstream_response_body = nil
+	m.clearedFields[videotask.FieldUpstreamResponseBody] = struct{}{}
+}
+
+// UpstreamResponseBodyCleared returns if the "upstream_response_body" field was cleared in this mutation.
+func (m *VideoTaskMutation) UpstreamResponseBodyCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUpstreamResponseBody]
+	return ok
+}
+
+// ResetUpstreamResponseBody resets all changes to the "upstream_response_body" field.
+func (m *VideoTaskMutation) ResetUpstreamResponseBody() {
+	m.upstream_response_body = nil
+	delete(m.clearedFields, videotask.FieldUpstreamResponseBody)
+}
+
+// SetResultURL sets the "result_url" field.
+func (m *VideoTaskMutation) SetResultURL(s string) {
+	m.result_url = &s
+}
+
+// ResultURL returns the value of the "result_url" field in the mutation.
+func (m *VideoTaskMutation) ResultURL() (r string, exists bool) {
+	v := m.result_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResultURL returns the old "result_url" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldResultURL(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResultURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResultURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResultURL: %w", err)
+	}
+	return oldValue.ResultURL, nil
+}
+
+// ClearResultURL clears the value of the "result_url" field.
+func (m *VideoTaskMutation) ClearResultURL() {
+	m.result_url = nil
+	m.clearedFields[videotask.FieldResultURL] = struct{}{}
+}
+
+// ResultURLCleared returns if the "result_url" field was cleared in this mutation.
+func (m *VideoTaskMutation) ResultURLCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldResultURL]
+	return ok
+}
+
+// ResetResultURL resets all changes to the "result_url" field.
+func (m *VideoTaskMutation) ResetResultURL() {
+	m.result_url = nil
+	delete(m.clearedFields, videotask.FieldResultURL)
+}
+
+// SetResultContentType sets the "result_content_type" field.
+func (m *VideoTaskMutation) SetResultContentType(s string) {
+	m.result_content_type = &s
+}
+
+// ResultContentType returns the value of the "result_content_type" field in the mutation.
+func (m *VideoTaskMutation) ResultContentType() (r string, exists bool) {
+	v := m.result_content_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResultContentType returns the old "result_content_type" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldResultContentType(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResultContentType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResultContentType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResultContentType: %w", err)
+	}
+	return oldValue.ResultContentType, nil
+}
+
+// ClearResultContentType clears the value of the "result_content_type" field.
+func (m *VideoTaskMutation) ClearResultContentType() {
+	m.result_content_type = nil
+	m.clearedFields[videotask.FieldResultContentType] = struct{}{}
+}
+
+// ResultContentTypeCleared returns if the "result_content_type" field was cleared in this mutation.
+func (m *VideoTaskMutation) ResultContentTypeCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldResultContentType]
+	return ok
+}
+
+// ResetResultContentType resets all changes to the "result_content_type" field.
+func (m *VideoTaskMutation) ResetResultContentType() {
+	m.result_content_type = nil
+	delete(m.clearedFields, videotask.FieldResultContentType)
+}
+
+// SetResultMetadata sets the "result_metadata" field.
+func (m *VideoTaskMutation) SetResultMetadata(value map[string]interface{}) {
+	m.result_metadata = &value
+}
+
+// ResultMetadata returns the value of the "result_metadata" field in the mutation.
+func (m *VideoTaskMutation) ResultMetadata() (r map[string]interface{}, exists bool) {
+	v := m.result_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResultMetadata returns the old "result_metadata" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldResultMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResultMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResultMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResultMetadata: %w", err)
+	}
+	return oldValue.ResultMetadata, nil
+}
+
+// ClearResultMetadata clears the value of the "result_metadata" field.
+func (m *VideoTaskMutation) ClearResultMetadata() {
+	m.result_metadata = nil
+	m.clearedFields[videotask.FieldResultMetadata] = struct{}{}
+}
+
+// ResultMetadataCleared returns if the "result_metadata" field was cleared in this mutation.
+func (m *VideoTaskMutation) ResultMetadataCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldResultMetadata]
+	return ok
+}
+
+// ResetResultMetadata resets all changes to the "result_metadata" field.
+func (m *VideoTaskMutation) ResetResultMetadata() {
+	m.result_metadata = nil
+	delete(m.clearedFields, videotask.FieldResultMetadata)
+}
+
+// SetErrorCode sets the "error_code" field.
+func (m *VideoTaskMutation) SetErrorCode(s string) {
+	m.error_code = &s
+}
+
+// ErrorCode returns the value of the "error_code" field in the mutation.
+func (m *VideoTaskMutation) ErrorCode() (r string, exists bool) {
+	v := m.error_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorCode returns the old "error_code" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldErrorCode(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorCode: %w", err)
+	}
+	return oldValue.ErrorCode, nil
+}
+
+// ClearErrorCode clears the value of the "error_code" field.
+func (m *VideoTaskMutation) ClearErrorCode() {
+	m.error_code = nil
+	m.clearedFields[videotask.FieldErrorCode] = struct{}{}
+}
+
+// ErrorCodeCleared returns if the "error_code" field was cleared in this mutation.
+func (m *VideoTaskMutation) ErrorCodeCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldErrorCode]
+	return ok
+}
+
+// ResetErrorCode resets all changes to the "error_code" field.
+func (m *VideoTaskMutation) ResetErrorCode() {
+	m.error_code = nil
+	delete(m.clearedFields, videotask.FieldErrorCode)
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *VideoTaskMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *VideoTaskMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldErrorMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ClearErrorMessage clears the value of the "error_message" field.
+func (m *VideoTaskMutation) ClearErrorMessage() {
+	m.error_message = nil
+	m.clearedFields[videotask.FieldErrorMessage] = struct{}{}
+}
+
+// ErrorMessageCleared returns if the "error_message" field was cleared in this mutation.
+func (m *VideoTaskMutation) ErrorMessageCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldErrorMessage]
+	return ok
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *VideoTaskMutation) ResetErrorMessage() {
+	m.error_message = nil
+	delete(m.clearedFields, videotask.FieldErrorMessage)
+}
+
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (m *VideoTaskMutation) SetIdempotencyKey(s string) {
+	m.idempotency_key = &s
+}
+
+// IdempotencyKey returns the value of the "idempotency_key" field in the mutation.
+func (m *VideoTaskMutation) IdempotencyKey() (r string, exists bool) {
+	v := m.idempotency_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKey returns the old "idempotency_key" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldIdempotencyKey(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKey: %w", err)
+	}
+	return oldValue.IdempotencyKey, nil
+}
+
+// ClearIdempotencyKey clears the value of the "idempotency_key" field.
+func (m *VideoTaskMutation) ClearIdempotencyKey() {
+	m.idempotency_key = nil
+	m.clearedFields[videotask.FieldIdempotencyKey] = struct{}{}
+}
+
+// IdempotencyKeyCleared returns if the "idempotency_key" field was cleared in this mutation.
+func (m *VideoTaskMutation) IdempotencyKeyCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldIdempotencyKey]
+	return ok
+}
+
+// ResetIdempotencyKey resets all changes to the "idempotency_key" field.
+func (m *VideoTaskMutation) ResetIdempotencyKey() {
+	m.idempotency_key = nil
+	delete(m.clearedFields, videotask.FieldIdempotencyKey)
+}
+
+// SetIdempotencyKeyHash sets the "idempotency_key_hash" field.
+func (m *VideoTaskMutation) SetIdempotencyKeyHash(s string) {
+	m.idempotency_key_hash = &s
+}
+
+// IdempotencyKeyHash returns the value of the "idempotency_key_hash" field in the mutation.
+func (m *VideoTaskMutation) IdempotencyKeyHash() (r string, exists bool) {
+	v := m.idempotency_key_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKeyHash returns the old "idempotency_key_hash" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldIdempotencyKeyHash(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKeyHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKeyHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKeyHash: %w", err)
+	}
+	return oldValue.IdempotencyKeyHash, nil
+}
+
+// ClearIdempotencyKeyHash clears the value of the "idempotency_key_hash" field.
+func (m *VideoTaskMutation) ClearIdempotencyKeyHash() {
+	m.idempotency_key_hash = nil
+	m.clearedFields[videotask.FieldIdempotencyKeyHash] = struct{}{}
+}
+
+// IdempotencyKeyHashCleared returns if the "idempotency_key_hash" field was cleared in this mutation.
+func (m *VideoTaskMutation) IdempotencyKeyHashCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldIdempotencyKeyHash]
+	return ok
+}
+
+// ResetIdempotencyKeyHash resets all changes to the "idempotency_key_hash" field.
+func (m *VideoTaskMutation) ResetIdempotencyKeyHash() {
+	m.idempotency_key_hash = nil
+	delete(m.clearedFields, videotask.FieldIdempotencyKeyHash)
+}
+
+// SetUsageMetadata sets the "usage_metadata" field.
+func (m *VideoTaskMutation) SetUsageMetadata(value map[string]interface{}) {
+	m.usage_metadata = &value
+}
+
+// UsageMetadata returns the value of the "usage_metadata" field in the mutation.
+func (m *VideoTaskMutation) UsageMetadata() (r map[string]interface{}, exists bool) {
+	v := m.usage_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageMetadata returns the old "usage_metadata" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUsageMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageMetadata: %w", err)
+	}
+	return oldValue.UsageMetadata, nil
+}
+
+// ClearUsageMetadata clears the value of the "usage_metadata" field.
+func (m *VideoTaskMutation) ClearUsageMetadata() {
+	m.usage_metadata = nil
+	m.clearedFields[videotask.FieldUsageMetadata] = struct{}{}
+}
+
+// UsageMetadataCleared returns if the "usage_metadata" field was cleared in this mutation.
+func (m *VideoTaskMutation) UsageMetadataCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUsageMetadata]
+	return ok
+}
+
+// ResetUsageMetadata resets all changes to the "usage_metadata" field.
+func (m *VideoTaskMutation) ResetUsageMetadata() {
+	m.usage_metadata = nil
+	delete(m.clearedFields, videotask.FieldUsageMetadata)
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *VideoTaskMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *VideoTaskMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUsageLogID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *VideoTaskMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *VideoTaskMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearUsageLogID clears the value of the "usage_log_id" field.
+func (m *VideoTaskMutation) ClearUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	m.clearedFields[videotask.FieldUsageLogID] = struct{}{}
+}
+
+// UsageLogIDCleared returns if the "usage_log_id" field was cleared in this mutation.
+func (m *VideoTaskMutation) UsageLogIDCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUsageLogID]
+	return ok
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *VideoTaskMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+	delete(m.clearedFields, videotask.FieldUsageLogID)
+}
+
+// SetInputTokens sets the "input_tokens" field.
+func (m *VideoTaskMutation) SetInputTokens(i int) {
+	m.input_tokens = &i
+	m.addinput_tokens = nil
+}
+
+// InputTokens returns the value of the "input_tokens" field in the mutation.
+func (m *VideoTaskMutation) InputTokens() (r int, exists bool) {
+	v := m.input_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputTokens returns the old "input_tokens" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldInputTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputTokens: %w", err)
+	}
+	return oldValue.InputTokens, nil
+}
+
+// AddInputTokens adds i to the "input_tokens" field.
+func (m *VideoTaskMutation) AddInputTokens(i int) {
+	if m.addinput_tokens != nil {
+		*m.addinput_tokens += i
+	} else {
+		m.addinput_tokens = &i
+	}
+}
+
+// AddedInputTokens returns the value that was added to the "input_tokens" field in this mutation.
+func (m *VideoTaskMutation) AddedInputTokens() (r int, exists bool) {
+	v := m.addinput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetInputTokens resets all changes to the "input_tokens" field.
+func (m *VideoTaskMutation) ResetInputTokens() {
+	m.input_tokens = nil
+	m.addinput_tokens = nil
+}
+
+// SetOutputTokens sets the "output_tokens" field.
+func (m *VideoTaskMutation) SetOutputTokens(i int) {
+	m.output_tokens = &i
+	m.addoutput_tokens = nil
+}
+
+// OutputTokens returns the value of the "output_tokens" field in the mutation.
+func (m *VideoTaskMutation) OutputTokens() (r int, exists bool) {
+	v := m.output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOutputTokens returns the old "output_tokens" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldOutputTokens(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOutputTokens: %w", err)
+	}
+	return oldValue.OutputTokens, nil
+}
+
+// AddOutputTokens adds i to the "output_tokens" field.
+func (m *VideoTaskMutation) AddOutputTokens(i int) {
+	if m.addoutput_tokens != nil {
+		*m.addoutput_tokens += i
+	} else {
+		m.addoutput_tokens = &i
+	}
+}
+
+// AddedOutputTokens returns the value that was added to the "output_tokens" field in this mutation.
+func (m *VideoTaskMutation) AddedOutputTokens() (r int, exists bool) {
+	v := m.addoutput_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetOutputTokens resets all changes to the "output_tokens" field.
+func (m *VideoTaskMutation) ResetOutputTokens() {
+	m.output_tokens = nil
+	m.addoutput_tokens = nil
+}
+
+// SetBilledUsd sets the "billed_usd" field.
+func (m *VideoTaskMutation) SetBilledUsd(f float64) {
+	m.billed_usd = &f
+	m.addbilled_usd = nil
+}
+
+// BilledUsd returns the value of the "billed_usd" field in the mutation.
+func (m *VideoTaskMutation) BilledUsd() (r float64, exists bool) {
+	v := m.billed_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBilledUsd returns the old "billed_usd" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldBilledUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBilledUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBilledUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBilledUsd: %w", err)
+	}
+	return oldValue.BilledUsd, nil
+}
+
+// AddBilledUsd adds f to the "billed_usd" field.
+func (m *VideoTaskMutation) AddBilledUsd(f float64) {
+	if m.addbilled_usd != nil {
+		*m.addbilled_usd += f
+	} else {
+		m.addbilled_usd = &f
+	}
+}
+
+// AddedBilledUsd returns the value that was added to the "billed_usd" field in this mutation.
+func (m *VideoTaskMutation) AddedBilledUsd() (r float64, exists bool) {
+	v := m.addbilled_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBilledUsd resets all changes to the "billed_usd" field.
+func (m *VideoTaskMutation) ResetBilledUsd() {
+	m.billed_usd = nil
+	m.addbilled_usd = nil
+}
+
+// SetSubmittedAt sets the "submitted_at" field.
+func (m *VideoTaskMutation) SetSubmittedAt(t time.Time) {
+	m.submitted_at = &t
+}
+
+// SubmittedAt returns the value of the "submitted_at" field in the mutation.
+func (m *VideoTaskMutation) SubmittedAt() (r time.Time, exists bool) {
+	v := m.submitted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubmittedAt returns the old "submitted_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldSubmittedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubmittedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubmittedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubmittedAt: %w", err)
+	}
+	return oldValue.SubmittedAt, nil
+}
+
+// ClearSubmittedAt clears the value of the "submitted_at" field.
+func (m *VideoTaskMutation) ClearSubmittedAt() {
+	m.submitted_at = nil
+	m.clearedFields[videotask.FieldSubmittedAt] = struct{}{}
+}
+
+// SubmittedAtCleared returns if the "submitted_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) SubmittedAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldSubmittedAt]
+	return ok
+}
+
+// ResetSubmittedAt resets all changes to the "submitted_at" field.
+func (m *VideoTaskMutation) ResetSubmittedAt() {
+	m.submitted_at = nil
+	delete(m.clearedFields, videotask.FieldSubmittedAt)
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *VideoTaskMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *VideoTaskMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (m *VideoTaskMutation) ClearStartedAt() {
+	m.started_at = nil
+	m.clearedFields[videotask.FieldStartedAt] = struct{}{}
+}
+
+// StartedAtCleared returns if the "started_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) StartedAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldStartedAt]
+	return ok
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *VideoTaskMutation) ResetStartedAt() {
+	m.started_at = nil
+	delete(m.clearedFields, videotask.FieldStartedAt)
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *VideoTaskMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *VideoTaskMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *VideoTaskMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[videotask.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *VideoTaskMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, videotask.FieldCompletedAt)
+}
+
+// SetExpiresAt sets the "expires_at" field.
+func (m *VideoTaskMutation) SetExpiresAt(t time.Time) {
+	m.expires_at = &t
+}
+
+// ExpiresAt returns the value of the "expires_at" field in the mutation.
+func (m *VideoTaskMutation) ExpiresAt() (r time.Time, exists bool) {
+	v := m.expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExpiresAt returns the old "expires_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExpiresAt: %w", err)
+	}
+	return oldValue.ExpiresAt, nil
+}
+
+// ClearExpiresAt clears the value of the "expires_at" field.
+func (m *VideoTaskMutation) ClearExpiresAt() {
+	m.expires_at = nil
+	m.clearedFields[videotask.FieldExpiresAt] = struct{}{}
+}
+
+// ExpiresAtCleared returns if the "expires_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) ExpiresAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldExpiresAt]
+	return ok
+}
+
+// ResetExpiresAt resets all changes to the "expires_at" field.
+func (m *VideoTaskMutation) ResetExpiresAt() {
+	m.expires_at = nil
+	delete(m.clearedFields, videotask.FieldExpiresAt)
+}
+
+// SetNextPollAt sets the "next_poll_at" field.
+func (m *VideoTaskMutation) SetNextPollAt(t time.Time) {
+	m.next_poll_at = &t
+}
+
+// NextPollAt returns the value of the "next_poll_at" field in the mutation.
+func (m *VideoTaskMutation) NextPollAt() (r time.Time, exists bool) {
+	v := m.next_poll_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextPollAt returns the old "next_poll_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldNextPollAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextPollAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextPollAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextPollAt: %w", err)
+	}
+	return oldValue.NextPollAt, nil
+}
+
+// ClearNextPollAt clears the value of the "next_poll_at" field.
+func (m *VideoTaskMutation) ClearNextPollAt() {
+	m.next_poll_at = nil
+	m.clearedFields[videotask.FieldNextPollAt] = struct{}{}
+}
+
+// NextPollAtCleared returns if the "next_poll_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) NextPollAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldNextPollAt]
+	return ok
+}
+
+// ResetNextPollAt resets all changes to the "next_poll_at" field.
+func (m *VideoTaskMutation) ResetNextPollAt() {
+	m.next_poll_at = nil
+	delete(m.clearedFields, videotask.FieldNextPollAt)
+}
+
+// SetLastPolledAt sets the "last_polled_at" field.
+func (m *VideoTaskMutation) SetLastPolledAt(t time.Time) {
+	m.last_polled_at = &t
+}
+
+// LastPolledAt returns the value of the "last_polled_at" field in the mutation.
+func (m *VideoTaskMutation) LastPolledAt() (r time.Time, exists bool) {
+	v := m.last_polled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastPolledAt returns the old "last_polled_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldLastPolledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastPolledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastPolledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastPolledAt: %w", err)
+	}
+	return oldValue.LastPolledAt, nil
+}
+
+// ClearLastPolledAt clears the value of the "last_polled_at" field.
+func (m *VideoTaskMutation) ClearLastPolledAt() {
+	m.last_polled_at = nil
+	m.clearedFields[videotask.FieldLastPolledAt] = struct{}{}
+}
+
+// LastPolledAtCleared returns if the "last_polled_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) LastPolledAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldLastPolledAt]
+	return ok
+}
+
+// ResetLastPolledAt resets all changes to the "last_polled_at" field.
+func (m *VideoTaskMutation) ResetLastPolledAt() {
+	m.last_polled_at = nil
+	delete(m.clearedFields, videotask.FieldLastPolledAt)
+}
+
+// SetLockedUntil sets the "locked_until" field.
+func (m *VideoTaskMutation) SetLockedUntil(t time.Time) {
+	m.locked_until = &t
+}
+
+// LockedUntil returns the value of the "locked_until" field in the mutation.
+func (m *VideoTaskMutation) LockedUntil() (r time.Time, exists bool) {
+	v := m.locked_until
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLockedUntil returns the old "locked_until" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldLockedUntil(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLockedUntil is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLockedUntil requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLockedUntil: %w", err)
+	}
+	return oldValue.LockedUntil, nil
+}
+
+// ClearLockedUntil clears the value of the "locked_until" field.
+func (m *VideoTaskMutation) ClearLockedUntil() {
+	m.locked_until = nil
+	m.clearedFields[videotask.FieldLockedUntil] = struct{}{}
+}
+
+// LockedUntilCleared returns if the "locked_until" field was cleared in this mutation.
+func (m *VideoTaskMutation) LockedUntilCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldLockedUntil]
+	return ok
+}
+
+// ResetLockedUntil resets all changes to the "locked_until" field.
+func (m *VideoTaskMutation) ResetLockedUntil() {
+	m.locked_until = nil
+	delete(m.clearedFields, videotask.FieldLockedUntil)
+}
+
+// SetLockedBy sets the "locked_by" field.
+func (m *VideoTaskMutation) SetLockedBy(s string) {
+	m.locked_by = &s
+}
+
+// LockedBy returns the value of the "locked_by" field in the mutation.
+func (m *VideoTaskMutation) LockedBy() (r string, exists bool) {
+	v := m.locked_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLockedBy returns the old "locked_by" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldLockedBy(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLockedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLockedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLockedBy: %w", err)
+	}
+	return oldValue.LockedBy, nil
+}
+
+// ClearLockedBy clears the value of the "locked_by" field.
+func (m *VideoTaskMutation) ClearLockedBy() {
+	m.locked_by = nil
+	m.clearedFields[videotask.FieldLockedBy] = struct{}{}
+}
+
+// LockedByCleared returns if the "locked_by" field was cleared in this mutation.
+func (m *VideoTaskMutation) LockedByCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldLockedBy]
+	return ok
+}
+
+// ResetLockedBy resets all changes to the "locked_by" field.
+func (m *VideoTaskMutation) ResetLockedBy() {
+	m.locked_by = nil
+	delete(m.clearedFields, videotask.FieldLockedBy)
+}
+
+// SetPollAttempts sets the "poll_attempts" field.
+func (m *VideoTaskMutation) SetPollAttempts(i int) {
+	m.poll_attempts = &i
+	m.addpoll_attempts = nil
+}
+
+// PollAttempts returns the value of the "poll_attempts" field in the mutation.
+func (m *VideoTaskMutation) PollAttempts() (r int, exists bool) {
+	v := m.poll_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPollAttempts returns the old "poll_attempts" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldPollAttempts(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPollAttempts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPollAttempts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPollAttempts: %w", err)
+	}
+	return oldValue.PollAttempts, nil
+}
+
+// AddPollAttempts adds i to the "poll_attempts" field.
+func (m *VideoTaskMutation) AddPollAttempts(i int) {
+	if m.addpoll_attempts != nil {
+		*m.addpoll_attempts += i
+	} else {
+		m.addpoll_attempts = &i
+	}
+}
+
+// AddedPollAttempts returns the value that was added to the "poll_attempts" field in this mutation.
+func (m *VideoTaskMutation) AddedPollAttempts() (r int, exists bool) {
+	v := m.addpoll_attempts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPollAttempts resets all changes to the "poll_attempts" field.
+func (m *VideoTaskMutation) ResetPollAttempts() {
+	m.poll_attempts = nil
+	m.addpoll_attempts = nil
+}
+
+// Where appends a list predicates to the VideoTaskMutation builder.
+func (m *VideoTaskMutation) Where(ps ...predicate.VideoTask) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the VideoTaskMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *VideoTaskMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.VideoTask, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *VideoTaskMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *VideoTaskMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (VideoTask).
+func (m *VideoTaskMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *VideoTaskMutation) Fields() []string {
+	fields := make([]string, 0, 48)
+	if m.created_at != nil {
+		fields = append(fields, videotask.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, videotask.FieldUpdatedAt)
+	}
+	if m.public_task_id != nil {
+		fields = append(fields, videotask.FieldPublicTaskID)
+	}
+	if m.upstream_task_id != nil {
+		fields = append(fields, videotask.FieldUpstreamTaskID)
+	}
+	if m.provider != nil {
+		fields = append(fields, videotask.FieldProvider)
+	}
+	if m.platform != nil {
+		fields = append(fields, videotask.FieldPlatform)
+	}
+	if m.user_id != nil {
+		fields = append(fields, videotask.FieldUserID)
+	}
+	if m.api_key_id != nil {
+		fields = append(fields, videotask.FieldAPIKeyID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, videotask.FieldGroupID)
+	}
+	if m.subscription_id != nil {
+		fields = append(fields, videotask.FieldSubscriptionID)
+	}
+	if m.account_id != nil {
+		fields = append(fields, videotask.FieldAccountID)
+	}
+	if m.channel_id != nil {
+		fields = append(fields, videotask.FieldChannelID)
+	}
+	if m.requested_model != nil {
+		fields = append(fields, videotask.FieldRequestedModel)
+	}
+	if m.upstream_model != nil {
+		fields = append(fields, videotask.FieldUpstreamModel)
+	}
+	if m.billing_model != nil {
+		fields = append(fields, videotask.FieldBillingModel)
+	}
+	if m.model_mapping_chain != nil {
+		fields = append(fields, videotask.FieldModelMappingChain)
+	}
+	if m.status != nil {
+		fields = append(fields, videotask.FieldStatus)
+	}
+	if m.provider_status != nil {
+		fields = append(fields, videotask.FieldProviderStatus)
+	}
+	if m.progress != nil {
+		fields = append(fields, videotask.FieldProgress)
+	}
+	if m.prompt != nil {
+		fields = append(fields, videotask.FieldPrompt)
+	}
+	if m.request_hash != nil {
+		fields = append(fields, videotask.FieldRequestHash)
+	}
+	if m.prompt_hash != nil {
+		fields = append(fields, videotask.FieldPromptHash)
+	}
+	if m.request_body != nil {
+		fields = append(fields, videotask.FieldRequestBody)
+	}
+	if m.request_metadata != nil {
+		fields = append(fields, videotask.FieldRequestMetadata)
+	}
+	if m.upstream_base_url != nil {
+		fields = append(fields, videotask.FieldUpstreamBaseURL)
+	}
+	if m.upstream_response != nil {
+		fields = append(fields, videotask.FieldUpstreamResponse)
+	}
+	if m.upstream_response_body != nil {
+		fields = append(fields, videotask.FieldUpstreamResponseBody)
+	}
+	if m.result_url != nil {
+		fields = append(fields, videotask.FieldResultURL)
+	}
+	if m.result_content_type != nil {
+		fields = append(fields, videotask.FieldResultContentType)
+	}
+	if m.result_metadata != nil {
+		fields = append(fields, videotask.FieldResultMetadata)
+	}
+	if m.error_code != nil {
+		fields = append(fields, videotask.FieldErrorCode)
+	}
+	if m.error_message != nil {
+		fields = append(fields, videotask.FieldErrorMessage)
+	}
+	if m.idempotency_key != nil {
+		fields = append(fields, videotask.FieldIdempotencyKey)
+	}
+	if m.idempotency_key_hash != nil {
+		fields = append(fields, videotask.FieldIdempotencyKeyHash)
+	}
+	if m.usage_metadata != nil {
+		fields = append(fields, videotask.FieldUsageMetadata)
+	}
+	if m.usage_log_id != nil {
+		fields = append(fields, videotask.FieldUsageLogID)
+	}
+	if m.input_tokens != nil {
+		fields = append(fields, videotask.FieldInputTokens)
+	}
+	if m.output_tokens != nil {
+		fields = append(fields, videotask.FieldOutputTokens)
+	}
+	if m.billed_usd != nil {
+		fields = append(fields, videotask.FieldBilledUsd)
+	}
+	if m.submitted_at != nil {
+		fields = append(fields, videotask.FieldSubmittedAt)
+	}
+	if m.started_at != nil {
+		fields = append(fields, videotask.FieldStartedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, videotask.FieldCompletedAt)
+	}
+	if m.expires_at != nil {
+		fields = append(fields, videotask.FieldExpiresAt)
+	}
+	if m.next_poll_at != nil {
+		fields = append(fields, videotask.FieldNextPollAt)
+	}
+	if m.last_polled_at != nil {
+		fields = append(fields, videotask.FieldLastPolledAt)
+	}
+	if m.locked_until != nil {
+		fields = append(fields, videotask.FieldLockedUntil)
+	}
+	if m.locked_by != nil {
+		fields = append(fields, videotask.FieldLockedBy)
+	}
+	if m.poll_attempts != nil {
+		fields = append(fields, videotask.FieldPollAttempts)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *VideoTaskMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case videotask.FieldCreatedAt:
+		return m.CreatedAt()
+	case videotask.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case videotask.FieldPublicTaskID:
+		return m.PublicTaskID()
+	case videotask.FieldUpstreamTaskID:
+		return m.UpstreamTaskID()
+	case videotask.FieldProvider:
+		return m.Provider()
+	case videotask.FieldPlatform:
+		return m.Platform()
+	case videotask.FieldUserID:
+		return m.UserID()
+	case videotask.FieldAPIKeyID:
+		return m.APIKeyID()
+	case videotask.FieldGroupID:
+		return m.GroupID()
+	case videotask.FieldSubscriptionID:
+		return m.SubscriptionID()
+	case videotask.FieldAccountID:
+		return m.AccountID()
+	case videotask.FieldChannelID:
+		return m.ChannelID()
+	case videotask.FieldRequestedModel:
+		return m.RequestedModel()
+	case videotask.FieldUpstreamModel:
+		return m.UpstreamModel()
+	case videotask.FieldBillingModel:
+		return m.BillingModel()
+	case videotask.FieldModelMappingChain:
+		return m.ModelMappingChain()
+	case videotask.FieldStatus:
+		return m.Status()
+	case videotask.FieldProviderStatus:
+		return m.ProviderStatus()
+	case videotask.FieldProgress:
+		return m.Progress()
+	case videotask.FieldPrompt:
+		return m.Prompt()
+	case videotask.FieldRequestHash:
+		return m.RequestHash()
+	case videotask.FieldPromptHash:
+		return m.PromptHash()
+	case videotask.FieldRequestBody:
+		return m.RequestBody()
+	case videotask.FieldRequestMetadata:
+		return m.RequestMetadata()
+	case videotask.FieldUpstreamBaseURL:
+		return m.UpstreamBaseURL()
+	case videotask.FieldUpstreamResponse:
+		return m.UpstreamResponse()
+	case videotask.FieldUpstreamResponseBody:
+		return m.UpstreamResponseBody()
+	case videotask.FieldResultURL:
+		return m.ResultURL()
+	case videotask.FieldResultContentType:
+		return m.ResultContentType()
+	case videotask.FieldResultMetadata:
+		return m.ResultMetadata()
+	case videotask.FieldErrorCode:
+		return m.ErrorCode()
+	case videotask.FieldErrorMessage:
+		return m.ErrorMessage()
+	case videotask.FieldIdempotencyKey:
+		return m.IdempotencyKey()
+	case videotask.FieldIdempotencyKeyHash:
+		return m.IdempotencyKeyHash()
+	case videotask.FieldUsageMetadata:
+		return m.UsageMetadata()
+	case videotask.FieldUsageLogID:
+		return m.UsageLogID()
+	case videotask.FieldInputTokens:
+		return m.InputTokens()
+	case videotask.FieldOutputTokens:
+		return m.OutputTokens()
+	case videotask.FieldBilledUsd:
+		return m.BilledUsd()
+	case videotask.FieldSubmittedAt:
+		return m.SubmittedAt()
+	case videotask.FieldStartedAt:
+		return m.StartedAt()
+	case videotask.FieldCompletedAt:
+		return m.CompletedAt()
+	case videotask.FieldExpiresAt:
+		return m.ExpiresAt()
+	case videotask.FieldNextPollAt:
+		return m.NextPollAt()
+	case videotask.FieldLastPolledAt:
+		return m.LastPolledAt()
+	case videotask.FieldLockedUntil:
+		return m.LockedUntil()
+	case videotask.FieldLockedBy:
+		return m.LockedBy()
+	case videotask.FieldPollAttempts:
+		return m.PollAttempts()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *VideoTaskMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case videotask.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case videotask.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case videotask.FieldPublicTaskID:
+		return m.OldPublicTaskID(ctx)
+	case videotask.FieldUpstreamTaskID:
+		return m.OldUpstreamTaskID(ctx)
+	case videotask.FieldProvider:
+		return m.OldProvider(ctx)
+	case videotask.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case videotask.FieldUserID:
+		return m.OldUserID(ctx)
+	case videotask.FieldAPIKeyID:
+		return m.OldAPIKeyID(ctx)
+	case videotask.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case videotask.FieldSubscriptionID:
+		return m.OldSubscriptionID(ctx)
+	case videotask.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case videotask.FieldChannelID:
+		return m.OldChannelID(ctx)
+	case videotask.FieldRequestedModel:
+		return m.OldRequestedModel(ctx)
+	case videotask.FieldUpstreamModel:
+		return m.OldUpstreamModel(ctx)
+	case videotask.FieldBillingModel:
+		return m.OldBillingModel(ctx)
+	case videotask.FieldModelMappingChain:
+		return m.OldModelMappingChain(ctx)
+	case videotask.FieldStatus:
+		return m.OldStatus(ctx)
+	case videotask.FieldProviderStatus:
+		return m.OldProviderStatus(ctx)
+	case videotask.FieldProgress:
+		return m.OldProgress(ctx)
+	case videotask.FieldPrompt:
+		return m.OldPrompt(ctx)
+	case videotask.FieldRequestHash:
+		return m.OldRequestHash(ctx)
+	case videotask.FieldPromptHash:
+		return m.OldPromptHash(ctx)
+	case videotask.FieldRequestBody:
+		return m.OldRequestBody(ctx)
+	case videotask.FieldRequestMetadata:
+		return m.OldRequestMetadata(ctx)
+	case videotask.FieldUpstreamBaseURL:
+		return m.OldUpstreamBaseURL(ctx)
+	case videotask.FieldUpstreamResponse:
+		return m.OldUpstreamResponse(ctx)
+	case videotask.FieldUpstreamResponseBody:
+		return m.OldUpstreamResponseBody(ctx)
+	case videotask.FieldResultURL:
+		return m.OldResultURL(ctx)
+	case videotask.FieldResultContentType:
+		return m.OldResultContentType(ctx)
+	case videotask.FieldResultMetadata:
+		return m.OldResultMetadata(ctx)
+	case videotask.FieldErrorCode:
+		return m.OldErrorCode(ctx)
+	case videotask.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case videotask.FieldIdempotencyKey:
+		return m.OldIdempotencyKey(ctx)
+	case videotask.FieldIdempotencyKeyHash:
+		return m.OldIdempotencyKeyHash(ctx)
+	case videotask.FieldUsageMetadata:
+		return m.OldUsageMetadata(ctx)
+	case videotask.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case videotask.FieldInputTokens:
+		return m.OldInputTokens(ctx)
+	case videotask.FieldOutputTokens:
+		return m.OldOutputTokens(ctx)
+	case videotask.FieldBilledUsd:
+		return m.OldBilledUsd(ctx)
+	case videotask.FieldSubmittedAt:
+		return m.OldSubmittedAt(ctx)
+	case videotask.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case videotask.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	case videotask.FieldExpiresAt:
+		return m.OldExpiresAt(ctx)
+	case videotask.FieldNextPollAt:
+		return m.OldNextPollAt(ctx)
+	case videotask.FieldLastPolledAt:
+		return m.OldLastPolledAt(ctx)
+	case videotask.FieldLockedUntil:
+		return m.OldLockedUntil(ctx)
+	case videotask.FieldLockedBy:
+		return m.OldLockedBy(ctx)
+	case videotask.FieldPollAttempts:
+		return m.OldPollAttempts(ctx)
+	}
+	return nil, fmt.Errorf("unknown VideoTask field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoTaskMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case videotask.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case videotask.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case videotask.FieldPublicTaskID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicTaskID(v)
+		return nil
+	case videotask.FieldUpstreamTaskID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamTaskID(v)
+		return nil
+	case videotask.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case videotask.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case videotask.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case videotask.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIKeyID(v)
+		return nil
+	case videotask.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case videotask.FieldSubscriptionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionID(v)
+		return nil
+	case videotask.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case videotask.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelID(v)
+		return nil
+	case videotask.FieldRequestedModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestedModel(v)
+		return nil
+	case videotask.FieldUpstreamModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamModel(v)
+		return nil
+	case videotask.FieldBillingModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingModel(v)
+		return nil
+	case videotask.FieldModelMappingChain:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelMappingChain(v)
+		return nil
+	case videotask.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case videotask.FieldProviderStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderStatus(v)
+		return nil
+	case videotask.FieldProgress:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProgress(v)
+		return nil
+	case videotask.FieldPrompt:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrompt(v)
+		return nil
+	case videotask.FieldRequestHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestHash(v)
+		return nil
+	case videotask.FieldPromptHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPromptHash(v)
+		return nil
+	case videotask.FieldRequestBody:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestBody(v)
+		return nil
+	case videotask.FieldRequestMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestMetadata(v)
+		return nil
+	case videotask.FieldUpstreamBaseURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamBaseURL(v)
+		return nil
+	case videotask.FieldUpstreamResponse:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamResponse(v)
+		return nil
+	case videotask.FieldUpstreamResponseBody:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamResponseBody(v)
+		return nil
+	case videotask.FieldResultURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResultURL(v)
+		return nil
+	case videotask.FieldResultContentType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResultContentType(v)
+		return nil
+	case videotask.FieldResultMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResultMetadata(v)
+		return nil
+	case videotask.FieldErrorCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorCode(v)
+		return nil
+	case videotask.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case videotask.FieldIdempotencyKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKey(v)
+		return nil
+	case videotask.FieldIdempotencyKeyHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKeyHash(v)
+		return nil
+	case videotask.FieldUsageMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageMetadata(v)
+		return nil
+	case videotask.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case videotask.FieldInputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputTokens(v)
+		return nil
+	case videotask.FieldOutputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOutputTokens(v)
+		return nil
+	case videotask.FieldBilledUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBilledUsd(v)
+		return nil
+	case videotask.FieldSubmittedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubmittedAt(v)
+		return nil
+	case videotask.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case videotask.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	case videotask.FieldExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExpiresAt(v)
+		return nil
+	case videotask.FieldNextPollAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextPollAt(v)
+		return nil
+	case videotask.FieldLastPolledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastPolledAt(v)
+		return nil
+	case videotask.FieldLockedUntil:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLockedUntil(v)
+		return nil
+	case videotask.FieldLockedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLockedBy(v)
+		return nil
+	case videotask.FieldPollAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPollAttempts(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoTask field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *VideoTaskMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, videotask.FieldUserID)
+	}
+	if m.addapi_key_id != nil {
+		fields = append(fields, videotask.FieldAPIKeyID)
+	}
+	if m.addgroup_id != nil {
+		fields = append(fields, videotask.FieldGroupID)
+	}
+	if m.addsubscription_id != nil {
+		fields = append(fields, videotask.FieldSubscriptionID)
+	}
+	if m.addaccount_id != nil {
+		fields = append(fields, videotask.FieldAccountID)
+	}
+	if m.addchannel_id != nil {
+		fields = append(fields, videotask.FieldChannelID)
+	}
+	if m.addprogress != nil {
+		fields = append(fields, videotask.FieldProgress)
+	}
+	if m.addusage_log_id != nil {
+		fields = append(fields, videotask.FieldUsageLogID)
+	}
+	if m.addinput_tokens != nil {
+		fields = append(fields, videotask.FieldInputTokens)
+	}
+	if m.addoutput_tokens != nil {
+		fields = append(fields, videotask.FieldOutputTokens)
+	}
+	if m.addbilled_usd != nil {
+		fields = append(fields, videotask.FieldBilledUsd)
+	}
+	if m.addpoll_attempts != nil {
+		fields = append(fields, videotask.FieldPollAttempts)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *VideoTaskMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case videotask.FieldUserID:
+		return m.AddedUserID()
+	case videotask.FieldAPIKeyID:
+		return m.AddedAPIKeyID()
+	case videotask.FieldGroupID:
+		return m.AddedGroupID()
+	case videotask.FieldSubscriptionID:
+		return m.AddedSubscriptionID()
+	case videotask.FieldAccountID:
+		return m.AddedAccountID()
+	case videotask.FieldChannelID:
+		return m.AddedChannelID()
+	case videotask.FieldProgress:
+		return m.AddedProgress()
+	case videotask.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	case videotask.FieldInputTokens:
+		return m.AddedInputTokens()
+	case videotask.FieldOutputTokens:
+		return m.AddedOutputTokens()
+	case videotask.FieldBilledUsd:
+		return m.AddedBilledUsd()
+	case videotask.FieldPollAttempts:
+		return m.AddedPollAttempts()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *VideoTaskMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case videotask.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case videotask.FieldAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAPIKeyID(v)
+		return nil
+	case videotask.FieldGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGroupID(v)
+		return nil
+	case videotask.FieldSubscriptionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubscriptionID(v)
+		return nil
+	case videotask.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAccountID(v)
+		return nil
+	case videotask.FieldChannelID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChannelID(v)
+		return nil
+	case videotask.FieldProgress:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProgress(v)
+		return nil
+	case videotask.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	case videotask.FieldInputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddInputTokens(v)
+		return nil
+	case videotask.FieldOutputTokens:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOutputTokens(v)
+		return nil
+	case videotask.FieldBilledUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBilledUsd(v)
+		return nil
+	case videotask.FieldPollAttempts:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPollAttempts(v)
+		return nil
+	}
+	return fmt.Errorf("unknown VideoTask numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *VideoTaskMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(videotask.FieldUpstreamTaskID) {
+		fields = append(fields, videotask.FieldUpstreamTaskID)
+	}
+	if m.FieldCleared(videotask.FieldSubscriptionID) {
+		fields = append(fields, videotask.FieldSubscriptionID)
+	}
+	if m.FieldCleared(videotask.FieldChannelID) {
+		fields = append(fields, videotask.FieldChannelID)
+	}
+	if m.FieldCleared(videotask.FieldModelMappingChain) {
+		fields = append(fields, videotask.FieldModelMappingChain)
+	}
+	if m.FieldCleared(videotask.FieldProviderStatus) {
+		fields = append(fields, videotask.FieldProviderStatus)
+	}
+	if m.FieldCleared(videotask.FieldPromptHash) {
+		fields = append(fields, videotask.FieldPromptHash)
+	}
+	if m.FieldCleared(videotask.FieldRequestBody) {
+		fields = append(fields, videotask.FieldRequestBody)
+	}
+	if m.FieldCleared(videotask.FieldUpstreamBaseURL) {
+		fields = append(fields, videotask.FieldUpstreamBaseURL)
+	}
+	if m.FieldCleared(videotask.FieldUpstreamResponse) {
+		fields = append(fields, videotask.FieldUpstreamResponse)
+	}
+	if m.FieldCleared(videotask.FieldUpstreamResponseBody) {
+		fields = append(fields, videotask.FieldUpstreamResponseBody)
+	}
+	if m.FieldCleared(videotask.FieldResultURL) {
+		fields = append(fields, videotask.FieldResultURL)
+	}
+	if m.FieldCleared(videotask.FieldResultContentType) {
+		fields = append(fields, videotask.FieldResultContentType)
+	}
+	if m.FieldCleared(videotask.FieldResultMetadata) {
+		fields = append(fields, videotask.FieldResultMetadata)
+	}
+	if m.FieldCleared(videotask.FieldErrorCode) {
+		fields = append(fields, videotask.FieldErrorCode)
+	}
+	if m.FieldCleared(videotask.FieldErrorMessage) {
+		fields = append(fields, videotask.FieldErrorMessage)
+	}
+	if m.FieldCleared(videotask.FieldIdempotencyKey) {
+		fields = append(fields, videotask.FieldIdempotencyKey)
+	}
+	if m.FieldCleared(videotask.FieldIdempotencyKeyHash) {
+		fields = append(fields, videotask.FieldIdempotencyKeyHash)
+	}
+	if m.FieldCleared(videotask.FieldUsageMetadata) {
+		fields = append(fields, videotask.FieldUsageMetadata)
+	}
+	if m.FieldCleared(videotask.FieldUsageLogID) {
+		fields = append(fields, videotask.FieldUsageLogID)
+	}
+	if m.FieldCleared(videotask.FieldSubmittedAt) {
+		fields = append(fields, videotask.FieldSubmittedAt)
+	}
+	if m.FieldCleared(videotask.FieldStartedAt) {
+		fields = append(fields, videotask.FieldStartedAt)
+	}
+	if m.FieldCleared(videotask.FieldCompletedAt) {
+		fields = append(fields, videotask.FieldCompletedAt)
+	}
+	if m.FieldCleared(videotask.FieldExpiresAt) {
+		fields = append(fields, videotask.FieldExpiresAt)
+	}
+	if m.FieldCleared(videotask.FieldNextPollAt) {
+		fields = append(fields, videotask.FieldNextPollAt)
+	}
+	if m.FieldCleared(videotask.FieldLastPolledAt) {
+		fields = append(fields, videotask.FieldLastPolledAt)
+	}
+	if m.FieldCleared(videotask.FieldLockedUntil) {
+		fields = append(fields, videotask.FieldLockedUntil)
+	}
+	if m.FieldCleared(videotask.FieldLockedBy) {
+		fields = append(fields, videotask.FieldLockedBy)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *VideoTaskMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *VideoTaskMutation) ClearField(name string) error {
+	switch name {
+	case videotask.FieldUpstreamTaskID:
+		m.ClearUpstreamTaskID()
+		return nil
+	case videotask.FieldSubscriptionID:
+		m.ClearSubscriptionID()
+		return nil
+	case videotask.FieldChannelID:
+		m.ClearChannelID()
+		return nil
+	case videotask.FieldModelMappingChain:
+		m.ClearModelMappingChain()
+		return nil
+	case videotask.FieldProviderStatus:
+		m.ClearProviderStatus()
+		return nil
+	case videotask.FieldPromptHash:
+		m.ClearPromptHash()
+		return nil
+	case videotask.FieldRequestBody:
+		m.ClearRequestBody()
+		return nil
+	case videotask.FieldUpstreamBaseURL:
+		m.ClearUpstreamBaseURL()
+		return nil
+	case videotask.FieldUpstreamResponse:
+		m.ClearUpstreamResponse()
+		return nil
+	case videotask.FieldUpstreamResponseBody:
+		m.ClearUpstreamResponseBody()
+		return nil
+	case videotask.FieldResultURL:
+		m.ClearResultURL()
+		return nil
+	case videotask.FieldResultContentType:
+		m.ClearResultContentType()
+		return nil
+	case videotask.FieldResultMetadata:
+		m.ClearResultMetadata()
+		return nil
+	case videotask.FieldErrorCode:
+		m.ClearErrorCode()
+		return nil
+	case videotask.FieldErrorMessage:
+		m.ClearErrorMessage()
+		return nil
+	case videotask.FieldIdempotencyKey:
+		m.ClearIdempotencyKey()
+		return nil
+	case videotask.FieldIdempotencyKeyHash:
+		m.ClearIdempotencyKeyHash()
+		return nil
+	case videotask.FieldUsageMetadata:
+		m.ClearUsageMetadata()
+		return nil
+	case videotask.FieldUsageLogID:
+		m.ClearUsageLogID()
+		return nil
+	case videotask.FieldSubmittedAt:
+		m.ClearSubmittedAt()
+		return nil
+	case videotask.FieldStartedAt:
+		m.ClearStartedAt()
+		return nil
+	case videotask.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	case videotask.FieldExpiresAt:
+		m.ClearExpiresAt()
+		return nil
+	case videotask.FieldNextPollAt:
+		m.ClearNextPollAt()
+		return nil
+	case videotask.FieldLastPolledAt:
+		m.ClearLastPolledAt()
+		return nil
+	case videotask.FieldLockedUntil:
+		m.ClearLockedUntil()
+		return nil
+	case videotask.FieldLockedBy:
+		m.ClearLockedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoTask nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *VideoTaskMutation) ResetField(name string) error {
+	switch name {
+	case videotask.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case videotask.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case videotask.FieldPublicTaskID:
+		m.ResetPublicTaskID()
+		return nil
+	case videotask.FieldUpstreamTaskID:
+		m.ResetUpstreamTaskID()
+		return nil
+	case videotask.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case videotask.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case videotask.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case videotask.FieldAPIKeyID:
+		m.ResetAPIKeyID()
+		return nil
+	case videotask.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case videotask.FieldSubscriptionID:
+		m.ResetSubscriptionID()
+		return nil
+	case videotask.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case videotask.FieldChannelID:
+		m.ResetChannelID()
+		return nil
+	case videotask.FieldRequestedModel:
+		m.ResetRequestedModel()
+		return nil
+	case videotask.FieldUpstreamModel:
+		m.ResetUpstreamModel()
+		return nil
+	case videotask.FieldBillingModel:
+		m.ResetBillingModel()
+		return nil
+	case videotask.FieldModelMappingChain:
+		m.ResetModelMappingChain()
+		return nil
+	case videotask.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case videotask.FieldProviderStatus:
+		m.ResetProviderStatus()
+		return nil
+	case videotask.FieldProgress:
+		m.ResetProgress()
+		return nil
+	case videotask.FieldPrompt:
+		m.ResetPrompt()
+		return nil
+	case videotask.FieldRequestHash:
+		m.ResetRequestHash()
+		return nil
+	case videotask.FieldPromptHash:
+		m.ResetPromptHash()
+		return nil
+	case videotask.FieldRequestBody:
+		m.ResetRequestBody()
+		return nil
+	case videotask.FieldRequestMetadata:
+		m.ResetRequestMetadata()
+		return nil
+	case videotask.FieldUpstreamBaseURL:
+		m.ResetUpstreamBaseURL()
+		return nil
+	case videotask.FieldUpstreamResponse:
+		m.ResetUpstreamResponse()
+		return nil
+	case videotask.FieldUpstreamResponseBody:
+		m.ResetUpstreamResponseBody()
+		return nil
+	case videotask.FieldResultURL:
+		m.ResetResultURL()
+		return nil
+	case videotask.FieldResultContentType:
+		m.ResetResultContentType()
+		return nil
+	case videotask.FieldResultMetadata:
+		m.ResetResultMetadata()
+		return nil
+	case videotask.FieldErrorCode:
+		m.ResetErrorCode()
+		return nil
+	case videotask.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case videotask.FieldIdempotencyKey:
+		m.ResetIdempotencyKey()
+		return nil
+	case videotask.FieldIdempotencyKeyHash:
+		m.ResetIdempotencyKeyHash()
+		return nil
+	case videotask.FieldUsageMetadata:
+		m.ResetUsageMetadata()
+		return nil
+	case videotask.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case videotask.FieldInputTokens:
+		m.ResetInputTokens()
+		return nil
+	case videotask.FieldOutputTokens:
+		m.ResetOutputTokens()
+		return nil
+	case videotask.FieldBilledUsd:
+		m.ResetBilledUsd()
+		return nil
+	case videotask.FieldSubmittedAt:
+		m.ResetSubmittedAt()
+		return nil
+	case videotask.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case videotask.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	case videotask.FieldExpiresAt:
+		m.ResetExpiresAt()
+		return nil
+	case videotask.FieldNextPollAt:
+		m.ResetNextPollAt()
+		return nil
+	case videotask.FieldLastPolledAt:
+		m.ResetLastPolledAt()
+		return nil
+	case videotask.FieldLockedUntil:
+		m.ResetLockedUntil()
+		return nil
+	case videotask.FieldLockedBy:
+		m.ResetLockedBy()
+		return nil
+	case videotask.FieldPollAttempts:
+		m.ResetPollAttempts()
+		return nil
+	}
+	return fmt.Errorf("unknown VideoTask field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *VideoTaskMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *VideoTaskMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *VideoTaskMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *VideoTaskMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *VideoTaskMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *VideoTaskMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *VideoTaskMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown VideoTask unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *VideoTaskMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown VideoTask edge %s", name)
 }

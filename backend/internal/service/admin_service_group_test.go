@@ -530,6 +530,7 @@ func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
 		Description:          "Grok video group",
 		Platform:             PlatformGrok,
 		RateMultiplier:       1.0,
+		AllowVideoGeneration: true,
 		VideoRateIndependent: true,
 		VideoRateMultiplier:  &videoMultiplier,
 		VideoPrice480P:       &price480P,
@@ -542,6 +543,8 @@ func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
 	require.NotNil(t, group)
 
 	require.NotNil(t, repo.created)
+	require.True(t, repo.created.AllowVideoGeneration)
+	require.True(t, group.AllowVideoGeneration)
 	require.True(t, repo.created.VideoRateIndependent)
 	require.InDelta(t, 0.75, repo.created.VideoRateMultiplier, 1e-12)
 	require.NotNil(t, repo.created.VideoPrice480P)
@@ -550,6 +553,28 @@ func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
 	require.InDelta(t, 0.08, *repo.created.VideoPrice480P, 0.0001)
 	require.InDelta(t, 0.12, *repo.created.VideoPrice720P, 0.0001)
 	require.InDelta(t, 0.18, *repo.created.VideoPrice1080P, 0.0001)
+}
+
+func TestAdminService_UpdateGroup_UpdatesVideoGenerationPermission(t *testing.T) {
+	existingGroup := &Group{
+		ID:       1,
+		Name:     "openai-video",
+		Platform: PlatformOpenAI,
+		Status:   StatusActive,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+	enabled := true
+
+	group, err := svc.UpdateGroup(context.Background(), existingGroup.ID, &UpdateGroupInput{
+		AllowVideoGeneration: &enabled,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.True(t, repo.updated.AllowVideoGeneration)
+	require.True(t, group.AllowVideoGeneration)
 }
 
 // TestAdminService_CreateGroup_NilImagePricing 测试 ImagePrice 为 nil 时正常创建
