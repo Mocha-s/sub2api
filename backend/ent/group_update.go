@@ -117,6 +117,69 @@ func (_u *GroupUpdate) AddRateMultiplier(v float64) *GroupUpdate {
 	return _u
 }
 
+// SetPeakRateEnabled sets the "peak_rate_enabled" field.
+func (_u *GroupUpdate) SetPeakRateEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetPeakRateEnabled(v)
+	return _u
+}
+
+// SetNillablePeakRateEnabled sets the "peak_rate_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePeakRateEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetPeakRateEnabled(*v)
+	}
+	return _u
+}
+
+// SetPeakStart sets the "peak_start" field.
+func (_u *GroupUpdate) SetPeakStart(v string) *GroupUpdate {
+	_u.mutation.SetPeakStart(v)
+	return _u
+}
+
+// SetNillablePeakStart sets the "peak_start" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePeakStart(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetPeakStart(*v)
+	}
+	return _u
+}
+
+// SetPeakEnd sets the "peak_end" field.
+func (_u *GroupUpdate) SetPeakEnd(v string) *GroupUpdate {
+	_u.mutation.SetPeakEnd(v)
+	return _u
+}
+
+// SetNillablePeakEnd sets the "peak_end" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePeakEnd(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetPeakEnd(*v)
+	}
+	return _u
+}
+
+// SetPeakRateMultiplier sets the "peak_rate_multiplier" field.
+func (_u *GroupUpdate) SetPeakRateMultiplier(v float64) *GroupUpdate {
+	_u.mutation.ResetPeakRateMultiplier()
+	_u.mutation.SetPeakRateMultiplier(v)
+	return _u
+}
+
+// SetNillablePeakRateMultiplier sets the "peak_rate_multiplier" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePeakRateMultiplier(v *float64) *GroupUpdate {
+	if v != nil {
+		_u.SetPeakRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPeakRateMultiplier adds value to the "peak_rate_multiplier" field.
+func (_u *GroupUpdate) AddPeakRateMultiplier(v float64) *GroupUpdate {
+	_u.mutation.AddPeakRateMultiplier(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdate) SetIsExclusive(v bool) *GroupUpdate {
 	_u.mutation.SetIsExclusive(v)
@@ -285,6 +348,20 @@ func (_u *GroupUpdate) SetAllowImageGeneration(v bool) *GroupUpdate {
 func (_u *GroupUpdate) SetNillableAllowImageGeneration(v *bool) *GroupUpdate {
 	if v != nil {
 		_u.SetAllowImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (_u *GroupUpdate) SetAllowVideoGeneration(v bool) *GroupUpdate {
+	_u.mutation.SetAllowVideoGeneration(v)
+	return _u
+}
+
+// SetNillableAllowVideoGeneration sets the "allow_video_generation" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAllowVideoGeneration(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetAllowVideoGeneration(*v)
 	}
 	return _u
 }
@@ -921,6 +998,16 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PeakStart(); ok {
+		if err := group.PeakStartValidator(v); err != nil {
+			return &ValidationError{Name: "peak_start", err: fmt.Errorf(`ent: validator failed for field "Group.peak_start": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.PeakEnd(); ok {
+		if err := group.PeakEndValidator(v); err != nil {
+			return &ValidationError{Name: "peak_end", err: fmt.Errorf(`ent: validator failed for field "Group.peak_end": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := group.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
@@ -980,6 +1067,21 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.PeakRateEnabled(); ok {
+		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PeakStart(); ok {
+		_spec.SetField(group.FieldPeakStart, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PeakEnd(); ok {
+		_spec.SetField(group.FieldPeakEnd, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PeakRateMultiplier(); ok {
+		_spec.SetField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
+		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -1027,6 +1129,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.AllowVideoGeneration(); ok {
+		_spec.SetField(group.FieldAllowVideoGeneration, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -1530,6 +1635,69 @@ func (_u *GroupUpdateOne) AddRateMultiplier(v float64) *GroupUpdateOne {
 	return _u
 }
 
+// SetPeakRateEnabled sets the "peak_rate_enabled" field.
+func (_u *GroupUpdateOne) SetPeakRateEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetPeakRateEnabled(v)
+	return _u
+}
+
+// SetNillablePeakRateEnabled sets the "peak_rate_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePeakRateEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPeakRateEnabled(*v)
+	}
+	return _u
+}
+
+// SetPeakStart sets the "peak_start" field.
+func (_u *GroupUpdateOne) SetPeakStart(v string) *GroupUpdateOne {
+	_u.mutation.SetPeakStart(v)
+	return _u
+}
+
+// SetNillablePeakStart sets the "peak_start" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePeakStart(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPeakStart(*v)
+	}
+	return _u
+}
+
+// SetPeakEnd sets the "peak_end" field.
+func (_u *GroupUpdateOne) SetPeakEnd(v string) *GroupUpdateOne {
+	_u.mutation.SetPeakEnd(v)
+	return _u
+}
+
+// SetNillablePeakEnd sets the "peak_end" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePeakEnd(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPeakEnd(*v)
+	}
+	return _u
+}
+
+// SetPeakRateMultiplier sets the "peak_rate_multiplier" field.
+func (_u *GroupUpdateOne) SetPeakRateMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.ResetPeakRateMultiplier()
+	_u.mutation.SetPeakRateMultiplier(v)
+	return _u
+}
+
+// SetNillablePeakRateMultiplier sets the "peak_rate_multiplier" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePeakRateMultiplier(v *float64) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPeakRateMultiplier(*v)
+	}
+	return _u
+}
+
+// AddPeakRateMultiplier adds value to the "peak_rate_multiplier" field.
+func (_u *GroupUpdateOne) AddPeakRateMultiplier(v float64) *GroupUpdateOne {
+	_u.mutation.AddPeakRateMultiplier(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdateOne) SetIsExclusive(v bool) *GroupUpdateOne {
 	_u.mutation.SetIsExclusive(v)
@@ -1698,6 +1866,20 @@ func (_u *GroupUpdateOne) SetAllowImageGeneration(v bool) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableAllowImageGeneration(v *bool) *GroupUpdateOne {
 	if v != nil {
 		_u.SetAllowImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (_u *GroupUpdateOne) SetAllowVideoGeneration(v bool) *GroupUpdateOne {
+	_u.mutation.SetAllowVideoGeneration(v)
+	return _u
+}
+
+// SetNillableAllowVideoGeneration sets the "allow_video_generation" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAllowVideoGeneration(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAllowVideoGeneration(*v)
 	}
 	return _u
 }
@@ -2347,6 +2529,16 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Group.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PeakStart(); ok {
+		if err := group.PeakStartValidator(v); err != nil {
+			return &ValidationError{Name: "peak_start", err: fmt.Errorf(`ent: validator failed for field "Group.peak_start": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.PeakEnd(); ok {
+		if err := group.PeakEndValidator(v); err != nil {
+			return &ValidationError{Name: "peak_end", err: fmt.Errorf(`ent: validator failed for field "Group.peak_end": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := group.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
@@ -2423,6 +2615,21 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	if value, ok := _u.mutation.AddedRateMultiplier(); ok {
 		_spec.AddField(group.FieldRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.PeakRateEnabled(); ok {
+		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PeakStart(); ok {
+		_spec.SetField(group.FieldPeakStart, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PeakEnd(); ok {
+		_spec.SetField(group.FieldPeakEnd, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PeakRateMultiplier(); ok {
+		_spec.SetField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
+		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -2470,6 +2677,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AllowImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.AllowVideoGeneration(); ok {
+		_spec.SetField(group.FieldAllowVideoGeneration, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)

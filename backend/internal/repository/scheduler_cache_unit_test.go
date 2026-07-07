@@ -36,6 +36,25 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Nil(t, got.Extra["unused_large_field"])
 }
 
+func TestBuildSchedulerMetadataAccount_KeepsPricingMarkerCredentials(t *testing.T) {
+	account := service.Account{
+		ID:       43,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pricing_managed_by":      "api-pricing-sync",
+			"pricing_markup_factor":   1.25,
+			"unused_large_credential": "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, "api-pricing-sync", got.Credentials["pricing_managed_by"])
+	require.Equal(t, 1.25, got.Credentials["pricing_markup_factor"])
+	require.Nil(t, got.Credentials["unused_large_credential"])
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsSlimGroupMembership(t *testing.T) {
 	account := service.Account{
 		ID:       42,
@@ -133,4 +152,33 @@ func TestBuildSchedulerMetadataAccount_KeepsModelRateLimits(t *testing.T) {
 	require.Contains(t, limits, "gemini-3-flash")
 	require.Contains(t, limits, "antigravity:gemini")
 	require.Nil(t, got.Extra["unused_large_field"])
+}
+
+func TestBuildSchedulerMetadataAccount_KeepsSparkShadowRoutingIdentity(t *testing.T) {
+	parentID := int64(100)
+	account := service.Account{
+		ID:              200,
+		Platform:        service.PlatformOpenAI,
+		Type:            service.AccountTypeOAuth,
+		ParentAccountID: &parentID,
+		QuotaDimension:  service.QuotaDimensionSpark,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"gpt-5.3-codex-spark": "gpt-5.3-codex-spark",
+			},
+			"compact_model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4-openai-compact",
+			},
+			"access_token": "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.NotNil(t, got.ParentAccountID)
+	require.Equal(t, parentID, *got.ParentAccountID)
+	require.Equal(t, service.QuotaDimensionSpark, got.QuotaDimension)
+	require.Equal(t, map[string]any{"gpt-5.3-codex-spark": "gpt-5.3-codex-spark"}, got.Credentials["model_mapping"])
+	require.Equal(t, map[string]any{"gpt-5.4": "gpt-5.4-openai-compact"}, got.Credentials["compact_model_mapping"])
+	require.Nil(t, got.Credentials["access_token"])
 }
