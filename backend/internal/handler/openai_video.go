@@ -238,6 +238,21 @@ func adaptVideoGenerationsCompatBody(body []byte) ([]byte, error) {
 		delete(payload, "duration")
 	}
 
+	allowed := map[string]struct{}{
+		"model":        {},
+		"prompt":       {},
+		"seconds":      {},
+		"aspect_ratio": {},
+		"images":       {},
+		"videos":       {},
+		"audios":       {},
+	}
+	for field := range payload {
+		if _, ok := allowed[field]; !ok {
+			delete(payload, field)
+		}
+	}
+
 	adapted, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
