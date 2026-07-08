@@ -225,11 +225,10 @@ func adaptVideoGenerationsCompatBody(body []byte) ([]byte, error) {
 
 	if duration, ok := payload["duration"]; ok {
 		if _, hasSeconds := payload["seconds"]; !hasSeconds {
-			seconds, err := videoGenerationDurationAsSeconds(duration)
-			if err != nil {
+			if _, err := videoGenerationDurationAsSeconds(duration); err != nil {
 				return nil, err
 			}
-			encodedSeconds, err := json.Marshal(seconds)
+			encodedSeconds, err := json.Marshal("15")
 			if err != nil {
 				return nil, err
 			}
