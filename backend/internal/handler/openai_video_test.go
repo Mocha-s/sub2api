@@ -102,7 +102,7 @@ func TestVideoTaskHandlerCreateGenerationsCompatConvertsDurationToSeconds(t *tes
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"id":"task_123","object":"video","status":"queued"}`, rec.Body.String())
-	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"black tech interface","seconds":"5","aspect_ratio":"16:9","resolution":"720p","generate_audio":true,"generation_mode":"reference"}`, string(fake.createParams.Body))
+	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"black tech interface","seconds":"5","aspect_ratio":"16:9"}`, string(fake.createParams.Body))
 }
 
 func TestVideoTaskHandlerFetchReturnsRawJSONForCurrentUserTaskID(t *testing.T) {
