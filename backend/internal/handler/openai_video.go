@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +57,44 @@ func (h *VideoTaskHandler) Create(c *gin.Context) {
 		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return
 	}
+	h.createWithBody(c, apiKey, body)
+}
 
+func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
+	apiKey, _, ok := videoTaskAuthContext(c)
+	if !ok {
+		return
+	}
+	if h == nil || h.videoTaskService == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+		return
+	}
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			videoTaskErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+
+	adaptedBody, err := adaptVideoGenerationsCompatBody(body)
+	if err != nil {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(adaptedBody))
+	c.Request.ContentLength = int64(len(adaptedBody))
+	h.createWithBody(c, apiKey, adaptedBody)
+}
+
+func (h *VideoTaskHandler) createWithBody(c *gin.Context, apiKey *service.APIKey, body []byte) {
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	result, err := h.videoTaskService.Create(c.Request.Context(), service.VideoTaskCreateParams{
 		APIKey:         apiKey,
@@ -174,6 +212,63 @@ func videoTaskAuthContext(c *gin.Context) (*service.APIKey, middleware2.AuthSubj
 
 func videoTaskRawJSON(c *gin.Context, status int, body []byte) {
 	c.Data(status, "application/json", body)
+}
+
+func adaptVideoGenerationsCompatBody(body []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return nil, errors.New("video generation JSON body must be an object")
+	}
+
+	if duration, ok := payload["duration"]; ok {
+		if _, hasSeconds := payload["seconds"]; !hasSeconds {
+			seconds, err := videoGenerationDurationAsSeconds(duration)
+			if err != nil {
+				return nil, err
+			}
+			encodedSeconds, err := json.Marshal(seconds)
+			if err != nil {
+				return nil, err
+			}
+			payload["seconds"] = encodedSeconds
+		}
+		delete(payload, "duration")
+	}
+
+	adapted, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return adapted, nil
+}
+
+func videoGenerationDurationAsSeconds(raw json.RawMessage) (string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "", errors.New("duration must be a number or string")
+	}
+	if strings.HasPrefix(trimmed, "\"") {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", err
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", errors.New("duration must be a number or string")
+		}
+		return value, nil
+	}
+
+	var number json.Number
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&number); err != nil {
+		return "", errors.New("duration must be a number or string")
+	}
+	return number.String(), nil
 }
 
 func videoTaskServiceError(c *gin.Context, err error) {

@@ -94,6 +94,8 @@ func TestGatewayRoutesOpenAIVideoTaskPathsAreRegistered(t *testing.T) {
 	}{
 		{http.MethodPost, "/v1/videos", `{"model":"sora","prompt":"waves"}`},
 		{http.MethodPost, "/videos", `{"model":"sora","prompt":"waves"}`},
+		{http.MethodPost, "/v1/video/generations", `{"model":"video-ds-2.0-fast","prompt":"waves","duration":5}`},
+		{http.MethodPost, "/video/generations", `{"model":"video-ds-2.0-fast","prompt":"waves","duration":5}`},
 		{http.MethodGet, "/v1/videos/task-123", ""},
 		{http.MethodGet, "/videos/task-123", ""},
 		{http.MethodGet, "/v1/videos/task-123/content", ""},

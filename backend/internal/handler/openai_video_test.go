@@ -85,6 +85,26 @@ func TestVideoTaskHandlerCreatePassesAuthBodyIdempotencyAndReturnsRawJSON(t *tes
 	require.Equal(t, "idem-123", fake.createParams.IdempotencyKey)
 }
 
+func TestVideoTaskHandlerCreateGenerationsCompatConvertsDurationToSeconds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"model":"video-ds-2.0-fast","prompt":"black tech interface","duration":5,"aspect_ratio":"16:9","resolution":"720p","generate_audio":true,"generation_mode":"reference"}`
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations", body)
+	c.Request.Header.Set("Content-Type", "application/json")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+
+	fake := &fakeVideoTaskService{
+		createResult: &service.VideoTaskCreateResult{ResponseBody: []byte(`{"id":"task_123","object":"video","status":"queued"}`)},
+	}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.CreateGenerationsCompat(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"id":"task_123","object":"video","status":"queued"}`, rec.Body.String())
+	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"black tech interface","seconds":"5","aspect_ratio":"16:9","resolution":"720p","generate_audio":true,"generation_mode":"reference"}`, string(fake.createParams.Body))
+}
+
 func TestVideoTaskHandlerFetchReturnsRawJSONForCurrentUserTaskID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
