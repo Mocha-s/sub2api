@@ -56,7 +56,7 @@ func securityAuditMediaTestMiddleware(c *gin.Context) {
 	user := &service.User{ID: 7, Username: "media-user", Email: "media@example.test"}
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID: 9, UserID: 7, User: user, Name: "media-key", GroupID: &groupID,
-		Group: &service.Group{ID: groupID, Name: "media-group", Platform: service.PlatformOpenAI, AllowImageGeneration: true},
+		Group: &service.Group{ID: groupID, Name: "media-group", Platform: service.PlatformOpenAI, AllowImageGeneration: true, AllowVideoGeneration: true},
 	})
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7, Concurrency: 2})
 	c.Next()
@@ -138,6 +138,30 @@ func TestAsyncImageSuccessfulPrecheckIsNotRepeatedByDetachedExecution(t *testing
 	executionMu.Lock()
 	require.False(t, repeatedDecision)
 	executionMu.Unlock()
+}
+
+func TestVideoGenerationCompatPromptGuardRunsBeforeTaskCreation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := blockingHandlerPromptEngine()
+	openAI := &OpenAIGatewayHandler{securityAuditCoordinator: securityaudit.NewCoordinator(nil, engine)}
+	fake := &fakeVideoTaskService{}
+	h := &VideoTaskHandler{videoTaskService: fake, openAI: openAI}
+
+	router := gin.New()
+	router.Use(securityAuditMediaTestMiddleware)
+	router.POST("/v1/video/generations", h.CreateGenerationsCompat)
+	request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(`{"model":"video-ds-2.0-fast","prompt":"blocked video prompt","duration":5}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Contains(t, recorder.Body.String(), securityaudit.ErrorCodeBlocked)
+	require.Nil(t, fake.createParams.APIKey, "no video task may be created after a blocking decision")
+	evaluated, _, requests := engine.snapshot()
+	require.Equal(t, 1, evaluated)
+	require.Len(t, requests, 1)
+	require.Contains(t, string(requests[0].Body), "blocked video prompt")
 }
 
 func TestBatchImagePromptGuardRunsBeforePersistenceOrBilling(t *testing.T) {

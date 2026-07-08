@@ -37,7 +37,7 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 		&handler.Handlers{
 			Gateway:       &handler.GatewayHandler{},
 			OpenAIGateway: &handler.OpenAIGatewayHandler{},
-			VideoTask:     handler.NewVideoTaskHandler(nil),
+			VideoTask:     handler.NewVideoTaskHandler(nil, nil),
 			AsyncImage:    handler.NewAsyncImageHandler(nil, nil),
 		},
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
@@ -132,7 +132,6 @@ func TestGatewayRoutesAsyncImagesPathsAreRegistered(t *testing.T) {
 	for _, route := range router.Routes() {
 		registered[route.Method+" "+route.Path] = true
 	}
-
 	for _, route := range []string{
 		"POST /v1/images/generations/async",
 		"POST /v1/images/edits/async",
@@ -142,6 +141,33 @@ func TestGatewayRoutesAsyncImagesPathsAreRegistered(t *testing.T) {
 		"GET /images/tasks/:task_id",
 	} {
 		require.True(t, registered[route], "%s should be registered", route)
+	}
+}
+
+func TestGatewayRoutesOpenAIVideoTaskPathsAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/v1/videos", `{"model":"sora","prompt":"waves"}`},
+		{http.MethodPost, "/videos", `{"model":"sora","prompt":"waves"}`},
+		{http.MethodPost, "/v1/video/generations", `{"model":"video-ds-2.0-fast","prompt":"waves","duration":5}`},
+		{http.MethodPost, "/video/generations", `{"model":"video-ds-2.0-fast","prompt":"waves","duration":5}`},
+		{http.MethodGet, "/v1/videos/task-123", ""},
+		{http.MethodGet, "/videos/task-123", ""},
+		{http.MethodGet, "/v1/videos/task-123/content", ""},
+		{http.MethodGet, "/videos/task-123/content", ""},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s should hit OpenAI video task handler", tc.method, tc.path)
+		require.NotContains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}
 }
 
