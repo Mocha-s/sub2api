@@ -5,6 +5,7 @@ DECLARE
     v_task video_tasks%ROWTYPE;
     v_usage usage_logs%ROWTYPE;
     v_user users%ROWTYPE;
+    v_api_key api_keys%ROWTYPE;
     v_account_cost NUMERIC(20,10);
     v_settlement_id BIGINT;
     v_zero_effects JSONB := jsonb_build_object(
@@ -33,10 +34,18 @@ BEGIN
     WHERE id = 24
     FOR UPDATE;
 
+    SELECT * INTO STRICT v_api_key
+    FROM api_keys
+    WHERE id = 60
+    FOR UPDATE;
+
     IF v_task.status <> 'failed'
         OR v_task.user_id <> 24
         OR v_task.api_key_id <> 60
         OR v_task.account_id <> 221
+        OR v_task.group_id IS DISTINCT FROM v_api_key.group_id
+        OR v_task.platform IS DISTINCT FROM 'openai_video'
+        OR v_task.subscription_id IS NOT NULL
         OR (v_task.usage_log_id IS NOT NULL AND v_task.usage_log_id <> 70697)
         OR (
             v_task.usage_log_id IS NULL
@@ -48,12 +57,18 @@ BEGIN
         RAISE EXCEPTION 'legacy per-request video compensation guard failed for task';
     END IF;
 
+    IF v_api_key.user_id <> 24
+        OR v_api_key.group_id IS NULL THEN
+        RAISE EXCEPTION 'legacy per-request video compensation guard failed for API key';
+    END IF;
+
     IF v_usage.user_id <> 24
         OR v_usage.api_key_id <> 60
         OR v_usage.account_id <> 221
         OR v_usage.model <> 'video-ds-2.0-fast'
-        OR v_usage.billing_type <> 0
-        OR v_usage.billing_mode <> 'per_request'
+        OR v_usage.billing_type IS DISTINCT FROM 0
+        OR v_usage.billing_mode IS DISTINCT FROM 'per_request'
+        OR v_usage.subscription_id IS NOT NULL
         OR v_usage.total_cost <> 65
         OR v_usage.actual_cost <> 6.9225
         OR v_usage.refunded_cost <> 0

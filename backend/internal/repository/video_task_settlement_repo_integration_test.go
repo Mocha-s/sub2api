@@ -17,6 +17,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -43,6 +44,87 @@ func (c *refundReportingDashboardCache) SetDashboardStats(context.Context, strin
 func (c *refundReportingDashboardCache) DeleteDashboardStats(context.Context) error {
 	c.invalidations++
 	return nil
+}
+
+type legacyProbeDashboardRepository struct{ recomputes int }
+
+func (r *legacyProbeDashboardRepository) AggregateRange(context.Context, time.Time, time.Time) error {
+	return nil
+}
+func (r *legacyProbeDashboardRepository) RecomputeRange(context.Context, time.Time, time.Time) error {
+	r.recomputes++
+	return nil
+}
+func (*legacyProbeDashboardRepository) GetAggregationWatermark(context.Context) (time.Time, error) {
+	return time.Time{}, nil
+}
+func (*legacyProbeDashboardRepository) UpdateAggregationWatermark(context.Context, time.Time) error {
+	return nil
+}
+func (*legacyProbeDashboardRepository) CleanupAggregates(context.Context, time.Time, time.Time) error {
+	return nil
+}
+func (*legacyProbeDashboardRepository) CleanupUsageLogs(context.Context, time.Time) error {
+	return nil
+}
+func (*legacyProbeDashboardRepository) CleanupUsageBillingDedup(context.Context, time.Time) error {
+	return nil
+}
+func (*legacyProbeDashboardRepository) EnsureUsageLogsPartitions(context.Context, time.Time) error {
+	return nil
+}
+
+type legacyProbeAuditCandidate struct {
+	taskID, usageLogID, userID, apiKeyID, accountID int64
+	publicTaskID                                    string
+	grossCost, customerCost, accountCost            float64
+}
+
+type legacyProbeAuditExclusion struct {
+	taskID, userID, apiKeyID, accountID int64
+	publicTaskID, reason                string
+	usageLogID                          sql.NullInt64
+}
+
+func readLegacyProbeAuditResults(t *testing.T, ctx context.Context, conn *sql.Conn, auditSQL string) ([]legacyProbeAuditCandidate, []legacyProbeAuditExclusion) {
+	t.Helper()
+	rows, err := conn.QueryContext(ctx, auditSQL)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var candidates []legacyProbeAuditCandidate
+	var exclusions []legacyProbeAuditExclusion
+	for {
+		columns, columnsErr := rows.Columns()
+		require.NoError(t, columnsErr)
+		switch len(columns) {
+		case 10:
+			for rows.Next() {
+				var resultSet string
+				var candidate legacyProbeAuditCandidate
+				require.NoError(t, rows.Scan(&resultSet, &candidate.taskID, &candidate.publicTaskID, &candidate.usageLogID, &candidate.userID, &candidate.apiKeyID, &candidate.accountID, &candidate.grossCost, &candidate.customerCost, &candidate.accountCost))
+				require.Equal(t, "candidates", resultSet)
+				candidates = append(candidates, candidate)
+			}
+		case 11:
+			for rows.Next() {
+				var resultSet string
+				var exclusion legacyProbeAuditExclusion
+				var grossCost, customerCost, accountCost sql.NullFloat64
+				require.NoError(t, rows.Scan(&resultSet, &exclusion.taskID, &exclusion.publicTaskID, &exclusion.usageLogID, &exclusion.userID, &exclusion.apiKeyID, &exclusion.accountID, &grossCost, &customerCost, &accountCost, &exclusion.reason))
+				require.Equal(t, "exclusions", resultSet)
+				exclusions = append(exclusions, exclusion)
+			}
+		default:
+			for rows.Next() {
+			}
+		}
+		require.NoError(t, rows.Err())
+		if !rows.NextResultSet() {
+			break
+		}
+	}
+	return candidates, exclusions
 }
 
 func newVideoSettlementFixture(t *testing.T, withSubscription, withUsageLog bool) videoSettlementFixture {
@@ -2586,11 +2668,13 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 		INSERT INTO usage_logs
 			(id,user_id,api_key_id,account_id,request_id,model,total_cost,actual_cost,account_stats_cost,account_rate_multiplier,billing_type,billing_mode,created_at)
 		VALUES
-			(70697,24,60,221,'legacy-probe-request','video-ds-2.0-fast',65,6.9225,4.615,0.071,0,'per_request',NOW());
+			(70697,24,60,221,'legacy-probe-request','video-ds-2.0-fast',65,6.9225,4.615,0.071,0,'per_request',NOW()),
+			(70698,25,60,221,'legacy-probe-corrupt-request','video-ds-2.0-fast',65,6.9225,4.615,0.071,0,'per_request',NOW());
 		INSERT INTO video_tasks
-			(public_task_id,provider,platform,user_id,api_key_id,group_id,account_id,requested_model,upstream_model,billing_model,status,prompt,request_hash,result_metadata)
+			(public_task_id,provider,platform,user_id,api_key_id,group_id,account_id,requested_model,upstream_model,billing_model,status,prompt,request_hash,result_metadata,usage_log_id)
 		VALUES
-			('task_32d91ebd2001e678fca0ad8310067765','test','openai',24,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-hash',jsonb_build_object('request_id','legacy-probe-request-mismatch'))`)
+			('task_32d91ebd2001e678fca0ad8310067765','test','openai_video',24,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-hash',jsonb_build_object('request_id','legacy-probe-request-mismatch'),NULL),
+			('task_legacy_probe_corrupt_direct','test','openai_video',25,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-corrupt-hash',jsonb_build_object('request_id','legacy-probe-corrupt-request'),70697)`)
 	require.NoError(t, err)
 
 	var balanceBefore, apiQuotaBefore, apiUsage5hBefore, apiUsage1dBefore, apiUsage7dBefore float64
@@ -2603,23 +2687,64 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformDailyBefore, &platformWeeklyBefore, &platformMonthlyBefore))
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_subscriptions WHERE id=4001`).Scan(&subscriptionDailyBefore, &subscriptionWeeklyBefore, &subscriptionMonthlyBefore))
 
-	_, err = conn.ExecContext(ctx, string(compensationSQL))
-	require.Error(t, err)
-	_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
-	require.NoError(t, rollbackErr)
-	var balanceAfterMismatch float64
-	var settlementsAfterMismatch int
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfterMismatch))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlements`).Scan(&settlementsAfterMismatch))
-	require.Equal(t, balanceBefore, balanceAfterMismatch)
-	require.Zero(t, settlementsAfterMismatch)
+	assertCompensationAbort := func() {
+		_, execErr := conn.ExecContext(ctx, string(compensationSQL))
+		require.Error(t, execErr)
+		_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
+		require.NoError(t, rollbackErr)
+		var balanceAfterAbort float64
+		var settlementsAfterAbort, eventsAfterAbort, reportingAfterAbort, cacheAfterAbort int
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfterAbort))
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlements`).Scan(&settlementsAfterAbort))
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlement_events`).Scan(&eventsAfterAbort))
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_refund_reporting_jobs`).Scan(&reportingAfterAbort))
+		require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_cache_invalidation_jobs`).Scan(&cacheAfterAbort))
+		require.Equal(t, balanceBefore, balanceAfterAbort)
+		require.Zero(t, settlementsAfterAbort)
+		require.Zero(t, eventsAfterAbort)
+		require.Zero(t, reportingAfterAbort)
+		require.Zero(t, cacheAfterAbort)
+	}
+	assertCompensationAbort()
 
 	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET result_metadata=jsonb_build_object('request_id','legacy-probe-request') WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
 	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE usage_logs SET billing_mode=NULL WHERE id=70697`)
+	require.NoError(t, err)
+	assertCompensationAbort()
+	_, err = conn.ExecContext(ctx, `UPDATE usage_logs SET billing_mode='per_request' WHERE id=70697`)
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET group_id=3002 WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
+	assertCompensationAbort()
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET group_id=3001 WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET platform='openai' WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
+	assertCompensationAbort()
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET platform='openai_video' WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET subscription_id=4001 WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
+	assertCompensationAbort()
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET subscription_id=NULL WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
+	require.NoError(t, err)
 	auditSQL, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "ops", "2026-07-13-audit-failed-per-request-video.sql"))
 	require.NoError(t, err)
-	_, err = conn.ExecContext(ctx, string(auditSQL))
-	require.NoError(t, err)
+	candidates, exclusions := readLegacyProbeAuditResults(t, ctx, conn, string(auditSQL))
+	require.Len(t, candidates, 1)
+	require.Equal(t, "task_32d91ebd2001e678fca0ad8310067765", candidates[0].publicTaskID)
+	require.Equal(t, int64(70697), candidates[0].usageLogID)
+	require.Equal(t, int64(24), candidates[0].userID)
+	require.Equal(t, int64(60), candidates[0].apiKeyID)
+	require.Equal(t, int64(221), candidates[0].accountID)
+	require.InDelta(t, 65, candidates[0].grossCost, 1e-9)
+	require.InDelta(t, 6.9225, candidates[0].customerCost, 1e-9)
+	require.InDelta(t, 4.615, candidates[0].accountCost, 1e-9)
+	require.Len(t, exclusions, 1)
+	require.Equal(t, "task_legacy_probe_corrupt_direct", exclusions[0].publicTaskID)
+	require.Equal(t, "no_reconstructable_usage_link", exclusions[0].reason)
+	require.False(t, exclusions[0].usageLogID.Valid)
 
 	_, err = conn.ExecContext(ctx, string(compensationSQL))
 	require.NoError(t, err)
@@ -2690,11 +2815,48 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT payload::text FROM video_task_cache_invalidation_jobs WHERE settlement_id=$1 AND event_type='legacy_refund'`, settlementID).Scan(&cachePayload))
 	require.Equal(t, 1, reportingJobs)
 	require.Equal(t, 1, cacheJobs)
-	require.JSONEq(t, `{"Version":1,"UserID":24,"APIKeyID":60,"GroupID":3001,"Platform":"openai","BillingType":0,"Effects":{"balance_cost":0,"subscription_cost":0,"api_key_quota_cost":0,"api_key_rate_limit_cost":0,"account_quota_cost":0,"platform_quota_cost":0,"account_stats_cost":0}}`, cachePayload)
+	require.JSONEq(t, `{"Version":1,"UserID":24,"APIKeyID":60,"GroupID":3001,"Platform":"openai_video","BillingType":0,"Effects":{"balance_cost":0,"subscription_cost":0,"api_key_quota_cost":0,"api_key_rate_limit_cost":0,"account_quota_cost":0,"platform_quota_cost":0,"account_stats_cost":0}}`, cachePayload)
+
+	workerDB, err := sql.Open("postgres", integrationDSN)
+	require.NoError(t, err)
+	workerDB.SetMaxOpenConns(1)
+	workerDB.SetMaxIdleConns(1)
+	t.Cleanup(func() { _ = workerDB.Close() })
+	_, err = workerDB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", schema))
+	require.NoError(t, err)
+	workerRepo := NewVideoTaskSettlementRepository(nil, workerDB)
+	billingPort := NewBillingCache(testRedis(t))
+	billingService := service.NewBillingCacheService(billingPort, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(billingService.Stop)
+	require.NoError(t, billingPort.SetUserBalance(ctx, 24, balanceAfter))
+	require.NoError(t, billingPort.SetAPIKeyRateLimit(ctx, 60, &service.APIKeyRateLimitCacheData{Usage5h: 7, Usage1d: 8, Usage7d: 9}))
+	dashboardRepo := &legacyProbeDashboardRepository{}
+	dashboardCache := &refundReportingDashboardCache{}
+	settlementService := service.NewVideoTaskSettlementService(workerRepo, nil, nil, billingService, nil, service.NewDashboardAggregationService(dashboardRepo, nil, &config.Config{}), dashboardCache)
+	worker := service.NewVideoTaskSettlementReconciler(workerRepo, settlementService)
+	require.NoError(t, worker.ReconcileCacheInvalidationOnce(ctx, time.Now()))
+	_, cacheReadErr := billingPort.GetUserBalance(ctx, 24)
+	require.ErrorIs(t, cacheReadErr, redis.Nil)
+	_, rateReadErr := billingPort.GetAPIKeyRateLimit(ctx, 60)
+	require.NoError(t, rateReadErr, "zero effects must not invalidate the API key rate cache")
+	var cacheCompleted sql.NullTime
+	var cacheAttempts int
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT completed_at,attempts FROM video_task_cache_invalidation_jobs WHERE settlement_id=$1 AND event_type='legacy_refund'`, settlementID).Scan(&cacheCompleted, &cacheAttempts))
+	require.True(t, cacheCompleted.Valid)
+	require.Equal(t, 1, cacheAttempts)
+
+	require.NoError(t, worker.ReconcileRefundReportingOnce(ctx, time.Now()))
+	require.Equal(t, 1, dashboardRepo.recomputes)
+	require.Equal(t, 1, dashboardCache.invalidations)
+	var reportingCompleted sql.NullTime
+	var reportingAttempts int
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT completed_at,attempts FROM video_task_refund_reporting_jobs WHERE settlement_id=$1 AND usage_log_id=70697`, settlementID).Scan(&reportingCompleted, &reportingAttempts))
+	require.True(t, reportingCompleted.Valid)
+	require.Equal(t, 1, reportingAttempts)
 
 	_, err = conn.ExecContext(ctx, string(compensationSQL))
 	require.Error(t, err)
-	_, rollbackErr = conn.ExecContext(ctx, "ROLLBACK")
+	_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
 	require.NoError(t, rollbackErr)
 	var balanceAfterRetry float64
 	var settlementsAfterRetry, eventsAfterRetry, reportingAfterRetry, cacheAfterRetry int

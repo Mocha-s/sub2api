@@ -1,4 +1,4 @@
-BEGIN READ ONLY;
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 
 WITH failed_tasks AS (
     SELECT t.id AS task_id, t.public_task_id, t.user_id, t.api_key_id, t.account_id, t.usage_log_id, t.result_metadata
@@ -10,7 +10,11 @@ direct_links AS (
            l.total_cost, l.actual_cost, l.account_stats_cost, l.account_rate_multiplier,
            l.refunded_cost, l.refunded_total_cost, l.refunded_account_cost, l.refund_reason, l.refunded_at
     FROM failed_tasks t
-    JOIN usage_logs l ON l.id = t.usage_log_id
+    JOIN usage_logs l
+      ON l.id = t.usage_log_id
+     AND l.user_id = t.user_id
+     AND l.api_key_id = t.api_key_id
+     AND l.account_id = t.account_id
 ),
 legacy_links AS (
     SELECT t.task_id, l.id AS usage_log_id, l.user_id, l.api_key_id, l.account_id, l.billing_mode,
@@ -22,7 +26,7 @@ legacy_links AS (
      AND l.api_key_id = t.api_key_id
      AND l.account_id = t.account_id
      AND l.request_id = t.result_metadata ->> 'request_id'
-    WHERE NOT EXISTS (SELECT 1 FROM direct_links d WHERE d.task_id = t.task_id)
+    WHERE t.usage_log_id IS NULL
 ),
 linked_usages AS (
     SELECT * FROM direct_links
@@ -65,7 +69,11 @@ direct_links AS (
     SELECT t.task_id, l.id AS usage_log_id, l.billing_mode, l.total_cost, l.actual_cost, l.account_stats_cost, l.account_rate_multiplier,
            l.refunded_cost, l.refunded_total_cost, l.refunded_account_cost, l.refund_reason, l.refunded_at
     FROM failed_tasks t
-    JOIN usage_logs l ON l.id = t.usage_log_id
+    JOIN usage_logs l
+      ON l.id = t.usage_log_id
+     AND l.user_id = t.user_id
+     AND l.api_key_id = t.api_key_id
+     AND l.account_id = t.account_id
 ),
 legacy_links AS (
     SELECT t.task_id, l.id AS usage_log_id, l.billing_mode, l.total_cost, l.actual_cost, l.account_stats_cost, l.account_rate_multiplier,
@@ -76,7 +84,7 @@ legacy_links AS (
      AND l.api_key_id = t.api_key_id
      AND l.account_id = t.account_id
      AND l.request_id = t.result_metadata ->> 'request_id'
-    WHERE NOT EXISTS (SELECT 1 FROM direct_links d WHERE d.task_id = t.task_id)
+    WHERE t.usage_log_id IS NULL
 ),
 linked_usages AS (
     SELECT * FROM direct_links
