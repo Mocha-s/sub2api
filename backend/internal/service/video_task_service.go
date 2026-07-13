@@ -1023,9 +1023,12 @@ func (s *VideoTaskService) resumePristineVideoTask(ctx context.Context, task *Vi
 	if !ok {
 		return nil, errors.Join(ErrVideoTaskSettlementRetriable, errors.New("video task pricing snapshot is missing"))
 	}
-	forwardBody, err := applyEffectiveVideoDuration(task.RequestBody, quote.Effective.Seconds)
-	if err != nil {
-		return nil, errors.Join(ErrVideoTaskSettlementRetriable, err)
+	forwardBody := task.RequestBody
+	if quote.BillingMode == BillingModeVideo {
+		forwardBody, err = applyEffectiveVideoDuration(task.RequestBody, quote.Effective.Seconds)
+		if err != nil {
+			return nil, errors.Join(ErrVideoTaskSettlementRetriable, err)
+		}
 	}
 	upstreamModel := videoTaskMetadataString(task.Metadata, "upstream_model")
 	if upstreamModel == "" {

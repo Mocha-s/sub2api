@@ -133,6 +133,43 @@ func TestVideoTaskServiceReplayRetriesAtomicAdmissionOnlyBeforeProvider(t *testi
 	require.Equal(t, 1, repo.captureCalls)
 }
 
+func TestVideoTaskServiceReplayRecoversPerRequestTaskWithoutSynthesizingDuration(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{ProviderTaskID: "upstream_recovered", Status: VideoTaskStatusQueued, ProviderStatus: "queued", RawBody: []byte(`{"id":"upstream_recovered","status":"queued"}`)}}
+	quote := VideoTaskQuote{
+		BillingMode: BillingModePerRequest, BillingModel: "seedance",
+		Effective:    VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 65,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1,
+	}
+	body := []byte(`{"model":"seedance","prompt":"city","provider_extra":"keep"}`)
+	req, err := ParseVideoTaskCreateEnvelope(body)
+	require.NoError(t, err)
+	repo.seedTask(&VideoTask{
+		PublicTaskID: "task_per_request_recovery", APIKeyID: 42, UserID: 7, AccountID: 99,
+		Model: "seedance", Status: VideoTaskStatusSubmitting, RequestHash: req.RequestHash, RequestBody: body,
+		Metadata: map[string]any{
+			"idempotency_key":            "per-request-recovery",
+			"upstream_model":             "seedance-upstream",
+			VideoTaskEndpointMetadataKey: VideoTaskEndpointVideos,
+			"request_metadata":           map[string]any{"video_pricing_snapshot": quote},
+		},
+	})
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events, reconcileErr: ErrVideoTaskAdmissionRecovered}
+	svc := newVideoTaskServiceForTest(repo, &fakeVideoTaskAccountStore{events: events, accounts: map[int64]*Account{99: {ID: 99, Platform: PlatformOpenAI}}}, nil, provider, nil)
+	svc.settlement = settlement
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "per-request-recovery"})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, body, provider.createBody)
+	require.NotContains(t, string(provider.createBody), `"seconds"`)
+	require.Equal(t, 1, provider.createCalls)
+}
+
 func TestVideoTaskServiceRecoveredAdmissionProviderFailureReleases(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	svc, tasks, provider, settlement := pricedVideoTaskServiceFixture(events)
