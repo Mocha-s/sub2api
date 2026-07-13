@@ -491,10 +491,13 @@ func TestResolveVideoTaskPricingRetainsSupportedPricingModesAndSelectsModeSpecif
 	for _, tt := range []struct {
 		name           string
 		billingMode    BillingMode
+		retained       bool
 		wantMultiplier float64
 	}{
-		{name: "per-request keeps normal request multiplier", billingMode: BillingModePerRequest, wantMultiplier: requestMultiplier},
-		{name: "video keeps independent video multiplier", billingMode: BillingModeVideo, wantMultiplier: videoMultiplier},
+		{name: "per-request keeps normal request multiplier", billingMode: BillingModePerRequest, retained: true, wantMultiplier: requestMultiplier},
+		{name: "video keeps independent video multiplier", billingMode: BillingModeVideo, retained: true, wantMultiplier: videoMultiplier},
+		{name: "token pricing is discarded", billingMode: BillingModeToken},
+		{name: "image pricing is discarded", billingMode: BillingModeImage},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			price := 65.0
@@ -529,6 +532,10 @@ func TestResolveVideoTaskPricingRetainsSupportedPricingModesAndSelectsModeSpecif
 				RequestedModel: "sora-2",
 			})
 
+			if !tt.retained {
+				require.Nil(t, selection.Pricing)
+				return
+			}
 			require.NotNil(t, selection.Pricing)
 			require.Equal(t, tt.billingMode, selection.Pricing.BillingMode)
 			require.InDelta(t, tt.wantMultiplier, selection.RateMultiplier, 1e-12)
