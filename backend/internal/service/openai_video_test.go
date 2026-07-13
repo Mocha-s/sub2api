@@ -536,7 +536,7 @@ func TestResolveVideoTaskPricingRetainsSupportedPricingModesAndSelectsModeSpecif
 	}
 }
 
-func TestResolveVideoTaskPricingUsesAPIKeyGroupForUserRate(t *testing.T) {
+func TestResolveVideoTaskPricingUsesInputGroupForUserRate(t *testing.T) {
 	pricingGroupID := int64(42)
 	apiKeyGroupID := int64(43)
 	userRate := 0.1065
@@ -572,7 +572,44 @@ func TestResolveVideoTaskPricingUsesAPIKeyGroupForUserRate(t *testing.T) {
 
 	require.NotNil(t, selection.Pricing)
 	require.InDelta(t, userRate, selection.RateMultiplier, 1e-12)
-	require.Equal(t, apiKeyGroupID, rateRepo.groupID)
+	require.Equal(t, pricingGroupID, rateRepo.groupID)
+}
+
+func TestResolveVideoTaskPricingUsesInputGroupForUserRateWhenAPIKeyGroupIDMissing(t *testing.T) {
+	groupID := int64(42)
+	userRate := 0.1065
+	price := 65.0
+	channel := &Channel{ID: 7, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+	cache := newEmptyChannelCache()
+	cache.loadedAt = time.Now()
+	cache.channelByGroupID[groupID] = channel
+	cache.groupPlatform[groupID] = PlatformOpenAI
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: "sora-2"}] = &ChannelModelPricing{
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: &price,
+	}
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	rateRepo := &openAIVideoRateResolverRepoStub{rate: &userRate}
+	service := &OpenAIGatewayService{
+		cfg:                   &config.Config{Default: config.DefaultConfig{RateMultiplier: 0.25}},
+		channelService:        channelService,
+		userGroupRateResolver: newUserGroupRateResolver(rateRepo, nil, time.Minute, nil, "service.openai_video.test"),
+	}
+
+	selection := service.ResolveVideoTaskPricing(context.Background(), VideoTaskPricingResolveInput{
+		GroupID: groupID,
+		UserID:  99,
+		APIKey: &APIKey{
+			Group: &Group{ID: groupID, RateMultiplier: 0.5},
+		},
+		Account:        &Account{},
+		RequestedModel: "sora-2",
+	})
+
+	require.NotNil(t, selection.Pricing)
+	require.InDelta(t, userRate, selection.RateMultiplier, 1e-12)
+	require.Equal(t, groupID, rateRepo.groupID)
 }
 
 type openAIVideoHTTPUpstreamRecorder struct {

@@ -83,12 +83,12 @@ func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, inpu
 	if s.cfg != nil {
 		groupMultiplier = s.cfg.Default.RateMultiplier
 	}
-	if input.APIKey != nil && input.APIKey.GroupID != nil && input.APIKey.Group != nil {
+	if input.APIKey != nil && input.APIKey.Group != nil {
 		resolver := s.userGroupRateResolver
 		if resolver == nil {
 			resolver = newUserGroupRateResolver(nil, nil, resolveUserGroupRateCacheTTL(s.cfg), nil, "service.openai_gateway")
 		}
-		groupMultiplier = resolver.Resolve(ctx, input.UserID, *input.APIKey.GroupID, input.APIKey.Group.RateMultiplier)
+		groupMultiplier = resolver.Resolve(ctx, input.UserID, input.GroupID, input.APIKey.Group.RateMultiplier)
 	}
 	groupMultiplier = effectiveRequestRateMultiplier(input.Account, groupMultiplier)
 	selection.RateMultiplier = groupMultiplier
