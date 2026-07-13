@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -2543,6 +2545,136 @@ func TestVideoTaskSettlementRepository_ClaimCacheInvalidationDoesNotFailOnMalfor
 	require.NotNil(t, valid)
 	require.Equal(t, int64(8), valid.UserID)
 	require.Equal(t, int64(9), valid.APIKeyID)
+}
+
+func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
+	ctx := context.Background()
+	compensationSQL, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "ops", "2026-07-13-compensate-per-request-video-probe.sql"))
+	require.NoError(t, err)
+
+	conn, err := integrationDB.Conn(ctx)
+	require.NoError(t, err)
+	schema := fmt.Sprintf("legacy_probe_compensation_%d", time.Now().UnixNano())
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA %s", schema))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		_ = conn.Close()
+		_, cleanupErr := integrationDB.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+		require.NoError(t, cleanupErr)
+	})
+	for _, table := range []string{
+		"groups", "users", "accounts", "api_keys", "usage_logs", "video_tasks", "user_platform_quotas",
+		"video_task_settlements", "video_task_settlement_events", "video_task_refund_reporting_jobs", "video_task_cache_invalidation_jobs",
+	} {
+		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s.%s (LIKE public.%s INCLUDING ALL)", schema, table, table))
+		require.NoError(t, err, table)
+	}
+	_, err = conn.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", schema))
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, `
+		INSERT INTO groups (id,name,platform) VALUES (3001,'legacy-probe-group','openai');
+		INSERT INTO users (id,email,password_hash,balance,frozen_balance) VALUES (24,'legacy-probe@example.com','hash',100,3);
+		INSERT INTO accounts (id,name,platform,type,credentials,extra) VALUES
+			(221,'legacy-probe-account','openai','apikey','{}'::jsonb,'{"quota_used":12.5,"quota_daily_used":7,"quota_weekly_used":8}'::jsonb);
+		INSERT INTO api_keys (id,user_id,key,name,group_id,quota,quota_used,usage_5h,usage_1d,usage_7d) VALUES
+			(60,24,'sk-legacy-probe','legacy-probe',3001,100,12.5,7,8,9);
+		INSERT INTO user_platform_quotas (user_id,platform,daily_usage_usd,weekly_usage_usd,monthly_usage_usd) VALUES
+			(24,'openai',12.5,13.5,14.5);
+		INSERT INTO usage_logs
+			(id,user_id,api_key_id,account_id,request_id,model,total_cost,actual_cost,account_stats_cost,account_rate_multiplier,billing_type,billing_mode,created_at)
+		VALUES
+			(70697,24,60,221,'legacy-probe-request','video-ds-2.0-fast',65,6.9225,4.615,0.071,0,'per_request',NOW());
+		INSERT INTO video_tasks
+			(public_task_id,provider,platform,user_id,api_key_id,group_id,account_id,requested_model,upstream_model,billing_model,status,prompt,request_hash,result_metadata)
+		VALUES
+			('task_32d91ebd2001e678fca0ad8310067765','test','openai',24,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-hash',jsonb_build_object('request_id','legacy-probe-request'))`)
+	require.NoError(t, err)
+	auditSQL, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "ops", "2026-07-13-audit-failed-per-request-video.sql"))
+	require.NoError(t, err)
+	_, err = conn.ExecContext(ctx, string(auditSQL))
+	require.NoError(t, err)
+
+	var balanceBefore, apiQuotaBefore, apiRateBefore, accountQuotaBefore, platformQuotaBefore float64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=60`).Scan(&apiQuotaBefore, &apiRateBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformQuotaBefore))
+
+	_, err = conn.ExecContext(ctx, string(compensationSQL))
+	require.NoError(t, err)
+
+	var balanceAfter, apiQuotaAfter, apiRateAfter, accountQuotaAfter, platformQuotaAfter float64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=60`).Scan(&apiQuotaAfter, &apiRateAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformQuotaAfter))
+	require.InDelta(t, balanceBefore+6.9225, balanceAfter, 1e-9)
+	require.Equal(t, apiQuotaBefore, apiQuotaAfter)
+	require.Equal(t, apiRateBefore, apiRateAfter)
+	require.Equal(t, accountQuotaBefore, accountQuotaAfter)
+	require.Equal(t, platformQuotaBefore, platformQuotaAfter)
+
+	var refundedCost, refundedTotal, refundedAccount float64
+	var refundReason sql.NullString
+	var refundedAt sql.NullTime
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT refunded_cost,refunded_total_cost,refunded_account_cost,refund_reason,refunded_at FROM usage_logs WHERE id=70697`).Scan(&refundedCost, &refundedTotal, &refundedAccount, &refundReason, &refundedAt))
+	require.InDelta(t, 6.9225, refundedCost, 1e-9)
+	require.InDelta(t, 65, refundedTotal, 1e-9)
+	require.InDelta(t, 4.615, refundedAccount, 1e-9)
+	require.True(t, refundReason.Valid)
+	require.Contains(t, refundReason.String, "Legacy per-request video failure compensation")
+	require.True(t, refundedAt.Valid)
+
+	var taskUsageLogID, taskID, settlementID int64
+	var settlementState, chargeRequestID, pricingSnapshot, effectSnapshot string
+	var grossCost, actualCost, accountCost, settlementRefund float64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT t.id,t.usage_log_id,s.id,s.state,s.charge_request_id,s.gross_cost_usd,s.actual_cost_usd,s.account_cost_usd,s.refunded_cost_usd,s.pricing_snapshot::text,s.effect_snapshot::text
+		FROM video_tasks t JOIN video_task_settlements s ON s.video_task_id=t.id WHERE t.public_task_id='task_32d91ebd2001e678fca0ad8310067765'`).Scan(
+		&taskID, &taskUsageLogID, &settlementID, &settlementState, &chargeRequestID, &grossCost, &actualCost, &accountCost, &settlementRefund, &pricingSnapshot, &effectSnapshot,
+	))
+	require.Equal(t, int64(70697), taskUsageLogID)
+	require.Equal(t, "refunded", settlementState)
+	require.Equal(t, "legacy_per_request_video_probe_compensation:task_32d91ebd2001e678fca0ad8310067765", chargeRequestID)
+	require.InDelta(t, 65, grossCost, 1e-9)
+	require.InDelta(t, 6.9225, actualCost, 1e-9)
+	require.InDelta(t, 4.615, accountCost, 1e-9)
+	require.InDelta(t, 6.9225, settlementRefund, 1e-9)
+	require.JSONEq(t, `{"billing_mode":"per_request","compensation_kind":"legacy_per_request_compensation","source_usage_log_id":70697}`, pricingSnapshot)
+	require.JSONEq(t, `{"balance_cost":0,"subscription_cost":0,"api_key_quota_cost":0,"api_key_rate_limit_cost":0,"account_quota_cost":0,"platform_quota_cost":0,"account_stats_cost":0}`, effectSnapshot)
+
+	var events, reportingJobs, cacheJobs int
+	var eventType, eventMetadata, cachePayload string
+	var eventAmount float64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlement_events WHERE settlement_id=$1 AND event_type='legacy_refund'`, settlementID).Scan(&events))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT event_type,amount_usd,metadata::text FROM video_task_settlement_events WHERE settlement_id=$1`, settlementID).Scan(&eventType, &eventAmount, &eventMetadata))
+	require.Equal(t, 1, events)
+	require.Equal(t, "legacy_refund", eventType)
+	require.InDelta(t, 6.9225, eventAmount, 1e-9)
+	require.JSONEq(t, fmt.Sprintf(`{"event_id":"legacy_per_request_video_probe_refund:task_32d91ebd2001e678fca0ad8310067765","guard_version":1,"omitted_effects":["api_key_quota","api_key_rate_windows","account_quota","subscription_quota","platform_quota"],"target_ids":{"account_id":221,"api_key_id":60,"usage_log_id":70697,"user_id":24,"video_task_id":%d}}`, taskID), eventMetadata)
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_refund_reporting_jobs WHERE settlement_id=$1 AND usage_log_id=70697`, settlementID).Scan(&reportingJobs))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_cache_invalidation_jobs WHERE settlement_id=$1 AND event_type='legacy_refund'`, settlementID).Scan(&cacheJobs))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT payload::text FROM video_task_cache_invalidation_jobs WHERE settlement_id=$1 AND event_type='legacy_refund'`, settlementID).Scan(&cachePayload))
+	require.Equal(t, 1, reportingJobs)
+	require.Equal(t, 1, cacheJobs)
+	require.JSONEq(t, `{"Version":1,"UserID":24,"APIKeyID":60,"GroupID":3001,"Platform":"openai","BillingType":0,"Effects":{"balance_cost":0,"subscription_cost":0,"api_key_quota_cost":0,"api_key_rate_limit_cost":0,"account_quota_cost":0,"platform_quota_cost":0,"account_stats_cost":0}}`, cachePayload)
+
+	_, err = conn.ExecContext(ctx, string(compensationSQL))
+	require.Error(t, err)
+	_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+	var balanceAfterRetry float64
+	var settlementsAfterRetry, eventsAfterRetry, reportingAfterRetry, cacheAfterRetry int
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfterRetry))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlements`).Scan(&settlementsAfterRetry))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlement_events WHERE event_type='legacy_refund'`).Scan(&eventsAfterRetry))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_refund_reporting_jobs`).Scan(&reportingAfterRetry))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_cache_invalidation_jobs WHERE event_type='legacy_refund'`).Scan(&cacheAfterRetry))
+	require.Equal(t, balanceAfter, balanceAfterRetry)
+	require.Equal(t, 1, settlementsAfterRetry)
+	require.Equal(t, 1, eventsAfterRetry)
+	require.Equal(t, 1, reportingAfterRetry)
+	require.Equal(t, 1, cacheAfterRetry)
 }
 
 func TestVideoTaskSettlementRepository_DeterministicEventIDs(t *testing.T) {
