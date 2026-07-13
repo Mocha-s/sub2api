@@ -1117,6 +1117,10 @@ type chargedUsageRepairFixture struct {
 }
 
 func newChargedUsageRepairFixture(t *testing.T) chargedUsageRepairFixture {
+	return newChargedUsageRepairFixtureWithPricing(t, nil)
+}
+
+func newChargedUsageRepairFixtureWithPricing(t *testing.T, pricing map[string]any) chargedUsageRepairFixture {
 	t.Helper()
 	ctx := context.Background()
 	f := newVideoSettlementFixture(t, false, false)
@@ -1124,7 +1128,7 @@ func newChargedUsageRepairFixture(t *testing.T) chargedUsageRepairFixture {
 	mode, inbound, upstream := string(service.BillingModeVideo), "/v1/videos", "/v1/videos"
 	resolution, duration, multiplier := "720p", 8, 1.0
 	usage := &service.UsageLog{UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID, RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "video", RequestedModel: "video", GroupID: &f.groupID, BillingMode: &mode, BillingType: service.BillingTypeBalance, RequestType: service.RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration, TotalCost: 3, RateMultiplier: 1, AccountRateMultiplier: &multiplier, AccountStatsCost: testFloat64Ptr(2), CreatedAt: time.Now().UTC()}
-	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, ActualCostUSD: 3, AccountCostUSD: 2, Effects: service.VideoTaskBillingEffects{BalanceCost: 3, AccountStatsCost: 2}, Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage, UsageMetadata: map[string]any{"request_id": usage.RequestID}}})
+	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, ActualCostUSD: 3, AccountCostUSD: 2, PricingSnapshot: pricing, Effects: service.VideoTaskBillingEffects{BalanceCost: 3, AccountStatsCost: 2}, Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage, UsageMetadata: map[string]any{"request_id": usage.RequestID}}})
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET status='queued' WHERE public_task_id=$1`, f.publicID)
 	require.NoError(t, err)
@@ -1269,6 +1273,31 @@ func TestVideoTaskSettlementRepository_ClaimDueReconciliationSkipsCanonicalCharg
 	claims, err := f.repo.ClaimDueReconciliation(context.Background(), now, 1, "canonical-token", time.Minute)
 	require.NoError(t, err)
 	require.Empty(t, claims)
+}
+
+func TestVideoTaskSettlementRepository_ClaimDueReconciliationLegacyBillingModeFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		pricing map[string]any
+	}{
+		{name: "absent"},
+		{name: "json null", pricing: map[string]any{"billing_mode": nil}},
+		{name: "empty", pricing: map[string]any{"billing_mode": ""}},
+		{name: "whitespace", pricing: map[string]any{"billing_mode": " \t "}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newChargedUsageRepairFixtureWithPricing(t, tt.pricing)
+			now := time.Now().UTC()
+			_, err := integrationDB.ExecContext(context.Background(), `UPDATE video_task_settlements SET next_reconcile_at=$1`, now.Add(24*time.Hour))
+			require.NoError(t, err)
+			_, err = integrationDB.ExecContext(context.Background(), `UPDATE video_task_settlements SET next_reconcile_at=$1 WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$2)`, now.Add(-time.Minute), f.publicID)
+			require.NoError(t, err)
+
+			claims, err := f.repo.ClaimDueReconciliation(context.Background(), now, 1, "legacy-billing-mode", time.Minute)
+			require.NoError(t, err)
+			require.Empty(t, claims)
+		})
+	}
 }
 
 func TestVideoTaskSettlementRepository_RepairChargedUsageCorrectsAuthoritativelyLinkedCorruption(t *testing.T) {
