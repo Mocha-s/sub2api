@@ -14,7 +14,7 @@ import (
 func TestApplyVideoAccountStatsPricingPreservesBaseAndRoundsAppliedCost(t *testing.T) {
 	seconds := 3
 	unit := 0.1234567891
-	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: seconds, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1.234567891}
+	quote := VideoTaskQuote{BillingMode: BillingModeVideo, Effective: VideoTaskEffectiveParams{Seconds: seconds, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1.234567891}
 	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &unit})
 	require.Equal(t, unit, quote.AccountUnitPriceUSD)
 	require.Equal(t, 0.3703703673, quote.AccountBaseCostUSD)
@@ -47,6 +47,28 @@ func TestApplyVideoAccountStatsPricingPerRequestOverridesDefaultOnceAndNormalize
 	require.InDelta(t, 0.15432099, quote.AccountCostUSD, 1e-12)
 }
 
+func TestApplyVideoAccountStatsPricingPerRequestUsesFlatPriceWhenCustomRuleDeclaresVideo(t *testing.T) {
+	flatPrice := 0.25
+	quote := VideoTaskQuote{
+		BillingMode:  BillingModePerRequest,
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 1},
+		GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 81.25,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1.25,
+	}
+
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{
+		BillingMode:         BillingModeVideo,
+		PerRequestPrice:     &flatPrice,
+		VideoPricePerSecond: testPtrFloat64(99),
+		VideoDefaultSeconds: testPtrInt(30),
+		Intervals:           []PricingInterval{{TierLabel: "1080p", VideoPricePerSecond: testPtrFloat64(100)}},
+	})
+
+	require.InDelta(t, flatPrice, quote.AccountUnitPriceUSD, 1e-12)
+	require.InDelta(t, flatPrice, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, 0.3125, quote.AccountCostUSD, 1e-12)
+}
+
 func TestApplyVideoAccountStatsPricingPerRequestKeepsDefaultForUnusableOverride(t *testing.T) {
 	zero := 0.0
 	tiny := 0.0000000001
@@ -69,6 +91,35 @@ func TestApplyVideoAccountStatsPricingPerRequestKeepsDefaultForUnusableOverride(
 			got := quote
 			applyVideoAccountStatsPricing(&got, &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: tt.price})
 			require.Equal(t, quote, got)
+		})
+	}
+}
+
+func TestApplyVideoAccountStatsPricingPerRequestKeepsDefaultWhenOverrideProducesNonpositiveCost(t *testing.T) {
+	tinyPrice := 0.00000000001
+	flatPrice := 0.25
+
+	for _, tt := range []struct {
+		name                  string
+		price                 *float64
+		accountRateMultiplier float64
+		accountCost           float64
+	}{
+		{name: "base normalizes to zero", price: &tinyPrice, accountRateMultiplier: 0.071, accountCost: 4.615},
+		{name: "applied cost is zero", price: &flatPrice, accountRateMultiplier: 0, accountCost: 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			quote := VideoTaskQuote{
+				BillingMode:  BillingModePerRequest,
+				Effective:    VideoTaskEffectiveParams{VideoCount: 1},
+				GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: tt.accountCost,
+				RateMultiplier: 0.1065, AccountRateMultiplier: tt.accountRateMultiplier,
+			}
+			want := quote
+
+			applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: tt.price})
+
+			require.Equal(t, want, quote)
 		})
 	}
 }
@@ -456,7 +507,7 @@ func TestCalculateStatsCost_VideoBillingRejectsCorruptOutputCount(t *testing.T) 
 
 func TestApplyVideoAccountStatsPricingNormalizesBaseToTenDecimals(t *testing.T) {
 	price := 0.12345678919
-	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: 1, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1}
+	quote := VideoTaskQuote{BillingMode: BillingModeVideo, Effective: VideoTaskEffectiveParams{Seconds: 1, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1}
 
 	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price})
 
@@ -467,6 +518,7 @@ func TestApplyVideoAccountStatsPricingNormalizesBaseToTenDecimals(t *testing.T) 
 func TestApplyVideoAccountStatsPricingKeepsCustomerGrossDistinctAndAppliesAccountMultiplierOnce(t *testing.T) {
 	price := 0.10
 	quote := VideoTaskQuote{
+		BillingMode:  BillingModeVideo,
 		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 2},
 		GrossCostUSD: 4, ActualCostUSD: 2, AccountCostUSD: 1, AccountRateMultiplier: 1.25,
 	}

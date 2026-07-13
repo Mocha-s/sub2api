@@ -223,16 +223,17 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	if quote == nil || pricing == nil {
 		return
 	}
-	if pricing.BillingMode == BillingModePerRequest {
-		if pricing.PerRequestPrice == nil || *pricing.PerRequestPrice <= 0 {
+	if quote.BillingMode == BillingModePerRequest {
+		base := calculatePerRequestStatsCost(pricing, 1)
+		if base == nil {
 			return
 		}
-		accountBase, err := NormalizeVideoTaskPricingAmount(*pricing.PerRequestPrice)
-		if err != nil {
+		accountBase, err := NormalizeVideoTaskPricingAmount(*base)
+		if err != nil || accountBase <= 0 {
 			return
 		}
 		accountCost, err := NormalizeVideoTaskSettlementAmount(accountBase * quote.AccountRateMultiplier)
-		if err != nil {
+		if err != nil || accountCost <= 0 {
 			return
 		}
 		quote.AccountUnitPriceUSD = accountBase
@@ -240,7 +241,7 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 		quote.AccountCostUSD = accountCost
 		return
 	}
-	if pricing.BillingMode != BillingModeVideo {
+	if quote.BillingMode != BillingModeVideo {
 		return
 	}
 	duration, resolution := quote.Effective.Seconds, quote.Effective.Resolution
