@@ -70,6 +70,10 @@ export default {
         maxPositive: '区间 #{index}：最大 token 数（{value}）必须大于 0',
         maxGreaterThanMin: '区间 #{index}：最大 token 数（{max}）必须大于最小 token 数（{min}）',
         negativePrice: '区间 #{index}：{field}不能为负数',
+        nonFinitePrice: '区间 #{index}：{field}必须是有限数值',
+        videoTierLabelRequired: '视频层级 #{index}：必须填写分辨率',
+        tierLabelUnique: '视频层级的分辨率不能重复',
+        videoTierPriceRequired: '视频层级 #{index}：必须填写每秒价格',
         unboundedLast: '区间 #{index}：无上限区间（最大 token 数为空）必须放在最后',
         overlap: '区间 #{previousIndex} 和 #{currentIndex} 重叠：前一个上界（{previousMax}）大于当前下界（{currentMin}）',
         price: {
@@ -77,8 +81,19 @@ export default {
           outputPrice: '输出价格',
           cacheWritePrice: '缓存写入价格',
           cacheReadPrice: '缓存读取价格',
-          perRequestPrice: '单次价格'
+          perRequestPrice: '单次价格',
+          videoPricePerSecond: '视频每秒价格'
         }
+      },
+      pricingValidation: {
+        invalidPrice: '{field}必须是有限且非负的数值'
+      },
+      videoValidation: {
+        defaultSeconds: '默认视频时长必须是 1 到 3600 秒之间的整数',
+        allowedSecondsBounds: '允许的视频时长必须是 1 到 3600 秒之间的整数',
+        allowedSecondsUnique: '允许的视频时长不能重复',
+        defaultNotAllowed: '默认视频时长必须包含在允许的视频时长中',
+        missingPrice: '请设置默认视频价格或至少一个分辨率层级价格'
       },
       deleteConfirm: '确定要删除渠道「{name}」吗？此操作不可撤销。',
       columns: {
@@ -93,7 +108,8 @@ export default {
       billingMode: {
         token: 'Token',
         perRequest: '按次',
-        image: '图片（按次）'
+        image: '图片（按次）',
+        video: '视频（按秒）'
       },
       form: {
         name: '名称',
@@ -150,6 +166,12 @@ export default {
         restrictModelsHint: '开启后，仅允许模型定价列表中的模型。不在列表中的模型请求将被拒绝。',
         defaultPerRequestPrice: '默认单次价格（未命中层级时使用）',
         defaultImagePrice: '默认图片价格（未命中层级时使用）',
+        defaultVideoPrice: '默认视频价格（未命中分辨率层级时使用）',
+        videoPricePerSecond: '每秒价格',
+        videoDefaultSeconds: '默认时长（秒）',
+        videoAllowedSeconds: '允许时长（秒，可选）',
+        videoAllowedSecondsPlaceholder: '例如：5, 10, 15',
+        videoTiers: '视频分辨率层级',
         platformConfig: '平台配置',
         webSearchEmulation: 'Web Search 模拟',
         webSearchEmulationHint: '⚠️ 开启后该渠道下所有 Anthropic 分组的账号将自动拦截 web_search 请求，请谨慎操作',

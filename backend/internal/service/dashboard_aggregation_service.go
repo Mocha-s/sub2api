@@ -178,6 +178,18 @@ func (s *DashboardAggregationService) TriggerRecomputeRange(start, end time.Time
 	return nil
 }
 
+// RecomputeRange synchronously rebuilds every hourly/daily bucket touched by the
+// range. Callers may invalidate reporting caches only after this method returns.
+func (s *DashboardAggregationService) RecomputeRange(ctx context.Context, start, end time.Time) error {
+	if s == nil || s.repo == nil {
+		return errors.New("聚合服务未初始化")
+	}
+	if !end.After(start) {
+		return errors.New("重新计算时间范围无效")
+	}
+	return s.recomputeRange(ctx, start, end)
+}
+
 func (s *DashboardAggregationService) recomputeRecentDays() {
 	days := s.cfg.RecomputeDays
 	if days <= 0 {

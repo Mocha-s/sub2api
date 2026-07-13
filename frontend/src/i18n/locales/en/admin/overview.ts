@@ -928,6 +928,7 @@ export default {
         finalPricePreview: 'Final per-image price preview',
         notConfigured: 'Not configured'
       },
+      allowVideoGeneration: 'Allow video generation for this group',
       videoPricing: {
         title: 'Video Generation Pricing',
         description:

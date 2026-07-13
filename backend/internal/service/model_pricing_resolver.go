@@ -23,11 +23,16 @@ type ResolvedPricing struct {
 	// Token 模式：区间定价列表（如有，覆盖 BasePricing 中的对应字段）
 	Intervals []PricingInterval
 
-	// 按次/图片模式：分层定价
+	// 按次/图片/视频模式：分层定价
 	RequestTiers []PricingInterval
 
 	// 按次/图片模式：默认价格（未命中层级时使用）
 	DefaultPerRequestPrice float64
+
+	// 视频模式：默认每秒价格、默认时长和允许时长
+	VideoPricePerSecond float64
+	VideoDefaultSeconds int
+	VideoAllowedSeconds []int
 
 	// 来源标识
 	Source string // "channel", "litellm", "fallback"
@@ -72,13 +77,17 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 			if mode == "" {
 				mode = BillingModeToken
 			}
-			if mode == BillingModePerRequest || mode == BillingModeImage {
+			if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
 				resolved := &ResolvedPricing{
 					Mode:           mode,
 					Source:         PricingSourceChannel,
 					channelPricing: chPricing,
 				}
-				r.applyRequestTierOverrides(chPricing, resolved)
+				if mode == BillingModeVideo {
+					r.applyVideoOverrides(chPricing, resolved)
+				} else {
+					r.applyRequestTierOverrides(chPricing, resolved)
+				}
 				return resolved
 			}
 		}
@@ -136,6 +145,8 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 		r.applyTokenOverrides(chPricing, resolved)
 	case BillingModePerRequest, BillingModeImage:
 		r.applyRequestTierOverrides(chPricing, resolved)
+	case BillingModeVideo:
+		r.applyVideoOverrides(chPricing, resolved)
 	}
 }
 
@@ -209,6 +220,19 @@ func (r *ModelPricingResolver) applyRequestTierOverrides(chPricing *ChannelModel
 	}
 }
 
+func (r *ModelPricingResolver) applyVideoOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
+	resolved.RequestTiers = filterValidIntervals(chPricing.Intervals)
+	if chPricing.VideoPricePerSecond != nil {
+		resolved.VideoPricePerSecond = *chPricing.VideoPricePerSecond
+	}
+	if chPricing.VideoDefaultSeconds != nil {
+		resolved.VideoDefaultSeconds = *chPricing.VideoDefaultSeconds
+	}
+	if chPricing.VideoAllowedSeconds != nil {
+		resolved.VideoAllowedSeconds = append([]int(nil), chPricing.VideoAllowedSeconds...)
+	}
+}
+
 // filterValidIntervals 过滤掉所有价格字段都为空的无效 interval。
 // 前端可能创建了只有 min/max 但无价格的空 interval。
 func filterValidIntervals(intervals []PricingInterval) []PricingInterval {
@@ -216,7 +240,7 @@ func filterValidIntervals(intervals []PricingInterval) []PricingInterval {
 	for _, iv := range intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
 			iv.CacheWritePrice != nil || iv.CacheReadPrice != nil ||
-			iv.PerRequestPrice != nil {
+			iv.PerRequestPrice != nil || iv.VideoPricePerSecond != nil {
 			valid = append(valid, iv)
 		}
 	}

@@ -969,6 +969,20 @@
           </p>
         </div>
 
+        <div
+          v-if="createForm.platform === 'openai'"
+          class="border-t pt-4"
+        >
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="createForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.allowVideoGeneration") }}
+          </label>
+        </div>
+
         <!-- 视频生成计费配置（仅 Grok 平台） -->
         <div
           v-if="supportsVideoPricingPlatform(createForm.platform)"
@@ -2448,6 +2462,20 @@
           </p>
         </div>
 
+        <div
+          v-if="editForm.platform === 'openai'"
+          class="border-t pt-4"
+        >
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="editForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.allowVideoGeneration") }}
+          </label>
+        </div>
+
         <!-- 视频生成计费配置（仅 Grok 平台） -->
         <div
           v-if="supportsVideoPricingPlatform(editForm.platform)"
@@ -3874,6 +3902,7 @@ const createForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -4219,6 +4248,7 @@ const editForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -4602,6 +4632,7 @@ const closeCreateModal = () => {
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
+  createForm.allow_video_generation = false;
   createForm.allow_batch_image_generation = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
@@ -4764,6 +4795,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.allow_video_generation = group.allow_video_generation ?? false;
   editForm.allow_batch_image_generation =
     group.allow_batch_image_generation ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;

@@ -24,6 +24,14 @@ type quotaSnapshotWriter interface {
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
 }
 
+type quotaRevisionSnapshotWriter interface {
+	CompareAndSwapUsageSnapshots(context.Context, []UserPlatformQuotaSnapshot) ([]UserPlatformQuotaSnapshotResult, error)
+}
+
+type quotaFlushFinalizer interface {
+	FinalizeUserPlatformQuotaFlush(context.Context, UserPlatformQuotaKey, int64, int64, int64, bool) error
+}
+
 // FlusherMetrics 记录 flusher 运行时指标（原子量，零值可用）。
 type FlusherMetrics struct {
 	FlushSuccessTotal   atomic.Int64
@@ -150,6 +158,13 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		if e == nil {
 			continue
 		}
+		if e.SchemaVersion != UserPlatformQuotaCacheSchemaV1 {
+			finalizer, ok := s.cache.(quotaFlushFinalizer)
+			if !ok || finalizer.FinalizeUserPlatformQuotaFlush(ctx, key, e.Version, e.SchemaVersion, e.Revision, false) != nil {
+				s.readdOrCountLost(ctx, []UserPlatformQuotaKey{key}, "discard old schema")
+			}
+			continue
+		}
 		if e.DailyWindowStart == nil || e.WeeklyWindowStart == nil || e.MonthlyWindowStart == nil {
 			continue
 		}
@@ -162,6 +177,9 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 			DailyWindowStart:   *e.DailyWindowStart,
 			WeeklyWindowStart:  *e.WeeklyWindowStart,
 			MonthlyWindowStart: *e.MonthlyWindowStart,
+			Revision:           e.Revision,
+			CacheVersion:       e.Version,
+			SchemaVersion:      e.SchemaVersion,
 		})
 	}
 
@@ -175,20 +193,15 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		return true
 	}
 
-	// 已知竞态(admin 写 × flusher 刷,仅 flusher_enabled=true 时存在):
-	// admin ResetExpiredWindow/UpsertForUser 是"先写 DB 再 DeleteCache"。若本批已 SPOP + BatchGet
-	// 读到旧 usage 快照(此刻 member 已离开脏集),而 admin 随后写 DB、本行 UPSERT 又在 admin 写之后落库,
-	// 则旧快照会覆盖 admin 刚写入的值;DeleteCache 后 Redis MISS,下次 preflight 从 DB 重载被覆盖的旧值。
-	// 因 member 已被 SPOP,admin 侧 SREM/清脏标记无法拦截本批(故未做)。影响有限,暂列为已知取舍:
-	//   - UpsertForUser 改 limit,而本 UPSERT 不写 limit 列 → limit 配置不受影响;
-	//   - ResetExpiredWindow 改 usage,但 preflight windowExpired 会在窗口真正过期时自愈重置,
-	//     仅"强制重置未过期窗口"且与本批精确交错时短暂失效;
-	//   - 低频 admin 操作 + 默认 flusher_enabled=false。彻底消除需 version OCC(DB 加 version 列条件 UPSERT),
-	//     成本高;启用 flusher 后如需强一致再评估。
-
 	// 5. 写入 DB
 	start := time.Now()
-	writeErr := s.quotaRepo.BatchSnapshotUsage(ctx, snaps, time.Now().UTC())
+	revisionWriter, ok := s.quotaRepo.(quotaRevisionSnapshotWriter)
+	if !ok {
+		s.metrics.FlushErrorTotal.Add(1)
+		s.readdOrCountLost(ctx, keys, "missing revision writer")
+		return false
+	}
+	results, writeErr := revisionWriter.CompareAndSwapUsageSnapshots(ctx, snaps)
 	s.updateLatencyMax(time.Since(start).Milliseconds())
 
 	if writeErr != nil {
@@ -208,6 +221,20 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 			logger.LegacyPrintf("quota_flusher", "[QuotaFlusher] BatchSnapshotUsage error: %v", writeErr)
 		}
 		return false
+	}
+	finalizer, ok := s.cache.(quotaFlushFinalizer)
+	if !ok {
+		s.metrics.FlushErrorTotal.Add(1)
+		s.readdOrCountLost(ctx, keys, "missing cache finalizer")
+		return false
+	}
+	for i, result := range results {
+		key := UserPlatformQuotaKey{UserID: result.UserID, Platform: result.Platform}
+		if err := finalizer.FinalizeUserPlatformQuotaFlush(ctx, key, snaps[i].CacheVersion, snaps[i].SchemaVersion, result.Revision, result.Applied); err != nil {
+			s.metrics.FlushErrorTotal.Add(1)
+			s.readdOrCountLost(ctx, []UserPlatformQuotaKey{key}, "cache finalize")
+			return false
+		}
 	}
 
 	// 6. 成功

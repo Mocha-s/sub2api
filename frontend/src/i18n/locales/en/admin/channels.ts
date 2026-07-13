@@ -70,6 +70,10 @@ export default {
         maxPositive: 'Interval #{index}: maximum token count ({value}) must be greater than 0',
         maxGreaterThanMin: 'Interval #{index}: maximum token count ({max}) must be greater than minimum token count ({min})',
         negativePrice: 'Interval #{index}: {field} cannot be negative',
+        nonFinitePrice: 'Interval #{index}: {field} must be a finite number',
+        videoTierLabelRequired: 'Video tier #{index}: resolution is required',
+        tierLabelUnique: 'Video tier resolutions must be unique',
+        videoTierPriceRequired: 'Video tier #{index}: price per second is required',
         unboundedLast: 'Interval #{index}: an unbounded interval (empty maximum token count) must be last',
         overlap: 'Intervals #{previousIndex} and #{currentIndex} overlap: previous upper bound ({previousMax}) is greater than current lower bound ({currentMin})',
         price: {
@@ -77,8 +81,19 @@ export default {
           outputPrice: 'output price',
           cacheWritePrice: 'cache write price',
           cacheReadPrice: 'cache read price',
-          perRequestPrice: 'per-request price'
+          perRequestPrice: 'per-request price',
+          videoPricePerSecond: 'video price per second'
         }
+      },
+      pricingValidation: {
+        invalidPrice: '{field} must be a finite non-negative number'
+      },
+      videoValidation: {
+        defaultSeconds: 'Default video duration must be a whole number from 1 to 3600 seconds',
+        allowedSecondsBounds: 'Allowed video durations must be whole numbers from 1 to 3600 seconds',
+        allowedSecondsUnique: 'Allowed video durations must not contain duplicates',
+        defaultNotAllowed: 'Default video duration must be included in allowed video durations',
+        missingPrice: 'Set a default video price or at least one resolution tier price'
       },
       deleteConfirm: 'Are you sure you want to delete channel "{name}"? This cannot be undone.',
       columns: {
@@ -93,7 +108,8 @@ export default {
       billingMode: {
         token: 'Token',
         perRequest: 'Per Request',
-        image: 'Image (Per Request)'
+        image: 'Image (Per Request)',
+        video: 'Video (Per Second)'
       },
       form: {
         name: 'Name',
@@ -150,6 +166,12 @@ export default {
         restrictModelsHint: 'When enabled, only models in the pricing list are allowed. Others will be rejected.',
         defaultPerRequestPrice: 'Default per-request price (fallback when no tier matches)',
         defaultImagePrice: 'Default image price (fallback when no tier matches)',
+        defaultVideoPrice: 'Default video price (fallback when no resolution tier matches)',
+        videoPricePerSecond: 'Price per Second',
+        videoDefaultSeconds: 'Default Duration (seconds)',
+        videoAllowedSeconds: 'Allowed Durations (seconds, optional)',
+        videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',
+        videoTiers: 'Video Resolution Tiers',
         platformConfig: 'Platform Configuration',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationHint: '⚠️ When enabled, all accounts in this channel\'s Anthropic groups will intercept web_search requests. Use with caution.',

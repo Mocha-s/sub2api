@@ -2,6 +2,35 @@ package service
 
 import "context"
 
+func (s *APIKeyService) InvalidateAuthCacheByUserIDStrict(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return nil
+	}
+	keys, err := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		cacheKey := s.authCacheKey(key)
+		if s.authCacheL1 != nil {
+			s.authCacheL1.Del(cacheKey)
+		}
+		if s.cache == nil {
+			continue
+		}
+		if err := s.cache.DeleteAuthCache(ctx, cacheKey); err != nil {
+			return err
+		}
+		if err := s.cache.PublishAuthCacheInvalidation(ctx, cacheKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // InvalidateAuthCacheByKey 清除指定 API Key 的认证缓存
 func (s *APIKeyService) InvalidateAuthCacheByKey(ctx context.Context, key string) {
 	if key == "" {
@@ -13,14 +42,7 @@ func (s *APIKeyService) InvalidateAuthCacheByKey(ctx context.Context, key string
 
 // InvalidateAuthCacheByUserID 清除用户相关的 API Key 认证缓存
 func (s *APIKeyService) InvalidateAuthCacheByUserID(ctx context.Context, userID int64) {
-	if userID <= 0 {
-		return
-	}
-	keys, err := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
-	if err != nil {
-		return
-	}
-	s.deleteAuthCacheByKeys(ctx, keys)
+	_ = s.InvalidateAuthCacheByUserIDStrict(ctx, userID)
 }
 
 // InvalidateAuthCacheByGroupID 清除分组相关的 API Key 认证缓存

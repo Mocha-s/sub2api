@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -19,6 +20,16 @@ func TestApplyMigrations_NilDB(t *testing.T) {
 	err := ApplyMigrations(context.Background(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil sql db")
+}
+
+func TestMigration175DescribesFreshIdempotentRolloutOnly(t *testing.T) {
+	source, err := os.ReadFile("../../migrations/175_video_pricing_and_settlement.sql")
+	require.NoError(t, err)
+	text := strings.ToLower(string(source))
+	require.Contains(t, text, "fresh rollout")
+	require.Contains(t, text, "idempotent")
+	require.NotContains(t, text, "re-application upgrades")
+	require.NotContains(t, text, "early migration-175 installations")
 }
 
 func TestApplyMigrations_DelegatesToApplyMigrationsFS(t *testing.T) {

@@ -293,15 +293,29 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 	args = append(args, limit)
 	query := fmt.Sprintf(`
 		WITH target AS (
-			SELECT id
-			FROM usage_logs
+			SELECT ul.id
+			FROM usage_logs ul
 			WHERE %s
-			ORDER BY created_at ASC, id ASC
+			AND NOT EXISTS (
+				SELECT 1 FROM video_task_refund_reporting_jobs j
+				WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+			)
+			ORDER BY ul.created_at ASC, ul.id ASC
+			FOR UPDATE OF ul SKIP LOCKED
 			LIMIT $%d
+		), deleted_jobs AS (
+			DELETE FROM video_task_refund_reporting_jobs j
+			USING target
+			WHERE j.usage_log_id=target.id AND j.completed_at IS NOT NULL
+			RETURNING j.id
 		)
-		DELETE FROM usage_logs
-		WHERE id IN (SELECT id FROM target)
-		RETURNING id
+		DELETE FROM usage_logs ul
+		WHERE ul.id IN (SELECT id FROM target)
+		AND NOT EXISTS (
+			SELECT 1 FROM video_task_refund_reporting_jobs j
+			WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+		)
+		RETURNING ul.id
 	`, whereClause, len(args))
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)

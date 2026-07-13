@@ -362,6 +362,25 @@ func (s *BillingCacheSuite) TestUpdateSubscriptionUsage_ErrorPropagation() {
 	})
 }
 
+func (s *BillingCacheSuite) TestUserPlatformQuotaRevisionFinalizeIsAtomicallyFenced() {
+	rdb := testRedis(s.T())
+	cache := NewBillingCache(rdb).(*billingCache)
+	ctx := context.Background()
+	key := service.UserPlatformQuotaKey{UserID: 901, Platform: service.PlatformOpenAI}
+	require.NoError(s.T(), cache.SetUserPlatformQuotaCache(ctx, key.UserID, key.Platform, &service.UserPlatformQuotaCacheEntry{Version: 4, Revision: 7, SchemaVersion: service.UserPlatformQuotaCacheSchemaV1}, time.Minute))
+	require.NoError(s.T(), cache.FinalizeUserPlatformQuotaFlush(ctx, key, 4, service.UserPlatformQuotaCacheSchemaV1, 8, true))
+	entry, ok, err := cache.GetUserPlatformQuotaCache(ctx, key.UserID, key.Platform)
+	require.NoError(s.T(), err)
+	require.True(s.T(), ok)
+	require.Equal(s.T(), int64(8), entry.Revision)
+
+	require.NoError(s.T(), cache.IncrUserPlatformQuotaUsageCache(ctx, key.UserID, key.Platform, 1, time.Minute, true))
+	require.NoError(s.T(), cache.FinalizeUserPlatformQuotaFlush(ctx, key, 4, service.UserPlatformQuotaCacheSchemaV1, 9, false))
+	_, ok, err = cache.GetUserPlatformQuotaCache(ctx, key.UserID, key.Platform)
+	require.NoError(s.T(), err)
+	require.True(s.T(), ok, "newer cache mutation must survive stale conflict finalization")
+}
+
 func TestBillingCacheSuite(t *testing.T) {
 	suite.Run(t, new(BillingCacheSuite))
 }

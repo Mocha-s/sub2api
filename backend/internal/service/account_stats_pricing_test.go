@@ -4,11 +4,26 @@ package service
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestApplyVideoAccountStatsPricingPreservesBaseAndRoundsAppliedCost(t *testing.T) {
+	seconds := 3
+	unit := 0.1234567891
+	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: seconds, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1.234567891}
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &unit})
+	require.Equal(t, unit, quote.AccountUnitPriceUSD)
+	require.Equal(t, 0.3703703673, quote.AccountBaseCostUSD)
+	require.Equal(t, 0.45724736, quote.AccountCostUSD)
+
+	quote.AccountRateMultiplier = math.Inf(1)
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &unit})
+	require.Equal(t, 0.0, quote.AccountCostUSD)
+}
 
 // ---------------------------------------------------------------------------
 // matchAccountStatsRule
@@ -323,6 +338,98 @@ func TestCalculateStatsCost_ImageBilling_PriceNil(t *testing.T) {
 	}
 	result := calculateStatsCost(pricing, UsageTokens{}, 1)
 	require.Nil(t, result)
+}
+
+func TestCalculateStatsCost_VideoBillingUsesDefaultPriceAndOutputCount(t *testing.T) {
+	price := 0.08
+	duration := 5
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+	usage := &UsageLog{VideoCount: 3, VideoDurationSeconds: &duration}
+
+	result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, usage)
+
+	require.NotNil(t, result)
+	require.InDelta(t, 1.2, *result, 1e-12)
+}
+
+func TestCalculateStatsCost_VideoBillingResolutionTierOverridesDefault(t *testing.T) {
+	defaultPrice, tierPrice := 0.08, 0.10
+	duration, resolution := 5, " 1080P "
+	pricing := &ChannelModelPricing{
+		BillingMode: BillingModeVideo, VideoPricePerSecond: &defaultPrice,
+		Intervals: []PricingInterval{{TierLabel: "1080p", VideoPricePerSecond: &tierPrice}},
+	}
+	usage := &UsageLog{VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration}
+
+	result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, usage)
+
+	require.NotNil(t, result)
+	require.InDelta(t, 0.5, *result, 1e-12)
+}
+
+func TestCalculateStatsCost_VideoBillingMetadataFallbacks(t *testing.T) {
+	price := 0.08
+	validDuration, invalidDuration := 5, 0
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+	tests := []struct {
+		name  string
+		usage *UsageLog
+		want  *float64
+	}{
+		{name: "zero output count defaults to one", usage: &UsageLog{VideoDurationSeconds: &validDuration}, want: testPtrFloat64(0.4)},
+		{name: "missing duration does not override", usage: &UsageLog{VideoCount: 1}},
+		{name: "invalid duration does not override", usage: &UsageLog{VideoCount: 1, VideoDurationSeconds: &invalidDuration}},
+		{name: "missing usage does not override"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, tt.usage)
+			if tt.want == nil {
+				require.Nil(t, result)
+				return
+			}
+			require.NotNil(t, result)
+			require.InDelta(t, *tt.want, *result, 1e-12)
+		})
+	}
+}
+
+func TestCalculateStatsCost_VideoBillingRejectsCorruptOutputCount(t *testing.T) {
+	price := 0.08
+	duration := 5
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+
+	valid := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, &UsageLog{VideoCount: VideoTaskMaxOutputs, VideoDurationSeconds: &duration})
+	invalid := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, &UsageLog{VideoCount: VideoTaskMaxOutputs + 1, VideoDurationSeconds: &duration})
+
+	require.NotNil(t, valid)
+	require.Nil(t, invalid)
+}
+
+func TestApplyVideoAccountStatsPricingNormalizesBaseToTenDecimals(t *testing.T) {
+	price := 0.12345678919
+	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: 1, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1}
+
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price})
+
+	require.Equal(t, 0.1234567892, quote.AccountUnitPriceUSD)
+	require.Equal(t, 0.1234567892, quote.AccountBaseCostUSD)
+}
+
+func TestApplyVideoAccountStatsPricingKeepsCustomerGrossDistinctAndAppliesAccountMultiplierOnce(t *testing.T) {
+	price := 0.10
+	quote := VideoTaskQuote{
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 2},
+		GrossCostUSD: 4, ActualCostUSD: 2, AccountCostUSD: 1, AccountRateMultiplier: 1.25,
+	}
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+
+	applyVideoAccountStatsPricing(&quote, pricing)
+
+	require.Equal(t, 4.0, quote.GrossCostUSD)
+	require.Equal(t, 2.0, quote.ActualCostUSD)
+	require.InDelta(t, 1.0, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, 1.25, quote.AccountCostUSD, 1e-12)
 }
 
 func TestCalculateStatsCost_DefaultBillingMode_FallsToToken(t *testing.T) {

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"strings"
+
+	"github.com/shopspring/decimal"
 )
 
 // resolveAccountStatsCost 计算账号统计定价费用。
@@ -160,15 +162,81 @@ func isPlatformMatch(queryPlatform, pricingPlatform string) bool {
 
 // calculateStatsCost 使用给定的定价计算费用（不含任何倍率，原始费用）。
 func calculateStatsCost(pricing *ChannelModelPricing, tokens UsageTokens, requestCount int) *float64 {
+	return calculateStatsCostForUsage(pricing, tokens, requestCount, nil)
+}
+
+func calculateStatsCostForUsage(pricing *ChannelModelPricing, tokens UsageTokens, requestCount int, usage *UsageLog) *float64 {
 	if pricing == nil {
 		return nil
 	}
 	switch pricing.BillingMode {
 	case BillingModePerRequest, BillingModeImage:
 		return calculatePerRequestStatsCost(pricing, requestCount)
+	case BillingModeVideo:
+		return calculateVideoStatsCost(pricing, usage)
 	default:
 		return calculateTokenStatsCost(pricing, tokens)
 	}
+}
+
+func calculateVideoStatsCost(pricing *ChannelModelPricing, usage *UsageLog) *float64 {
+	if usage == nil || usage.VideoDurationSeconds == nil || *usage.VideoDurationSeconds <= 0 {
+		return nil
+	}
+	resolution := ""
+	if usage.VideoResolution != nil {
+		resolution = NormalizeVideoResolutionTier(*usage.VideoResolution)
+	}
+	unitPrice := pricing.VideoPricePerSecond
+	for i := range pricing.Intervals {
+		interval := &pricing.Intervals[i]
+		if resolution != "" && NormalizeVideoResolutionTier(interval.TierLabel) == resolution && interval.VideoPricePerSecond != nil {
+			unitPrice = interval.VideoPricePerSecond
+			break
+		}
+	}
+	if unitPrice == nil || *unitPrice <= 0 || !validVideoPriceMultiplier(*unitPrice) {
+		return nil
+	}
+	count := usage.VideoCount
+	if count < 1 {
+		count = 1
+	}
+	if count > VideoTaskMaxOutputs {
+		return nil
+	}
+	costDecimal := decimal.NewFromFloat(*unitPrice).Mul(decimal.NewFromInt(int64(*usage.VideoDurationSeconds))).Mul(decimal.NewFromInt(int64(count))).Round(10)
+	cost, _ := costDecimal.Float64()
+	if cost <= 0 || !validVideoPriceMultiplier(cost) {
+		return nil
+	}
+	return &cost
+}
+
+func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelPricing) {
+	if quote == nil || pricing == nil {
+		return
+	}
+	duration, resolution := quote.Effective.Seconds, quote.Effective.Resolution
+	usage := &UsageLog{VideoCount: quote.Effective.VideoCount, VideoResolution: &resolution, VideoDurationSeconds: &duration}
+	base := calculateVideoStatsCost(pricing, usage)
+	if base == nil {
+		return
+	}
+	unitPrice := decimal.NewFromFloat(*base).Div(decimal.NewFromInt(int64(quote.Effective.Seconds))).Div(decimal.NewFromInt(int64(max(quote.Effective.VideoCount, 1)))).Round(10)
+	quote.AccountUnitPriceUSD, _ = unitPrice.Float64()
+	accountBase, err := NormalizeVideoTaskPricingAmount(*base)
+	if err != nil {
+		quote.AccountCostUSD = 0
+		return
+	}
+	quote.AccountBaseCostUSD = accountBase
+	accountCost, err := NormalizeVideoTaskSettlementAmount(accountBase * quote.AccountRateMultiplier)
+	if err != nil {
+		quote.AccountCostUSD = 0
+		return
+	}
+	quote.AccountCostUSD = accountCost
 }
 
 // calculatePerRequestStatsCost 按次/图片计费。

@@ -72,17 +72,35 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoStatusHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.OpenAIGateway.GrokVideoStatus(c)
-			return
+		case service.PlatformOpenAI:
+			h.VideoTask.Fetch(c)
+		default:
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": gin.H{
+					"type":    "not_found_error",
+					"message": "Videos API is not supported for this platform",
+				},
+			})
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
+	}
+	openAIVideoTaskHandler := func(next gin.HandlerFunc) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformOpenAI {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": gin.H{
+						"type":    "not_found_error",
+						"message": "Videos API is not supported for this platform",
+					},
+				})
+				return
+			}
+			next(c)
+		}
 	}
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
@@ -183,8 +201,27 @@ func RegisterGatewayRoutes(
 		gateway.POST("/images/batches/:id/cancel", h.BatchImage.Cancel)
 		gateway.DELETE("/images/batches/:id", h.BatchImage.DeleteRecord)
 		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
+		gateway.POST("/video/generations", openAIVideoTaskHandler(h.VideoTask.CreateGenerationsCompat))
+		gateway.GET("/video/generations", openAIVideoTaskHandler(h.VideoTask.List))
+		gateway.POST("/video/generations/estimate", openAIVideoTaskHandler(h.VideoTask.EstimateGenerationsCompat))
+		gateway.POST("/video/generations/references", openAIVideoTaskHandler(h.VideoTask.ReferencesGenerationsCompat))
+		gateway.POST("/video/generations/material-assets", openAIVideoTaskHandler(h.VideoTask.MaterialAssetsGenerationsCompat))
+		gateway.POST("/video/generations/:request_id/refresh", openAIVideoTaskHandler(h.VideoTask.Refresh))
+		gateway.POST("/video/generations/:request_id/cancel", openAIVideoTaskHandler(h.VideoTask.Cancel))
+		gateway.GET("/video/generations/:request_id", openAIVideoTaskHandler(h.VideoTask.Fetch))
+		gateway.GET("/video/generations/:request_id/content", openAIVideoTaskHandler(h.VideoTask.Content))
+		gateway.POST("/videos", openAIVideoTaskHandler(h.VideoTask.Create))
+		gateway.GET("/videos", openAIVideoTaskHandler(h.VideoTask.List))
+		gateway.POST("/videos/estimate", openAIVideoTaskHandler(h.VideoTask.Estimate))
+		gateway.POST("/videos/references", openAIVideoTaskHandler(h.VideoTask.References))
+		gateway.POST("/videos/material-assets", openAIVideoTaskHandler(h.VideoTask.MaterialAssets))
 		gateway.POST("/videos/generations", videoGenerationHandler)
+		gateway.GET("/videos/generations/:request_id", openAIVideoTaskHandler(h.VideoTask.Fetch))
+		gateway.GET("/videos/generations/:request_id/content", openAIVideoTaskHandler(h.VideoTask.Content))
+		gateway.POST("/videos/:request_id/refresh", openAIVideoTaskHandler(h.VideoTask.Refresh))
+		gateway.POST("/videos/:request_id/cancel", openAIVideoTaskHandler(h.VideoTask.Cancel))
 		gateway.GET("/videos/:request_id", videoStatusHandler)
+		gateway.GET("/videos/:request_id/content", openAIVideoTaskHandler(h.VideoTask.Content))
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -248,8 +285,27 @@ func RegisterGatewayRoutes(
 	})
 	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imagesHandler)
 	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, imagesHandler)
+	r.POST("/video/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.CreateGenerationsCompat))
+	r.GET("/video/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.List))
+	r.POST("/video/generations/estimate", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.EstimateGenerationsCompat))
+	r.POST("/video/generations/references", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.ReferencesGenerationsCompat))
+	r.POST("/video/generations/material-assets", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.MaterialAssetsGenerationsCompat))
+	r.POST("/video/generations/:request_id/refresh", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Refresh))
+	r.POST("/video/generations/:request_id/cancel", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Cancel))
+	r.GET("/video/generations/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Fetch))
+	r.GET("/video/generations/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Content))
+	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Create))
+	r.GET("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.List))
+	r.POST("/videos/estimate", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Estimate))
+	r.POST("/videos/references", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.References))
+	r.POST("/videos/material-assets", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.MaterialAssets))
 	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoGenerationHandler)
+	r.GET("/videos/generations/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Fetch))
+	r.GET("/videos/generations/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Content))
+	r.POST("/videos/:request_id/refresh", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Refresh))
+	r.POST("/videos/:request_id/cancel", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Cancel))
 	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoStatusHandler)
+	r.GET("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, openAIVideoTaskHandler(h.VideoTask.Content))
 
 	// Antigravity 模型列表
 	r.GET("/antigravity/models", gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.AntigravityModels)

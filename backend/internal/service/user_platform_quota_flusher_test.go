@@ -48,6 +48,9 @@ func (m *mockQuotaDirtyCache) BatchGetUserPlatformQuotaCache(_ context.Context, 
 	}
 	return m.getEntries, nil
 }
+func (m *mockQuotaDirtyCache) FinalizeUserPlatformQuotaFlush(context.Context, UserPlatformQuotaKey, int64, int64, int64, bool) error {
+	return nil
+}
 
 // ---------------------------------------------------------------------------
 // Mock: quotaSnapshotWriter
@@ -61,6 +64,17 @@ type mockQuotaSnapshotWriter struct {
 func (m *mockQuotaSnapshotWriter) BatchSnapshotUsage(_ context.Context, snaps []UserPlatformQuotaSnapshot, _ time.Time) error {
 	m.receivedSnaps = append(m.receivedSnaps, snaps...)
 	return m.returnErr
+}
+func (m *mockQuotaSnapshotWriter) CompareAndSwapUsageSnapshots(_ context.Context, snaps []UserPlatformQuotaSnapshot) ([]UserPlatformQuotaSnapshotResult, error) {
+	if m.returnErr != nil {
+		return nil, m.returnErr
+	}
+	m.receivedSnaps = append(m.receivedSnaps, snaps...)
+	results := make([]UserPlatformQuotaSnapshotResult, len(snaps))
+	for i, snapshot := range snaps {
+		results[i] = UserPlatformQuotaSnapshotResult{UserID: snapshot.UserID, Platform: snapshot.Platform, Revision: snapshot.Revision + 1, Applied: true}
+	}
+	return results, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +92,19 @@ func makeEntry(daily, weekly, monthly float64) *UserPlatformQuotaCacheEntry {
 		DailyWindowStart:   flusherPtrTime(now),
 		WeeklyWindowStart:  flusherPtrTime(now),
 		MonthlyWindowStart: flusherPtrTime(now),
+		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+	}
+}
+
+func TestFlusher_OldSchemaNeverReachesDatabase(t *testing.T) {
+	key := UserPlatformQuotaKey{UserID: 1, Platform: PlatformOpenAI}
+	entry := makeEntry(99, 99, 99)
+	entry.SchemaVersion = 0
+	cache := &mockQuotaDirtyCache{popSequence: [][]UserPlatformQuotaKey{{key}}, getEntries: []*UserPlatformQuotaCacheEntry{entry}}
+	writer := &mockQuotaSnapshotWriter{}
+	newTestFlusher(cache, writer).flush()
+	if len(writer.receivedSnaps) != 0 {
+		t.Fatalf("old schema reached DB: %+v", writer.receivedSnaps)
 	}
 }
 

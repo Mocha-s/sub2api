@@ -115,7 +115,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
-	if !isGrokVideoUsageResult(result, nil) {
+	if !isVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
 
@@ -148,6 +148,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
+	accountRateMultiplier := account.BillingRateMultiplier()
+	multiplier = effectiveRequestRateMultiplier(account, multiplier)
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
 	// 不并入上面的 Resolve，以免污染 user:group 倍率缓存。
 	baseMultiplier := multiplier
@@ -204,7 +206,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
-	accountRateMultiplier := account.BillingRateMultiplier()
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	if result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
@@ -242,11 +243,22 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:     optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:  result.ImageSizeBreakdown,
 	}
-	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
+	quote, hasVideoQuote := videoTaskQuoteFromForwardResult(result)
+	if hasVideoQuote {
+		accountRateMultiplier = quote.AccountRateMultiplier
+	}
+	isVideoUsage := hasVideoQuote || isGrokVideoUsageResult(result, billingModels)
 	if isVideoUsage {
-		usageLog.VideoCount = result.VideoCount
-		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(result.VideoResolution))
+		videoCount := result.VideoCount
+		videoResolution := NormalizeVideoBillingResolutionOrDefault(result.VideoResolution)
 		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
+		if hasVideoQuote {
+			videoCount = quote.Effective.VideoCount
+			videoResolution = quote.Effective.Resolution
+			videoDurationSeconds = quote.Effective.Seconds
+		}
+		usageLog.VideoCount = videoCount
+		usageLog.VideoResolution = optionalTrimmedStringPtr(videoResolution)
 		usageLog.VideoDurationSeconds = &videoDurationSeconds
 	}
 	if cost != nil {
@@ -258,7 +270,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.TotalCost = cost.TotalCost
 		usageLog.ActualCost = cost.ActualCost
 	}
-	if isVideoUsage && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
+	if hasVideoQuote && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
+		usageLog.RateMultiplier = quote.RateMultiplier
+	} else if isVideoUsage && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = videoMultiplier
 	} else if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
@@ -316,6 +330,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			tokens, cost.TotalCost,
 		)
 	}
+	if hasVideoQuote {
+		accountCost := quote.AccountCostUSD
+		usageLog.AccountStatsCost = &accountCost
+	}
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
@@ -367,6 +385,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	serviceTier string,
 ) (*CostBreakdown, error) {
 	billingModel := firstUsageBillingModel(billingModels)
+	if _, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, result, videoMultiplier), nil
+	}
 	if isGrokVideoUsageResult(result, billingModels) {
 		if resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey); resolved == nil || resolved.Mode != BillingModeToken {
 			return s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, result, videoMultiplier), nil
@@ -415,6 +436,20 @@ func isGrokVideoUsageResult(result *OpenAIForwardResult, billingModels []string)
 		}
 	}
 	return false
+}
+
+func isVideoUsageResult(result *OpenAIForwardResult, billingModels []string) bool {
+	if _, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return true
+	}
+	return isGrokVideoUsageResult(result, billingModels)
+}
+
+func videoTaskQuoteFromForwardResult(result *OpenAIForwardResult) (VideoTaskQuote, bool) {
+	if result == nil || !validVideoTaskQuote(result.videoTaskQuote) {
+		return VideoTaskQuote{}, false
+	}
+	return *result.videoTaskQuote, true
 }
 
 func isUsagePricingUnavailableError(err error) bool {
@@ -500,6 +535,13 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
+	if quote, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return &CostBreakdown{
+			TotalCost:   quote.GrossCostUSD,
+			ActualCost:  quote.ActualCostUSD,
+			BillingMode: string(BillingModeVideo),
+		}
+	}
 	videoCount := result.VideoCount
 	if videoCount <= 0 {
 		videoCount = 1

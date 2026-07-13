@@ -40,6 +40,18 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
 }
 
+func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskPoller {
+	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai), settlement)
+	poller.Start()
+	return poller
+}
+
+func ProvideVideoTaskSettlementReconciler(repo VideoTaskSettlementRepository, settlement *VideoTaskSettlementService) *VideoTaskSettlementReconciler {
+	reconciler := NewVideoTaskSettlementReconciler(repo, settlement)
+	reconciler.Start()
+	return reconciler
+}
+
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
@@ -581,6 +593,10 @@ var ProviderSet = wire.NewSet(
 	NewBatchImageDownloadService,
 	ProvideBatchImageCleanupService,
 	ProvideBatchImageWorkerRuntime,
+	NewVideoTaskSettlementService,
+	ProvideVideoTaskSettlementReconciler,
+	NewVideoTaskService,
+	ProvideVideoTaskPoller,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideOpenAIOAuthService,

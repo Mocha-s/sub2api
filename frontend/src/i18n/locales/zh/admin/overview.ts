@@ -919,6 +919,7 @@ export default {
         finalPricePreview: '最终单张价格预览',
         notConfigured: '未配置'
       },
+      allowVideoGeneration: '允许当前分组生成视频',
       videoPricing: {
         title: '视频生成计费',
         description:
