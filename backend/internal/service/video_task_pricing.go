@@ -156,17 +156,17 @@ func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *
 	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
 	}
-
-	payload, err := decodeVideoPricingPayload(body)
-	if err != nil {
-		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
-	}
 	unitPrice := 0.0
 	if pricing.PerRequestPrice != nil {
 		unitPrice = *pricing.PerRequestPrice
 	}
 	if !validVideoPriceMultiplier(unitPrice) {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request price must be finite and non-negative")
+	}
+
+	payload, err := decodeVideoPricingPayload(body)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
 	}
 
 	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice)

@@ -276,6 +276,16 @@ func TestResolveVideoTaskQuotePerRequestRejectsNonfinitePrice(t *testing.T) {
 	}
 }
 
+func TestResolveVideoTaskQuotePerRequestPrioritizesNonfinitePriceOverMalformedBody(t *testing.T) {
+	nan := math.NaN()
+	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &nan}
+
+	_, err := ResolveVideoTaskQuote([]byte(`{`), "seedance-2.0", pricing, 1, 1)
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+}
+
 func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *testing.T) {
 	price := 65.0
 	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}
