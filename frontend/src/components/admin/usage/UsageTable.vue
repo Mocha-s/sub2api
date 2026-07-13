@@ -1,5 +1,5 @@
 <template>
-  <div class="card overflow-hidden">
+  <div :class="flat ? '' : 'card overflow-hidden'">
     <div
       v-if="showIpGeoToolbar"
       class="flex items-center justify-end gap-2 border-b border-gray-200 px-4 py-2 dark:border-dark-700"
@@ -111,8 +111,11 @@
         </template>
 
         <template #cell-tokens="{ row }">
+          <div v-if="isVideoUsage(row)" class="text-sm font-medium text-gray-900 dark:text-white">
+            {{ formatVideoMetadata(row) }}
+          </div>
           <!-- 图片生成请求（仅按次计费时显示图片格式） -->
-          <div v-if="isImageUsage(row)" class="flex items-center gap-1.5">
+          <div v-else-if="isImageUsage(row)" class="flex items-center gap-1.5">
             <svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -167,31 +170,57 @@
         <template #cell-cost="{ row }">
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
+              <span class="font-medium text-green-600 dark:text-green-400">${{ netActualCost(row).toFixed(6) }}</span>
+              <span
+                v-if="isRefunded(row)"
+                class="inline-flex items-center rounded bg-gray-100 px-1 py-px text-[10px] font-medium leading-tight text-gray-600 ring-1 ring-inset ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600"
+                :aria-label="t('usage.refundedLabel')"
+              >{{ t('usage.refunded') }}</span>
               <!-- Cost Detail Tooltip -->
-              <div
-                class="group relative"
-                @mouseenter="showTooltip($event, row)"
-                @mouseleave="hideTooltip"
+              <button
+                type="button"
+                data-testid="cost-details-trigger"
+                class="group relative inline-flex h-8 w-8 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-dark-900"
+                :aria-label="t('usage.costDetails')"
+                :aria-expanded="tooltipVisible && tooltipData?.request_id === row.request_id"
+                :aria-controls="costTooltipId"
+                :aria-describedby="tooltipVisible && tooltipData?.request_id === row.request_id ? costTooltipId : undefined"
+                @mouseenter="showTooltip($event, row, 'hover')"
+                @mouseleave="hideTooltip('hover')"
+                @focus="showTooltip($event, row, 'focus')"
+                @blur="hideTooltip('focus')"
+                @click="toggleTooltip($event, row)"
+                @keydown.esc.prevent.stop="hideTooltip()"
               >
                 <div class="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-blue-100 dark:bg-gray-700 dark:group-hover:bg-blue-900/50">
                   <Icon name="infoCircle" size="xs" class="text-gray-400 group-hover:text-blue-500 dark:text-gray-500 dark:group-hover:text-blue-400" />
                 </div>
-              </div>
+              </button>
             </div>
             <div v-if="showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
-              A ${{ accountBilled(row).toFixed(6) }}
+              A ${{ netAccountCost(row).toFixed(6) }}
             </div>
           </div>
         </template>
 
-        <template #cell-first_token="{ row }">
-          <span v-if="row.first_token_ms != null" class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.first_token_ms) }}</span>
-          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
-        </template>
-
-        <template #cell-duration="{ row }">
-          <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.duration_ms) }}</span>
+        <!-- 合并首字/总耗时的健康度列：左侧色条上端随首字档、下端随总耗时档，中段(40%-60%)短渐变过渡，便于纵向扫视整体健康状况 -->
+        <template #cell-latency="{ row }">
+          <div class="flex items-stretch gap-2">
+            <span
+              class="w-1 shrink-0 rounded-full"
+              :class="row.first_token_ms != null
+                ? ['bg-gradient-to-b from-40% to-60%', LATENCY_BAR_FROM_CLASSES[firstTokenSeverity(row.first_token_ms)], LATENCY_BAR_TO_CLASSES[durationSeverity(row.duration_ms ?? 0)]]
+                : LATENCY_BAR_CLASSES[durationSeverity(row.duration_ms ?? 0)]"
+              aria-hidden="true"
+            ></span>
+            <div class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
+              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
+              <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
+              <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
+              <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+            </div>
+          </div>
         </template>
 
         <template #cell-created_at="{ value }">
@@ -296,13 +325,18 @@
   <Teleport to="body">
     <div
       v-if="tooltipVisible"
-      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      ref="costTooltipRef"
+      :id="costTooltipId"
+      role="tooltip"
+      :data-side="tooltipSide"
+      class="fixed z-[9999] pointer-events-none"
       :style="{
         left: tooltipPosition.x + 'px',
-        top: tooltipPosition.y + 'px'
+        top: tooltipPosition.y + 'px',
+        visibility: tooltipPositioned ? 'visible' : 'hidden'
       }"
     >
-      <div class="whitespace-nowrap rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+      <div class="cost-tooltip max-h-[calc(100vh-1rem)] max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto whitespace-normal rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-gray-700 pb-1.5">
@@ -372,6 +406,22 @@
               <span class="text-gray-400">{{ t('usage.unitPrice') }}</span>
               <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
             </div>
+            <template v-if="tooltipData && isRefunded(tooltipData)">
+              <div data-testid="customer-refund-details" class="flex flex-wrap flex-col gap-1.5">
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-gray-700 pt-1.5">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.grossCost') }}</span>
+                  <span class="font-medium text-white">${{ (tooltipData.actual_cost ?? 0).toFixed(6) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.refund') }}</span>
+                  <span class="font-medium text-white">-${{ (tooltipData.refunded_cost ?? 0).toFixed(6) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.netCost') }}</span>
+                  <span class="font-semibold text-green-400">${{ netActualCost(tooltipData).toFixed(6) }}</span>
+                </div>
+              </div>
+            </template>
             <div v-if="tooltipData && tooltipData.cache_creation_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheCreationCost') }}</span>
               <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}</span>
@@ -396,7 +446,7 @@
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
-            <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(6) || '0.000000' }}</span>
+            <span class="font-semibold text-green-400">${{ netActualCost(tooltipData).toFixed(6) }}</span>
           </div>
           <!-- Account billing (separated from user billing) -->
           <template v-if="showAccountBilling">
@@ -406,24 +456,41 @@
             </div>
             <div class="flex items-center justify-between gap-6">
               <span class="text-gray-400">{{ t('usage.accountBilled') }}</span>
-              <span class="font-semibold text-green-400">
-                ${{ accountBilled({
-                  total_cost: tooltipData?.total_cost,
-                  account_stats_cost: tooltipData?.account_stats_cost,
-                  account_rate_multiplier: tooltipData?.account_rate_multiplier,
-                }).toFixed(6) }}
-              </span>
+              <span class="font-semibold text-green-400">${{ netAccountCost(tooltipData).toFixed(6) }}</span>
             </div>
+            <template v-if="tooltipData && isRefunded(tooltipData)">
+              <div data-testid="account-refund-details" class="flex flex-wrap flex-col gap-1.5">
+                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.grossCost') }}</span>
+                  <span class="font-medium text-white">${{ grossAccountCost(tooltipData).toFixed(6) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.refund') }}</span>
+                  <span class="font-medium text-white">-${{ (tooltipData.refunded_account_cost ?? 0).toFixed(6) }}</span>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                  <span class="min-w-0 text-gray-400">{{ t('usage.netCost') }}</span>
+                  <span class="font-semibold text-green-400">${{ netAccountCost(tooltipData).toFixed(6) }}</span>
+                </div>
+              </div>
+            </template>
           </template>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div
+          v-if="tooltipSide === 'right'"
+          class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"
+        ></div>
+        <div
+          v-else
+          class="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-l-[6px] border-t-[6px] border-b-transparent border-l-gray-900 border-t-transparent dark:border-l-gray-800"
+        ></div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
@@ -431,12 +498,24 @@ import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
+  LATENCY_BAR_CLASSES,
+  LATENCY_BAR_FROM_CLASSES,
+  LATENCY_BAR_TO_CLASSES,
+  LATENCY_TEXT_CLASSES,
+  durationSeverity,
+  firstTokenSeverity,
+} from '@/utils/latencyHealth'
+import {
   BILLING_MODE_TOKEN,
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
   getDisplayBillingMode,
   imageUnitPrice,
+  isVideoUsage,
+  grossAccountCost,
+  netAccountCost,
+  netActualCost,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -448,14 +527,6 @@ import {
   textOutputTokens,
   hasImageOutputCost,
 } from '@/utils/imageUsage'
-
-/** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
-function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {
-  const base = row.account_stats_cost != null ? row.account_stats_cost : (row.total_cost ?? 0)
-  const result = base * (row.account_rate_multiplier ?? 1)
-  return Number.isNaN(result) ? 0 : result
-}
-
 
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -474,6 +545,8 @@ interface Props {
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
   showUpstreamEndpoint?: boolean
+  /** 嵌入统一卡片内使用：去掉自身卡片外观 */
+  flat?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -482,7 +555,8 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortKey: '',
   defaultSortOrder: 'asc',
   showAccountBilling: true,
-  showUpstreamEndpoint: true
+  showUpstreamEndpoint: true,
+  flat: false
 })
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
@@ -493,6 +567,16 @@ const { t } = useI18n()
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
+
+const isRefunded = (row: AdminUsageLog | null | undefined): boolean =>
+  Boolean(row?.refunded_at || (row?.refunded_cost ?? 0) > 0 || (row?.refunded_total_cost ?? 0) > 0 || (row?.refunded_account_cost ?? 0) > 0)
+
+const formatVideoMetadata = (row: AdminUsageLog): string => {
+  const duration = row.video_duration_seconds == null ? '-' : `${row.video_duration_seconds}s`
+  const resolution = row.video_resolution || '-'
+  const count = row.video_count ?? 0
+  return `${duration} · ${resolution} · ${t('usage.videoCount', { count }, count)}`
+}
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
 
@@ -522,6 +606,90 @@ const handleBatchFetchIpGeo = async () => {
 const tooltipVisible = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipData = ref<AdminUsageLog | null>(null)
+const costTooltipRef = ref<HTMLElement | null>(null)
+const costTooltipTriggerRef = ref<HTMLElement | null>(null)
+const tooltipPositioned = ref(false)
+const tooltipSide = ref<'left' | 'right'>('right')
+const costTooltipId = `usage-cost-tooltip-${getCurrentInstance()?.uid ?? 'fallback'}`
+type CostTooltipInteraction = 'hover' | 'focus' | 'pinned'
+const tooltipInteraction = ref<CostTooltipInteraction | null>(null)
+const TOOLTIP_VIEWPORT_PADDING = 8
+const TOOLTIP_GAP = 8
+let tooltipViewportListenersAttached = false
+let tooltipOutsideListenerAttached = false
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), Math.max(min, max))
+
+const updateTooltipPosition = async () => {
+  await nextTick()
+  if (!tooltipVisible.value || !costTooltipRef.value || !costTooltipTriggerRef.value) return
+
+  const triggerRect = costTooltipTriggerRef.value.getBoundingClientRect()
+  const measuredRect = costTooltipRef.value.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const maxWidth = Math.max(0, viewportWidth - TOOLTIP_VIEWPORT_PADDING * 2)
+  const maxHeight = Math.max(0, viewportHeight - TOOLTIP_VIEWPORT_PADDING * 2)
+  const tooltipWidth = Math.min(measuredRect.width, maxWidth)
+  const tooltipHeight = Math.min(measuredRect.height, maxHeight)
+
+  const rightX = triggerRect.right + TOOLTIP_GAP
+  if (rightX + tooltipWidth <= viewportWidth - TOOLTIP_VIEWPORT_PADDING) {
+    tooltipSide.value = 'right'
+    tooltipPosition.value.x = rightX
+  } else {
+    tooltipSide.value = 'left'
+    tooltipPosition.value.x = clamp(
+      triggerRect.left - TOOLTIP_GAP - tooltipWidth,
+      TOOLTIP_VIEWPORT_PADDING,
+      viewportWidth - TOOLTIP_VIEWPORT_PADDING - tooltipWidth
+    )
+  }
+
+  const centeredY = triggerRect.top + triggerRect.height / 2 - tooltipHeight / 2
+  const aboveY = triggerRect.top - TOOLTIP_GAP - tooltipHeight
+  tooltipPosition.value.y = centeredY + tooltipHeight > viewportHeight - TOOLTIP_VIEWPORT_PADDING && aboveY >= TOOLTIP_VIEWPORT_PADDING
+    ? aboveY
+    : clamp(centeredY, TOOLTIP_VIEWPORT_PADDING, viewportHeight - TOOLTIP_VIEWPORT_PADDING - tooltipHeight)
+  tooltipPositioned.value = true
+}
+
+const handleTooltipViewportChange = () => {
+  if (tooltipVisible.value) void updateTooltipPosition()
+}
+
+const attachTooltipViewportListeners = () => {
+  if (tooltipViewportListenersAttached) return
+  window.addEventListener('resize', handleTooltipViewportChange)
+  window.addEventListener('scroll', handleTooltipViewportChange, true)
+  tooltipViewportListenersAttached = true
+}
+
+const detachTooltipViewportListeners = () => {
+  if (!tooltipViewportListenersAttached) return
+  window.removeEventListener('resize', handleTooltipViewportChange)
+  window.removeEventListener('scroll', handleTooltipViewportChange, true)
+  tooltipViewportListenersAttached = false
+}
+
+const handleTooltipOutsidePointerDown = (event: PointerEvent) => {
+  if (tooltipInteraction.value !== 'pinned') return
+  const target = event.target as Node | null
+  if (!target || costTooltipTriggerRef.value?.contains(target) || costTooltipRef.value?.contains(target)) return
+  hideTooltip()
+}
+
+const attachTooltipOutsideListener = () => {
+  if (tooltipOutsideListenerAttached) return
+  document.addEventListener('pointerdown', handleTooltipOutsidePointerDown)
+  tooltipOutsideListenerAttached = true
+}
+
+const detachTooltipOutsideListener = () => {
+  if (!tooltipOutsideListenerAttached) return
+  document.removeEventListener('pointerdown', handleTooltipOutsidePointerDown)
+  tooltipOutsideListenerAttached = false
+}
 
 // Tooltip state - token
 const tokenTooltipVisible = ref(false)
@@ -552,26 +720,59 @@ const formatUserAgent = (ua: string): string => {
   return ua
 }
 
+// 超过 1 分钟简化为 "Xm Ys"，免去人工换算（超过 1 小时再进位为 "Xh Ym"）
 const formatDuration = (ms: number | null | undefined): string => {
   if (ms == null) return '-'
   if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(2)}s`
+  const totalSec = Math.round(ms / 1000)
+  if (totalSec < 3600) return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
+  return `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`
 }
 
 // Cost tooltip functions
-const showTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+const showTooltip = (event: MouseEvent | FocusEvent, row: AdminUsageLog, interaction: Exclude<CostTooltipInteraction, 'pinned'>) => {
+  if (tooltipInteraction.value === 'pinned') return
   const target = event.currentTarget as HTMLElement
-  const rect = target.getBoundingClientRect()
+  costTooltipTriggerRef.value = target
   tooltipData.value = row
-  tooltipPosition.value.x = rect.right + 8
-  tooltipPosition.value.y = rect.top + rect.height / 2
   tooltipVisible.value = true
+  tooltipInteraction.value = interaction
+  tooltipPositioned.value = false
+  attachTooltipViewportListeners()
+  void updateTooltipPosition()
 }
 
-const hideTooltip = () => {
+const hideTooltip = (interaction?: Exclude<CostTooltipInteraction, 'pinned'>) => {
+  if (interaction && tooltipInteraction.value !== interaction) return
   tooltipVisible.value = false
   tooltipData.value = null
+  tooltipInteraction.value = null
+  tooltipPositioned.value = false
+  costTooltipTriggerRef.value = null
+  detachTooltipViewportListeners()
+  detachTooltipOutsideListener()
 }
+
+const toggleTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+  if (tooltipInteraction.value === 'pinned' && tooltipData.value?.request_id === row.request_id) {
+    hideTooltip()
+    return
+  }
+  costTooltipTriggerRef.value = event.currentTarget as HTMLElement
+  tooltipData.value = row
+  tooltipVisible.value = true
+  tooltipInteraction.value = 'pinned'
+  tooltipPositioned.value = false
+  attachTooltipViewportListeners()
+  attachTooltipOutsideListener()
+  void updateTooltipPosition()
+}
+
+onUnmounted(() => {
+  detachTooltipViewportListeners()
+  detachTooltipOutsideListener()
+})
 
 // Token tooltip functions
 const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {

@@ -73,6 +73,16 @@ type UsageLog struct {
 	TotalCost float64 `json:"total_cost,omitempty"`
 	// ActualCost holds the value of the "actual_cost" field.
 	ActualCost float64 `json:"actual_cost,omitempty"`
+	// RefundedCost holds the value of the "refunded_cost" field.
+	RefundedCost float64 `json:"refunded_cost,omitempty"`
+	// RefundedTotalCost holds the value of the "refunded_total_cost" field.
+	RefundedTotalCost float64 `json:"refunded_total_cost,omitempty"`
+	// RefundedAccountCost holds the value of the "refunded_account_cost" field.
+	RefundedAccountCost float64 `json:"refunded_account_cost,omitempty"`
+	// RefundReason holds the value of the "refund_reason" field.
+	RefundReason *string `json:"refund_reason,omitempty"`
+	// RefundedAt holds the value of the "refunded_at" field.
+	RefundedAt *time.Time `json:"refunded_at,omitempty"`
 	// RateMultiplier holds the value of the "rate_multiplier" field.
 	RateMultiplier float64 `json:"rate_multiplier,omitempty"`
 	// AccountRateMultiplier holds the value of the "account_rate_multiplier" field.
@@ -101,6 +111,12 @@ type UsageLog struct {
 	ImageSizeSource *string `json:"image_size_source,omitempty"`
 	// ImageSizeBreakdown holds the value of the "image_size_breakdown" field.
 	ImageSizeBreakdown map[string]int `json:"image_size_breakdown,omitempty"`
+	// 视频生成数量；>0 表示本行是视频生成用量
+	VideoCount int `json:"video_count,omitempty"`
+	// 计费用视频分辨率 480p/720p/1080p
+	VideoResolution *string `json:"video_resolution,omitempty"`
+	// 提交时请求的视频时长（秒），按秒计费的乘数
+	VideoDurationSeconds *int `json:"video_duration_seconds,omitempty"`
 	// CacheTTLOverridden holds the value of the "cache_ttl_overridden" field.
 	CacheTTLOverridden bool `json:"cache_ttl_overridden,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -192,13 +208,13 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case usagelog.FieldStream, usagelog.FieldCacheTTLOverridden:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
+		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRefundedCost, usagelog.FieldRefundedTotalCost, usagelog.FieldRefundedAccountCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount:
+		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource:
+		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldRefundReason, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
-		case usagelog.FieldCreatedAt:
+		case usagelog.FieldRefundedAt, usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -379,6 +395,38 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ActualCost = value.Float64
 			}
+		case usagelog.FieldRefundedCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field refunded_cost", values[i])
+			} else if value.Valid {
+				_m.RefundedCost = value.Float64
+			}
+		case usagelog.FieldRefundedTotalCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field refunded_total_cost", values[i])
+			} else if value.Valid {
+				_m.RefundedTotalCost = value.Float64
+			}
+		case usagelog.FieldRefundedAccountCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field refunded_account_cost", values[i])
+			} else if value.Valid {
+				_m.RefundedAccountCost = value.Float64
+			}
+		case usagelog.FieldRefundReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field refund_reason", values[i])
+			} else if value.Valid {
+				_m.RefundReason = new(string)
+				*_m.RefundReason = value.String
+			}
+		case usagelog.FieldRefundedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field refunded_at", values[i])
+			} else if value.Valid {
+				_m.RefundedAt = new(time.Time)
+				*_m.RefundedAt = value.Time
+			}
 		case usagelog.FieldRateMultiplier:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
 				return fmt.Errorf("unexpected type %T for field rate_multiplier", values[i])
@@ -473,6 +521,26 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &_m.ImageSizeBreakdown); err != nil {
 					return fmt.Errorf("unmarshal field image_size_breakdown: %w", err)
 				}
+			}
+		case usagelog.FieldVideoCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_count", values[i])
+			} else if value.Valid {
+				_m.VideoCount = int(value.Int64)
+			}
+		case usagelog.FieldVideoResolution:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field video_resolution", values[i])
+			} else if value.Valid {
+				_m.VideoResolution = new(string)
+				*_m.VideoResolution = value.String
+			}
+		case usagelog.FieldVideoDurationSeconds:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_duration_seconds", values[i])
+			} else if value.Valid {
+				_m.VideoDurationSeconds = new(int)
+				*_m.VideoDurationSeconds = int(value.Int64)
 			}
 		case usagelog.FieldCacheTTLOverridden:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -638,6 +706,25 @@ func (_m *UsageLog) String() string {
 	builder.WriteString("actual_cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ActualCost))
 	builder.WriteString(", ")
+	builder.WriteString("refunded_cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RefundedCost))
+	builder.WriteString(", ")
+	builder.WriteString("refunded_total_cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RefundedTotalCost))
+	builder.WriteString(", ")
+	builder.WriteString("refunded_account_cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RefundedAccountCost))
+	builder.WriteString(", ")
+	if v := _m.RefundReason; v != nil {
+		builder.WriteString("refund_reason=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.RefundedAt; v != nil {
+		builder.WriteString("refunded_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("rate_multiplier=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RateMultiplier))
 	builder.WriteString(", ")
@@ -697,6 +784,19 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("image_size_breakdown=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ImageSizeBreakdown))
+	builder.WriteString(", ")
+	builder.WriteString("video_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.VideoCount))
+	builder.WriteString(", ")
+	if v := _m.VideoResolution; v != nil {
+		builder.WriteString("video_resolution=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoDurationSeconds; v != nil {
+		builder.WriteString("video_duration_seconds=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("cache_ttl_overridden=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheTTLOverridden))

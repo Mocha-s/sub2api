@@ -180,6 +180,31 @@ func ActualCost(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldActualCost, v))
 }
 
+// RefundedCost applies equality check predicate on the "refunded_cost" field. It's identical to RefundedCostEQ.
+func RefundedCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedCost, v))
+}
+
+// RefundedTotalCost applies equality check predicate on the "refunded_total_cost" field. It's identical to RefundedTotalCostEQ.
+func RefundedTotalCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedTotalCost, v))
+}
+
+// RefundedAccountCost applies equality check predicate on the "refunded_account_cost" field. It's identical to RefundedAccountCostEQ.
+func RefundedAccountCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedAccountCost, v))
+}
+
+// RefundReason applies equality check predicate on the "refund_reason" field. It's identical to RefundReasonEQ.
+func RefundReason(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundReason, v))
+}
+
+// RefundedAt applies equality check predicate on the "refunded_at" field. It's identical to RefundedAtEQ.
+func RefundedAt(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedAt, v))
+}
+
 // RateMultiplier applies equality check predicate on the "rate_multiplier" field. It's identical to RateMultiplierEQ.
 func RateMultiplier(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldRateMultiplier, v))
@@ -243,6 +268,21 @@ func ImageOutputSize(v string) predicate.UsageLog {
 // ImageSizeSource applies equality check predicate on the "image_size_source" field. It's identical to ImageSizeSourceEQ.
 func ImageSizeSource(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldImageSizeSource, v))
+}
+
+// VideoCount applies equality check predicate on the "video_count" field. It's identical to VideoCountEQ.
+func VideoCount(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoCount, v))
+}
+
+// VideoResolution applies equality check predicate on the "video_resolution" field. It's identical to VideoResolutionEQ.
+func VideoResolution(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoResolution, v))
+}
+
+// VideoDurationSeconds applies equality check predicate on the "video_duration_seconds" field. It's identical to VideoDurationSecondsEQ.
+func VideoDurationSeconds(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoDurationSeconds, v))
 }
 
 // CacheTTLOverridden applies equality check predicate on the "cache_ttl_overridden" field. It's identical to CacheTTLOverriddenEQ.
@@ -1410,6 +1450,251 @@ func ActualCostLTE(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldActualCost, v))
 }
 
+// RefundedCostEQ applies the EQ predicate on the "refunded_cost" field.
+func RefundedCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedCost, v))
+}
+
+// RefundedCostNEQ applies the NEQ predicate on the "refunded_cost" field.
+func RefundedCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundedCost, v))
+}
+
+// RefundedCostIn applies the In predicate on the "refunded_cost" field.
+func RefundedCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundedCost, vs...))
+}
+
+// RefundedCostNotIn applies the NotIn predicate on the "refunded_cost" field.
+func RefundedCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundedCost, vs...))
+}
+
+// RefundedCostGT applies the GT predicate on the "refunded_cost" field.
+func RefundedCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRefundedCost, v))
+}
+
+// RefundedCostGTE applies the GTE predicate on the "refunded_cost" field.
+func RefundedCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRefundedCost, v))
+}
+
+// RefundedCostLT applies the LT predicate on the "refunded_cost" field.
+func RefundedCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRefundedCost, v))
+}
+
+// RefundedCostLTE applies the LTE predicate on the "refunded_cost" field.
+func RefundedCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRefundedCost, v))
+}
+
+// RefundedTotalCostEQ applies the EQ predicate on the "refunded_total_cost" field.
+func RefundedTotalCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedTotalCost, v))
+}
+
+// RefundedTotalCostNEQ applies the NEQ predicate on the "refunded_total_cost" field.
+func RefundedTotalCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundedTotalCost, v))
+}
+
+// RefundedTotalCostIn applies the In predicate on the "refunded_total_cost" field.
+func RefundedTotalCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundedTotalCost, vs...))
+}
+
+// RefundedTotalCostNotIn applies the NotIn predicate on the "refunded_total_cost" field.
+func RefundedTotalCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundedTotalCost, vs...))
+}
+
+// RefundedTotalCostGT applies the GT predicate on the "refunded_total_cost" field.
+func RefundedTotalCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRefundedTotalCost, v))
+}
+
+// RefundedTotalCostGTE applies the GTE predicate on the "refunded_total_cost" field.
+func RefundedTotalCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRefundedTotalCost, v))
+}
+
+// RefundedTotalCostLT applies the LT predicate on the "refunded_total_cost" field.
+func RefundedTotalCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRefundedTotalCost, v))
+}
+
+// RefundedTotalCostLTE applies the LTE predicate on the "refunded_total_cost" field.
+func RefundedTotalCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRefundedTotalCost, v))
+}
+
+// RefundedAccountCostEQ applies the EQ predicate on the "refunded_account_cost" field.
+func RefundedAccountCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedAccountCost, v))
+}
+
+// RefundedAccountCostNEQ applies the NEQ predicate on the "refunded_account_cost" field.
+func RefundedAccountCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundedAccountCost, v))
+}
+
+// RefundedAccountCostIn applies the In predicate on the "refunded_account_cost" field.
+func RefundedAccountCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundedAccountCost, vs...))
+}
+
+// RefundedAccountCostNotIn applies the NotIn predicate on the "refunded_account_cost" field.
+func RefundedAccountCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundedAccountCost, vs...))
+}
+
+// RefundedAccountCostGT applies the GT predicate on the "refunded_account_cost" field.
+func RefundedAccountCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRefundedAccountCost, v))
+}
+
+// RefundedAccountCostGTE applies the GTE predicate on the "refunded_account_cost" field.
+func RefundedAccountCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRefundedAccountCost, v))
+}
+
+// RefundedAccountCostLT applies the LT predicate on the "refunded_account_cost" field.
+func RefundedAccountCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRefundedAccountCost, v))
+}
+
+// RefundedAccountCostLTE applies the LTE predicate on the "refunded_account_cost" field.
+func RefundedAccountCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRefundedAccountCost, v))
+}
+
+// RefundReasonEQ applies the EQ predicate on the "refund_reason" field.
+func RefundReasonEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundReason, v))
+}
+
+// RefundReasonNEQ applies the NEQ predicate on the "refund_reason" field.
+func RefundReasonNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundReason, v))
+}
+
+// RefundReasonIn applies the In predicate on the "refund_reason" field.
+func RefundReasonIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundReason, vs...))
+}
+
+// RefundReasonNotIn applies the NotIn predicate on the "refund_reason" field.
+func RefundReasonNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundReason, vs...))
+}
+
+// RefundReasonGT applies the GT predicate on the "refund_reason" field.
+func RefundReasonGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRefundReason, v))
+}
+
+// RefundReasonGTE applies the GTE predicate on the "refund_reason" field.
+func RefundReasonGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRefundReason, v))
+}
+
+// RefundReasonLT applies the LT predicate on the "refund_reason" field.
+func RefundReasonLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRefundReason, v))
+}
+
+// RefundReasonLTE applies the LTE predicate on the "refund_reason" field.
+func RefundReasonLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRefundReason, v))
+}
+
+// RefundReasonContains applies the Contains predicate on the "refund_reason" field.
+func RefundReasonContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldRefundReason, v))
+}
+
+// RefundReasonHasPrefix applies the HasPrefix predicate on the "refund_reason" field.
+func RefundReasonHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldRefundReason, v))
+}
+
+// RefundReasonHasSuffix applies the HasSuffix predicate on the "refund_reason" field.
+func RefundReasonHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldRefundReason, v))
+}
+
+// RefundReasonIsNil applies the IsNil predicate on the "refund_reason" field.
+func RefundReasonIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldRefundReason))
+}
+
+// RefundReasonNotNil applies the NotNil predicate on the "refund_reason" field.
+func RefundReasonNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldRefundReason))
+}
+
+// RefundReasonEqualFold applies the EqualFold predicate on the "refund_reason" field.
+func RefundReasonEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldRefundReason, v))
+}
+
+// RefundReasonContainsFold applies the ContainsFold predicate on the "refund_reason" field.
+func RefundReasonContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldRefundReason, v))
+}
+
+// RefundedAtEQ applies the EQ predicate on the "refunded_at" field.
+func RefundedAtEQ(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundedAt, v))
+}
+
+// RefundedAtNEQ applies the NEQ predicate on the "refunded_at" field.
+func RefundedAtNEQ(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundedAt, v))
+}
+
+// RefundedAtIn applies the In predicate on the "refunded_at" field.
+func RefundedAtIn(vs ...time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundedAt, vs...))
+}
+
+// RefundedAtNotIn applies the NotIn predicate on the "refunded_at" field.
+func RefundedAtNotIn(vs ...time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundedAt, vs...))
+}
+
+// RefundedAtGT applies the GT predicate on the "refunded_at" field.
+func RefundedAtGT(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRefundedAt, v))
+}
+
+// RefundedAtGTE applies the GTE predicate on the "refunded_at" field.
+func RefundedAtGTE(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRefundedAt, v))
+}
+
+// RefundedAtLT applies the LT predicate on the "refunded_at" field.
+func RefundedAtLT(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRefundedAt, v))
+}
+
+// RefundedAtLTE applies the LTE predicate on the "refunded_at" field.
+func RefundedAtLTE(v time.Time) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRefundedAt, v))
+}
+
+// RefundedAtIsNil applies the IsNil predicate on the "refunded_at" field.
+func RefundedAtIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldRefundedAt))
+}
+
+// RefundedAtNotNil applies the NotNil predicate on the "refunded_at" field.
+func RefundedAtNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldRefundedAt))
+}
+
 // RateMultiplierEQ applies the EQ predicate on the "rate_multiplier" field.
 func RateMultiplierEQ(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldRateMultiplier, v))
@@ -2148,6 +2433,171 @@ func ImageSizeBreakdownIsNil() predicate.UsageLog {
 // ImageSizeBreakdownNotNil applies the NotNil predicate on the "image_size_breakdown" field.
 func ImageSizeBreakdownNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldImageSizeBreakdown))
+}
+
+// VideoCountEQ applies the EQ predicate on the "video_count" field.
+func VideoCountEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoCount, v))
+}
+
+// VideoCountNEQ applies the NEQ predicate on the "video_count" field.
+func VideoCountNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldVideoCount, v))
+}
+
+// VideoCountIn applies the In predicate on the "video_count" field.
+func VideoCountIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldVideoCount, vs...))
+}
+
+// VideoCountNotIn applies the NotIn predicate on the "video_count" field.
+func VideoCountNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldVideoCount, vs...))
+}
+
+// VideoCountGT applies the GT predicate on the "video_count" field.
+func VideoCountGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldVideoCount, v))
+}
+
+// VideoCountGTE applies the GTE predicate on the "video_count" field.
+func VideoCountGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldVideoCount, v))
+}
+
+// VideoCountLT applies the LT predicate on the "video_count" field.
+func VideoCountLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldVideoCount, v))
+}
+
+// VideoCountLTE applies the LTE predicate on the "video_count" field.
+func VideoCountLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldVideoCount, v))
+}
+
+// VideoResolutionEQ applies the EQ predicate on the "video_resolution" field.
+func VideoResolutionEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoResolution, v))
+}
+
+// VideoResolutionNEQ applies the NEQ predicate on the "video_resolution" field.
+func VideoResolutionNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldVideoResolution, v))
+}
+
+// VideoResolutionIn applies the In predicate on the "video_resolution" field.
+func VideoResolutionIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldVideoResolution, vs...))
+}
+
+// VideoResolutionNotIn applies the NotIn predicate on the "video_resolution" field.
+func VideoResolutionNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldVideoResolution, vs...))
+}
+
+// VideoResolutionGT applies the GT predicate on the "video_resolution" field.
+func VideoResolutionGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldVideoResolution, v))
+}
+
+// VideoResolutionGTE applies the GTE predicate on the "video_resolution" field.
+func VideoResolutionGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldVideoResolution, v))
+}
+
+// VideoResolutionLT applies the LT predicate on the "video_resolution" field.
+func VideoResolutionLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldVideoResolution, v))
+}
+
+// VideoResolutionLTE applies the LTE predicate on the "video_resolution" field.
+func VideoResolutionLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldVideoResolution, v))
+}
+
+// VideoResolutionContains applies the Contains predicate on the "video_resolution" field.
+func VideoResolutionContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldVideoResolution, v))
+}
+
+// VideoResolutionHasPrefix applies the HasPrefix predicate on the "video_resolution" field.
+func VideoResolutionHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldVideoResolution, v))
+}
+
+// VideoResolutionHasSuffix applies the HasSuffix predicate on the "video_resolution" field.
+func VideoResolutionHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldVideoResolution, v))
+}
+
+// VideoResolutionIsNil applies the IsNil predicate on the "video_resolution" field.
+func VideoResolutionIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldVideoResolution))
+}
+
+// VideoResolutionNotNil applies the NotNil predicate on the "video_resolution" field.
+func VideoResolutionNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldVideoResolution))
+}
+
+// VideoResolutionEqualFold applies the EqualFold predicate on the "video_resolution" field.
+func VideoResolutionEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldVideoResolution, v))
+}
+
+// VideoResolutionContainsFold applies the ContainsFold predicate on the "video_resolution" field.
+func VideoResolutionContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldVideoResolution, v))
+}
+
+// VideoDurationSecondsEQ applies the EQ predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsNEQ applies the NEQ predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsIn applies the In predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldVideoDurationSeconds, vs...))
+}
+
+// VideoDurationSecondsNotIn applies the NotIn predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldVideoDurationSeconds, vs...))
+}
+
+// VideoDurationSecondsGT applies the GT predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsGTE applies the GTE predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsLT applies the LT predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsLTE applies the LTE predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldVideoDurationSeconds, v))
+}
+
+// VideoDurationSecondsIsNil applies the IsNil predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldVideoDurationSeconds))
+}
+
+// VideoDurationSecondsNotNil applies the NotNil predicate on the "video_duration_seconds" field.
+func VideoDurationSecondsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldVideoDurationSeconds))
 }
 
 // CacheTTLOverriddenEQ applies the EQ predicate on the "cache_ttl_overridden" field.

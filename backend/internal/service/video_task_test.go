@@ -167,3 +167,17 @@ func TestRewriteOpenAIVideoTaskID(t *testing.T) {
 		t.Fatalf("nested id = %#v, want preserved nested provider id", nested["id"])
 	}
 }
+
+func TestRewriteOpenAIVideoTaskIDAddsCanonicalIDWhenUpstreamOmitsIt(t *testing.T) {
+	rewritten, err := RewriteOpenAIVideoTaskID([]byte(`{"status":"processing"}`), "task_public")
+	if err != nil {
+		t.Fatalf("RewriteOpenAIVideoTaskID returned error: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rewritten, &got); err != nil {
+		t.Fatalf("unmarshal rewritten body: %v", err)
+	}
+	if got["id"] != "task_public" || got["status"] != "processing" {
+		t.Fatalf("rewritten body = %#v", got)
+	}
+}

@@ -53,7 +53,7 @@ func TestOpenAICompatibleVideoProviderCreateSendsRequestAndParsesResponse(t *tes
 	provider := NewOpenAICompatibleVideoProvider(server.Client())
 	account := &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "sk-video"}}
 
-	result, err := provider.Create(context.Background(), account, body, contentType, "ignored-upstream-model")
+	result, err := provider.Create(context.Background(), account, body, contentType, "")
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -130,8 +130,9 @@ func TestOpenAICompatibleVideoProviderForGatewayUsesGatewayTokenProxyAndHTTPUpst
 	require.Equal(t, 7, upstream.lastAccountConcurrency)
 }
 
-func TestOpenAICompatibleVideoProviderCreatePreservesJimengJSONBodyAndModel(t *testing.T) {
+func TestOpenAICompatibleVideoProviderCreateReplacesMappedUpstreamModel(t *testing.T) {
 	body := []byte(`{"model":"video-ds-2.0-fast","prompt":"slow dolly","seconds":"15","aspect_ratio":"9:16"}`)
+	originalBody := append([]byte(nil), body...)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
@@ -141,9 +142,7 @@ func TestOpenAICompatibleVideoProviderCreatePreservesJimengJSONBodyAndModel(t *t
 		if err != nil {
 			t.Errorf("ReadAll request body: %v", err)
 		}
-		if !bytes.Equal(gotBody, body) {
-			t.Errorf("body = %s, want exact body %s", gotBody, body)
-		}
+		require.JSONEq(t, `{"model":"upstream-video","prompt":"slow dolly","seconds":"15","aspect_ratio":"9:16"}`, string(gotBody))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"video_model_preserve","status":"queued"}`)
 	}))
@@ -154,6 +153,9 @@ func TestOpenAICompatibleVideoProviderCreatePreservesJimengJSONBodyAndModel(t *t
 
 	if _, err := provider.Create(context.Background(), account, body, "application/json", "upstream-video"); err != nil {
 		t.Fatalf("Create returned error: %v", err)
+	}
+	if !bytes.Equal(body, originalBody) {
+		t.Fatalf("Create mutated caller body: got %s, want %s", body, originalBody)
 	}
 }
 
@@ -318,7 +320,7 @@ func TestOpenAICompatibleVideoProviderContentForwardsRangeAndStreamsBody(t *test
 	if result.err != nil {
 		t.Fatalf("Content returned error: %v", result.err)
 	}
-	defer result.stream.Body.Close()
+	defer func() { _ = result.stream.Body.Close() }()
 
 	if result.stream.StatusCode != http.StatusPartialContent {
 		t.Fatalf("StatusCode = %d, want 206", result.stream.StatusCode)
@@ -342,6 +344,19 @@ func TestOpenAICompatibleVideoProviderContentForwardsRangeAndStreamsBody(t *test
 	if string(buf) != "frame-" {
 		t.Fatalf("body prefix = %q, want frame-", buf)
 	}
+}
+
+func TestValidateVideoResultURLUsesConfiguredUpstreamAllowlist(t *testing.T) {
+	svc := &OpenAIGatewayService{cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+		Enabled:       true,
+		UpstreamHosts: []string{"cdn.example"},
+	}}}}
+
+	validated, err := validateVideoResultURL(svc, "https://cdn.example/video.mp4")
+	require.NoError(t, err)
+	require.Equal(t, "https://cdn.example/video.mp4", validated)
+	_, err = validateVideoResultURL(svc, "https://internal.example/video.mp4")
+	require.Error(t, err)
 }
 
 func TestOpenAICompatibleVideoProviderCreateRequiresUpstreamTaskID(t *testing.T) {
@@ -438,7 +453,7 @@ func TestOpenAICompatibleVideoProviderForGatewayUsesTokenProxyAndHTTPUpstream(t 
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &payload))
-	require.Equal(t, "client-video", payload["model"])
+	require.Equal(t, "upstream-video", payload["model"])
 }
 
 func TestOpenAICompatibleVideoProviderForGatewayValidatesBaseURL(t *testing.T) {

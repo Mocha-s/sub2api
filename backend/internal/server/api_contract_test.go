@@ -52,9 +52,10 @@ func TestAPIContracts(t *testing.T) {
 					"email": "alice@example.com",
 					"email_bound": true,
 					"username": "alice",
-					"role": "user",
-					"balance": 12.5,
-					"concurrency": 5,
+						"role": "user",
+						"balance": 12.5,
+						"frozen_balance": 0,
+						"concurrency": 5,
 					"rpm_limit": 0,
 					"status": "active",
 					"allowed_groups": null,
@@ -233,6 +234,7 @@ func TestAPIContracts(t *testing.T) {
 					"ip_whitelist": null,
 					"ip_blacklist": null,
 					"last_used_at": null,
+					"last_used_ip": null,
 					"current_concurrency": 0,
 					"quota": 0,
 					"quota_used": 0,
@@ -283,6 +285,7 @@ func TestAPIContracts(t *testing.T) {
 							"ip_whitelist": null,
 							"ip_blacklist": null,
 							"last_used_at": null,
+							"last_used_ip": null,
 							"current_concurrency": 0,
 							"quota": 0,
 							"quota_used": 0,
@@ -360,10 +363,18 @@ func TestAPIContracts(t *testing.T) {
 						"image_price_1k": null,
 						"image_price_2k": null,
 						"image_price_4k": null,
+						"video_price_480p": null,
+						"video_price_720p": null,
+						"video_price_1080p": null,
 						"allow_image_generation": false,
+						"allow_batch_image_generation": false,
+						"batch_image_discount_multiplier": 0,
+						"batch_image_hold_multiplier": 0,
 						"allow_video_generation": false,
 						"image_rate_independent": false,
 						"image_rate_multiplier": 0,
+						"video_rate_independent": false,
+						"video_rate_multiplier": 0,
 						"claude_code_only": false,
 						"allow_messages_dispatch": false,
 						"fallback_group_id": null,
@@ -527,6 +538,8 @@ func TestAPIContracts(t *testing.T) {
 			name: "GET /api/v1/usage (paginated)",
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
+				billingMode := string(service.BillingModeVideo)
+				refundReason := "video provider failed"
 				deps.usageRepo.SetUserLogs(1, []service.UsageLog{
 					{
 						ID:                    1,
@@ -542,8 +555,16 @@ func TestAPIContracts(t *testing.T) {
 						CacheReadTokens:       2,
 						TotalCost:             0.5,
 						ActualCost:            0.5,
+						RefundedCost:          0.5,
+						RefundedTotalCost:     0.5,
+						RefundReason:          &refundReason,
+						RefundedAt:            &deps.now,
 						RateMultiplier:        1,
 						BillingType:           service.BillingTypeBalance,
+						BillingMode:           &billingMode,
+						VideoCount:            1,
+						VideoResolution:       ptr("720p"),
+						VideoDurationSeconds:  ptr(5),
 						Stream:                true,
 						DurationMs:            ptr(100),
 						FirstTokenMs:          ptr(50),
@@ -580,10 +601,20 @@ func TestAPIContracts(t *testing.T) {
 							"output_cost": 0,
 							"cache_creation_cost": 0,
 							"cache_read_cost": 0,
-						"total_cost": 0.5,
-						"actual_cost": 0.5,
-						"rate_multiplier": 1,
-						"billing_type": 0,
+							"total_cost": 0.5,
+							"actual_cost": 0.5,
+							"refunded_cost": 0.5,
+							"refunded_total_cost": 0.5,
+							"net_actual_cost": 0,
+							"net_total_cost": 0,
+							"refund_reason": "video provider failed",
+							"refunded_at": "2025-01-02T03:04:05Z",
+							"rate_multiplier": 1,
+							"billing_type": 0,
+							"billing_mode": "video",
+							"video_count": 1,
+							"video_resolution": "720p",
+							"video_duration_seconds": 5,
 							"stream": true,
 							"duration_ms": 100,
 							"first_token_ms": 50,
@@ -2113,13 +2144,16 @@ func (stubUserSubscriptionRepo) UpdateNotes(ctx context.Context, subscriptionID 
 func (stubUserSubscriptionRepo) ActivateWindows(ctx context.Context, id int64, start time.Time) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) ResetDailyUsage(ctx context.Context, id int64, newWindowStart time.Time) error {
+func (stubUserSubscriptionRepo) ResetUsageWindows(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, newWindowStart time.Time) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) ResetWeeklyUsage(ctx context.Context, id int64, newWindowStart time.Time) error {
+func (stubUserSubscriptionRepo) ResetDailyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) ResetMonthlyUsage(ctx context.Context, id int64, newWindowStart time.Time) error {
+func (stubUserSubscriptionRepo) ResetWeeklyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	return errors.New("not implemented")
+}
+func (stubUserSubscriptionRepo) ResetMonthlyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
 	return errors.New("not implemented")
 }
 func (stubUserSubscriptionRepo) IncrementUsage(ctx context.Context, id int64, costUSD float64) error {

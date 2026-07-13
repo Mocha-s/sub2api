@@ -18,15 +18,33 @@ import (
 )
 
 type fakeVideoTaskService struct {
-	createParams  service.VideoTaskCreateParams
-	createResult  *service.VideoTaskCreateResult
-	createErr     error
-	fetchParams   service.VideoTaskFetchParams
-	fetchResult   *service.VideoTaskFetchResult
-	fetchErr      error
-	contentParams service.VideoTaskContentParams
-	contentResult *service.VideoContentStream
-	contentErr    error
+	createParams         service.VideoTaskCreateParams
+	createResult         *service.VideoTaskCreateResult
+	createErr            error
+	fetchParams          service.VideoTaskFetchParams
+	fetchResult          *service.VideoTaskFetchResult
+	fetchErr             error
+	contentParams        service.VideoTaskContentParams
+	contentResult        *service.VideoContentStream
+	contentErr           error
+	refreshParams        service.VideoTaskActionParams
+	refreshResult        *service.VideoTaskFetchResult
+	refreshErr           error
+	cancelParams         service.VideoTaskActionParams
+	cancelResult         *service.VideoTaskFetchResult
+	cancelErr            error
+	listParams           service.VideoTaskListParams
+	listResult           *service.VideoTaskListResult
+	listErr              error
+	estimateParams       service.VideoTaskEstimateParams
+	estimateResult       *service.VideoTaskEstimateResult
+	estimateErr          error
+	referencesParams     service.VideoTaskAssetParams
+	referencesResult     *service.VideoTaskAssetResult
+	referencesErr        error
+	materialAssetsParams service.VideoTaskAssetParams
+	materialAssetsResult *service.VideoTaskAssetResult
+	materialAssetsErr    error
 }
 
 func (s *fakeVideoTaskService) Create(_ context.Context, params service.VideoTaskCreateParams) (*service.VideoTaskCreateResult, error) {
@@ -42,6 +60,36 @@ func (s *fakeVideoTaskService) Fetch(_ context.Context, params service.VideoTask
 func (s *fakeVideoTaskService) Content(_ context.Context, params service.VideoTaskContentParams) (*service.VideoContentStream, error) {
 	s.contentParams = params
 	return s.contentResult, s.contentErr
+}
+
+func (s *fakeVideoTaskService) Refresh(_ context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+	s.refreshParams = params
+	return s.refreshResult, s.refreshErr
+}
+
+func (s *fakeVideoTaskService) Cancel(_ context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+	s.cancelParams = params
+	return s.cancelResult, s.cancelErr
+}
+
+func (s *fakeVideoTaskService) List(_ context.Context, params service.VideoTaskListParams) (*service.VideoTaskListResult, error) {
+	s.listParams = params
+	return s.listResult, s.listErr
+}
+
+func (s *fakeVideoTaskService) Estimate(_ context.Context, params service.VideoTaskEstimateParams) (*service.VideoTaskEstimateResult, error) {
+	s.estimateParams = params
+	return s.estimateResult, s.estimateErr
+}
+
+func (s *fakeVideoTaskService) References(_ context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+	s.referencesParams = params
+	return s.referencesResult, s.referencesErr
+}
+
+func (s *fakeVideoTaskService) MaterialAssets(_ context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+	s.materialAssetsParams = params
+	return s.materialAssetsResult, s.materialAssetsErr
 }
 
 type closeTrackingReader struct {
@@ -85,10 +133,29 @@ func TestVideoTaskHandlerCreatePassesAuthBodyIdempotencyAndReturnsRawJSON(t *tes
 	require.Equal(t, "idem-123", fake.createParams.IdempotencyKey)
 }
 
-func TestVideoTaskHandlerCreateGenerationsCompatConvertsDurationToSeconds(t *testing.T) {
+func TestVideoTaskHandlerCreateUsesXRequestIDAsIdempotencyFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	body := `{"model":"video-ds-2.0-fast","prompt":"black tech interface","duration":12,"aspect_ratio":"16:9","resolution":"720p","generate_audio":true,"generation_mode":"reference"}`
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos", `{"model":"seedance-2.0-720p","prompt":"city"}`)
+	c.Request.Header.Set("X-Request-ID", "req-fallback-123")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+
+	fake := &fakeVideoTaskService{
+		createResult: &service.VideoTaskCreateResult{ResponseBody: []byte(`{"id":"task_123","object":"video","status":"queued"}`)},
+	}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Create(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "req-fallback-123", fake.createParams.IdempotencyKey)
+	require.Equal(t, service.VideoTaskEndpointVideos, fake.createParams.Endpoint)
+}
+
+func TestVideoTaskHandlerCreateGenerationsCompatPassesRawBodyAndEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"model":"seedance-2.0-720p","prompt":"city","duration":8,"aspect_ratio":"16:9","resolution":"720p","generate_audio":true}`
 	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations", body)
 	c.Request.Header.Set("Content-Type", "application/json")
 	setVideoTaskAuthContext(c, apiKey, subscription)
@@ -101,8 +168,8 @@ func TestVideoTaskHandlerCreateGenerationsCompatConvertsDurationToSeconds(t *tes
 	h.CreateGenerationsCompat(c)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"id":"task_123","object":"video","status":"queued"}`, rec.Body.String())
-	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"black tech interface","seconds":"15","aspect_ratio":"16:9"}`, string(fake.createParams.Body))
+	require.JSONEq(t, body, string(fake.createParams.Body))
+	require.Equal(t, service.VideoTaskEndpointVideoGenerations, fake.createParams.Endpoint)
 }
 
 func TestVideoTaskHandlerFetchReturnsRawJSONForCurrentUserTaskID(t *testing.T) {
@@ -143,6 +210,22 @@ func TestVideoTaskHandlerFetchAcceptsSharedVideoRequestIDParam(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(42), fake.fetchParams.UserID)
 	require.Equal(t, "task_123", fake.fetchParams.PublicTaskID)
+}
+
+func TestVideoTaskHandlerRefreshPassesTaskIDAndReturnsRawJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations/task_123/refresh", "")
+	c.Params = gin.Params{{Key: "request_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{refreshResult: &service.VideoTaskFetchResult{ResponseBody: []byte(`{"id":"task_123","status":"completed"}`)}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Refresh(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"id":"task_123","status":"completed"}`, rec.Body.String())
+	require.Equal(t, int64(42), fake.refreshParams.UserID)
+	require.Equal(t, "task_123", fake.refreshParams.PublicTaskID)
 }
 
 func TestVideoTaskHandlerContentForwardsRangeStatusHeadersAndStreamBody(t *testing.T) {
@@ -195,84 +278,91 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		method     string
+		handler    string
 		err        error
 		wantStatus int
 		wantType   string
 	}{
 		{
 			name:       "permission denied",
-			method:     "create",
+			handler:    "create",
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoGenerationPermissionDenied),
 			wantStatus: http.StatusForbidden,
 			wantType:   "permission_error",
 		},
 		{
 			name:       "idempotency conflict",
-			method:     "create",
+			handler:    "create",
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoTaskIdempotencyConflict),
 			wantStatus: http.StatusConflict,
 			wantType:   "idempotency_error",
 		},
 		{
 			name:       "not found",
-			method:     "fetch",
+			handler:    "fetch",
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoTaskNotFound),
 			wantStatus: http.StatusNotFound,
 			wantType:   "not_found_error",
 		},
 		{
 			name:       "not completed",
-			method:     "content",
+			handler:    "content",
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoTaskNotCompleted),
 			wantStatus: http.StatusConflict,
 			wantType:   "invalid_request_error",
 		},
 		{
 			name:       "account unavailable",
-			method:     "create",
+			handler:    "create",
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoTaskAccountUnavailable),
 			wantStatus: http.StatusServiceUnavailable,
 			wantType:   "server_error",
 		},
 		{
 			name:       "no available accounts",
-			method:     "create",
+			handler:    "create",
 			err:        fmt.Errorf("wrapped: %w", service.ErrNoAvailableAccounts),
 			wantStatus: http.StatusServiceUnavailable,
 			wantType:   "server_error",
 		},
 		{
+			name:       "unsupported action",
+			handler:    "refresh",
+			err:        service.ErrVideoTaskActionUnsupported,
+			wantStatus: http.StatusNotImplemented,
+			wantType:   "not_supported_error",
+		},
+		{
 			name:       "body parse error",
-			method:     "create",
+			handler:    "create",
 			err:        errors.New("model is required"),
 			wantStatus: http.StatusBadRequest,
 			wantType:   "invalid_request_error",
 		},
 		{
 			name:       "forbidden video field parse error",
-			method:     "create",
+			handler:    "create",
 			err:        errors.New("duration is not supported by /v1/videos"),
 			wantStatus: http.StatusBadRequest,
 			wantType:   "invalid_request_error",
 		},
 		{
 			name:       "unsupported video model parse error",
-			method:     "create",
+			handler:    "create",
 			err:        errors.New("model must be video-ds-2.0-fast or video-ds-2.0"),
 			wantStatus: http.StatusBadRequest,
 			wantType:   "invalid_request_error",
 		},
 		{
 			name:       "upstream rate limit",
-			method:     "fetch",
+			handler:    "fetch",
 			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusTooManyRequests, Body: `{"error":"rate limited"}`},
 			wantStatus: http.StatusTooManyRequests,
 			wantType:   "rate_limit_error",
 		},
 		{
 			name:       "upstream bad request",
-			method:     "create",
+			handler:    "create",
 			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusBadRequest, Body: `{"error":"bad request"}`},
 			wantStatus: http.StatusBadRequest,
 			wantType:   "invalid_request_error",
@@ -287,7 +377,7 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 
 			fake := &fakeVideoTaskService{}
 			h := &VideoTaskHandler{videoTaskService: fake}
-			switch tt.method {
+			switch tt.handler {
 			case "create":
 				fake.createErr = tt.err
 				h.Create(c)
@@ -297,6 +387,9 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			case "content":
 				fake.contentErr = tt.err
 				h.Content(c)
+			case "refresh":
+				fake.refreshErr = tt.err
+				h.Refresh(c)
 			}
 
 			require.Equal(t, tt.wantStatus, rec.Code)
@@ -304,6 +397,111 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			require.NotEmpty(t, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 		})
 	}
+}
+
+func TestVideoTaskHandlerRefreshWithNilConstructorServiceReturnsConfiguredError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos/task_123/refresh", "")
+	c.Params = gin.Params{{Key: "task_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	h := NewVideoTaskHandler(nil)
+
+	require.NotPanics(t, func() { h.Refresh(c) })
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "server_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, "Video task service is not configured", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+}
+
+func TestVideoTaskHandlerRefreshRejectsEmptyTaskID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos//refresh", "")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{refreshResult: &service.VideoTaskFetchResult{ResponseBody: []byte(`{"id":"should_not_call"}`)}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Refresh(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, "task_id is required", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+	require.Empty(t, fake.refreshParams.PublicTaskID)
+}
+
+func TestVideoTaskHandlerRefreshRejectsEmptyServiceResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos/task_123/refresh", "")
+	c.Params = gin.Params{{Key: "task_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	require.NotPanics(t, func() { h.Refresh(c) })
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "server_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, "Video task service returned empty response", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+}
+
+func TestVideoTaskHandlerEstimateRejectsEmptyBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos/estimate", "")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{estimateResult: &service.VideoTaskEstimateResult{ResponseBody: []byte(`{"estimated":true}`)}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Estimate(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, "Request body is empty", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+	require.Nil(t, fake.estimateParams.APIKey)
+}
+
+func TestVideoTaskHandlerEstimateReturnsVideoPricingContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos/estimate", `{"model":"seedance","prompt":"city"}`)
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	response := `{"object":"video.estimate","billing_mode":"video","billing_model":"seedance","effective":{"seconds":5,"resolution":"1080p","video_count":1},"unit_price_usd":0.12,"gross_cost_usd":0.6,"rate_multiplier":0.5,"actual_cost_usd":0.3}`
+	h := &VideoTaskHandler{videoTaskService: &fakeVideoTaskService{estimateResult: &service.VideoTaskEstimateResult{ResponseBody: []byte(response)}}}
+
+	h.Estimate(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, response, rec.Body.String())
+}
+
+func TestVideoTaskHandlerListRejectsMalformedLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodGet, "/v1/videos?limit=soon", "")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{listResult: &service.VideoTaskListResult{ResponseBody: []byte(`{"data":[]}`)}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.List(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+	require.Equal(t, "limit must be an integer", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+	require.Zero(t, fake.listParams.UserID)
+}
+
+func TestIsVideoTaskBadRequestErrorClassifiesVideoCreateObjectError(t *testing.T) {
+	require.True(t, isVideoTaskBadRequestError(errors.New("video create JSON body must be an object")))
+}
+
+func TestIsVideoTaskBadRequestErrorClassifiesJimengValidationWrapper(t *testing.T) {
+	err := fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", errors.New("duration must be a number or string"))
+
+	require.True(t, isVideoTaskBadRequestError(err))
+}
+
+func TestIsVideoTaskBadRequestErrorClassifiesAdapterNumericValidation(t *testing.T) {
+	require.True(t, isVideoTaskBadRequestError(errors.New("seconds must be a number or numeric string")))
+	require.True(t, isVideoTaskBadRequestError(errors.New("duration must be a number or numeric string")))
 }
 
 func TestVideoTaskHandlerCreateRejectsEmptyBody(t *testing.T) {

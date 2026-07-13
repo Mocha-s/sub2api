@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -521,6 +522,109 @@ func (_u *UsageLogUpdate) AddActualCost(v float64) *UsageLogUpdate {
 	return _u
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (_u *UsageLogUpdate) SetRefundedCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedCost()
+	_u.mutation.SetRefundedCost(v)
+	return _u
+}
+
+// SetNillableRefundedCost sets the "refunded_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedCost adds value to the "refunded_cost" field.
+func (_u *UsageLogUpdate) AddRefundedCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedCost(v)
+	return _u
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (_u *UsageLogUpdate) SetRefundedTotalCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedTotalCost()
+	_u.mutation.SetRefundedTotalCost(v)
+	return _u
+}
+
+// SetNillableRefundedTotalCost sets the "refunded_total_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedTotalCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedTotalCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedTotalCost adds value to the "refunded_total_cost" field.
+func (_u *UsageLogUpdate) AddRefundedTotalCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedTotalCost(v)
+	return _u
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (_u *UsageLogUpdate) SetRefundedAccountCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedAccountCost()
+	_u.mutation.SetRefundedAccountCost(v)
+	return _u
+}
+
+// SetNillableRefundedAccountCost sets the "refunded_account_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedAccountCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedAccountCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedAccountCost adds value to the "refunded_account_cost" field.
+func (_u *UsageLogUpdate) AddRefundedAccountCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedAccountCost(v)
+	return _u
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (_u *UsageLogUpdate) SetRefundReason(v string) *UsageLogUpdate {
+	_u.mutation.SetRefundReason(v)
+	return _u
+}
+
+// SetNillableRefundReason sets the "refund_reason" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundReason(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundReason(*v)
+	}
+	return _u
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (_u *UsageLogUpdate) ClearRefundReason() *UsageLogUpdate {
+	_u.mutation.ClearRefundReason()
+	return _u
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (_u *UsageLogUpdate) SetRefundedAt(v time.Time) *UsageLogUpdate {
+	_u.mutation.SetRefundedAt(v)
+	return _u
+}
+
+// SetNillableRefundedAt sets the "refunded_at" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedAt(v *time.Time) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedAt(*v)
+	}
+	return _u
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (_u *UsageLogUpdate) ClearRefundedAt() *UsageLogUpdate {
+	_u.mutation.ClearRefundedAt()
+	return _u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_u *UsageLogUpdate) SetRateMultiplier(v float64) *UsageLogUpdate {
 	_u.mutation.ResetRateMultiplier()
@@ -811,6 +915,74 @@ func (_u *UsageLogUpdate) ClearImageSizeBreakdown() *UsageLogUpdate {
 	return _u
 }
 
+// SetVideoCount sets the "video_count" field.
+func (_u *UsageLogUpdate) SetVideoCount(v int) *UsageLogUpdate {
+	_u.mutation.ResetVideoCount()
+	_u.mutation.SetVideoCount(v)
+	return _u
+}
+
+// SetNillableVideoCount sets the "video_count" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableVideoCount(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetVideoCount(*v)
+	}
+	return _u
+}
+
+// AddVideoCount adds value to the "video_count" field.
+func (_u *UsageLogUpdate) AddVideoCount(v int) *UsageLogUpdate {
+	_u.mutation.AddVideoCount(v)
+	return _u
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (_u *UsageLogUpdate) SetVideoResolution(v string) *UsageLogUpdate {
+	_u.mutation.SetVideoResolution(v)
+	return _u
+}
+
+// SetNillableVideoResolution sets the "video_resolution" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableVideoResolution(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetVideoResolution(*v)
+	}
+	return _u
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (_u *UsageLogUpdate) ClearVideoResolution() *UsageLogUpdate {
+	_u.mutation.ClearVideoResolution()
+	return _u
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (_u *UsageLogUpdate) SetVideoDurationSeconds(v int) *UsageLogUpdate {
+	_u.mutation.ResetVideoDurationSeconds()
+	_u.mutation.SetVideoDurationSeconds(v)
+	return _u
+}
+
+// SetNillableVideoDurationSeconds sets the "video_duration_seconds" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableVideoDurationSeconds(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetVideoDurationSeconds(*v)
+	}
+	return _u
+}
+
+// AddVideoDurationSeconds adds value to the "video_duration_seconds" field.
+func (_u *UsageLogUpdate) AddVideoDurationSeconds(v int) *UsageLogUpdate {
+	_u.mutation.AddVideoDurationSeconds(v)
+	return _u
+}
+
+// ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
+func (_u *UsageLogUpdate) ClearVideoDurationSeconds() *UsageLogUpdate {
+	_u.mutation.ClearVideoDurationSeconds()
+	return _u
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_u *UsageLogUpdate) SetCacheTTLOverridden(v bool) *UsageLogUpdate {
 	_u.mutation.SetCacheTTLOverridden(v)
@@ -979,6 +1151,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "image_size_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VideoResolution(); ok {
+		if err := usagelog.VideoResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UsageLog.user"`)
 	}
@@ -1120,6 +1297,36 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedActualCost(); ok {
 		_spec.AddField(usagelog.FieldActualCost, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.RefundedCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedTotalCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedTotalCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedAccountCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundReason(); ok {
+		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
+	}
+	if _u.mutation.RefundReasonCleared() {
+		_spec.ClearField(usagelog.FieldRefundReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.RefundedAt(); ok {
+		_spec.SetField(usagelog.FieldRefundedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RefundedAtCleared() {
+		_spec.ClearField(usagelog.FieldRefundedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldRateMultiplier, field.TypeFloat64, value)
 	}
@@ -1209,6 +1416,27 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ImageSizeBreakdownCleared() {
 		_spec.ClearField(usagelog.FieldImageSizeBreakdown, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoCount(); ok {
+		_spec.SetField(usagelog.FieldVideoCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedVideoCount(); ok {
+		_spec.AddField(usagelog.FieldVideoCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.VideoResolution(); ok {
+		_spec.SetField(usagelog.FieldVideoResolution, field.TypeString, value)
+	}
+	if _u.mutation.VideoResolutionCleared() {
+		_spec.ClearField(usagelog.FieldVideoResolution, field.TypeString)
+	}
+	if value, ok := _u.mutation.VideoDurationSeconds(); ok {
+		_spec.SetField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedVideoDurationSeconds(); ok {
+		_spec.AddField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
+	}
+	if _u.mutation.VideoDurationSecondsCleared() {
+		_spec.ClearField(usagelog.FieldVideoDurationSeconds, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
@@ -1867,6 +2095,109 @@ func (_u *UsageLogUpdateOne) AddActualCost(v float64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedCost()
+	_u.mutation.SetRefundedCost(v)
+	return _u
+}
+
+// SetNillableRefundedCost sets the "refunded_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedCost adds value to the "refunded_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedCost(v)
+	return _u
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedTotalCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedTotalCost()
+	_u.mutation.SetRefundedTotalCost(v)
+	return _u
+}
+
+// SetNillableRefundedTotalCost sets the "refunded_total_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedTotalCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedTotalCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedTotalCost adds value to the "refunded_total_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedTotalCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedTotalCost(v)
+	return _u
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedAccountCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedAccountCost()
+	_u.mutation.SetRefundedAccountCost(v)
+	return _u
+}
+
+// SetNillableRefundedAccountCost sets the "refunded_account_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedAccountCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedAccountCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedAccountCost adds value to the "refunded_account_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedAccountCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedAccountCost(v)
+	return _u
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (_u *UsageLogUpdateOne) SetRefundReason(v string) *UsageLogUpdateOne {
+	_u.mutation.SetRefundReason(v)
+	return _u
+}
+
+// SetNillableRefundReason sets the "refund_reason" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundReason(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundReason(*v)
+	}
+	return _u
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (_u *UsageLogUpdateOne) ClearRefundReason() *UsageLogUpdateOne {
+	_u.mutation.ClearRefundReason()
+	return _u
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (_u *UsageLogUpdateOne) SetRefundedAt(v time.Time) *UsageLogUpdateOne {
+	_u.mutation.SetRefundedAt(v)
+	return _u
+}
+
+// SetNillableRefundedAt sets the "refunded_at" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedAt(v *time.Time) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedAt(*v)
+	}
+	return _u
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (_u *UsageLogUpdateOne) ClearRefundedAt() *UsageLogUpdateOne {
+	_u.mutation.ClearRefundedAt()
+	return _u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_u *UsageLogUpdateOne) SetRateMultiplier(v float64) *UsageLogUpdateOne {
 	_u.mutation.ResetRateMultiplier()
@@ -2157,6 +2488,74 @@ func (_u *UsageLogUpdateOne) ClearImageSizeBreakdown() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetVideoCount sets the "video_count" field.
+func (_u *UsageLogUpdateOne) SetVideoCount(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetVideoCount()
+	_u.mutation.SetVideoCount(v)
+	return _u
+}
+
+// SetNillableVideoCount sets the "video_count" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableVideoCount(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetVideoCount(*v)
+	}
+	return _u
+}
+
+// AddVideoCount adds value to the "video_count" field.
+func (_u *UsageLogUpdateOne) AddVideoCount(v int) *UsageLogUpdateOne {
+	_u.mutation.AddVideoCount(v)
+	return _u
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (_u *UsageLogUpdateOne) SetVideoResolution(v string) *UsageLogUpdateOne {
+	_u.mutation.SetVideoResolution(v)
+	return _u
+}
+
+// SetNillableVideoResolution sets the "video_resolution" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableVideoResolution(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetVideoResolution(*v)
+	}
+	return _u
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (_u *UsageLogUpdateOne) ClearVideoResolution() *UsageLogUpdateOne {
+	_u.mutation.ClearVideoResolution()
+	return _u
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (_u *UsageLogUpdateOne) SetVideoDurationSeconds(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetVideoDurationSeconds()
+	_u.mutation.SetVideoDurationSeconds(v)
+	return _u
+}
+
+// SetNillableVideoDurationSeconds sets the "video_duration_seconds" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableVideoDurationSeconds(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetVideoDurationSeconds(*v)
+	}
+	return _u
+}
+
+// AddVideoDurationSeconds adds value to the "video_duration_seconds" field.
+func (_u *UsageLogUpdateOne) AddVideoDurationSeconds(v int) *UsageLogUpdateOne {
+	_u.mutation.AddVideoDurationSeconds(v)
+	return _u
+}
+
+// ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
+func (_u *UsageLogUpdateOne) ClearVideoDurationSeconds() *UsageLogUpdateOne {
+	_u.mutation.ClearVideoDurationSeconds()
+	return _u
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_u *UsageLogUpdateOne) SetCacheTTLOverridden(v bool) *UsageLogUpdateOne {
 	_u.mutation.SetCacheTTLOverridden(v)
@@ -2338,6 +2737,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "image_size_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VideoResolution(); ok {
+		if err := usagelog.VideoResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
+		}
+	}
 	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UsageLog.user"`)
 	}
@@ -2496,6 +2900,36 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	if value, ok := _u.mutation.AddedActualCost(); ok {
 		_spec.AddField(usagelog.FieldActualCost, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.RefundedCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedTotalCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedTotalCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedAccountCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundReason(); ok {
+		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
+	}
+	if _u.mutation.RefundReasonCleared() {
+		_spec.ClearField(usagelog.FieldRefundReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.RefundedAt(); ok {
+		_spec.SetField(usagelog.FieldRefundedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RefundedAtCleared() {
+		_spec.ClearField(usagelog.FieldRefundedAt, field.TypeTime)
+	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldRateMultiplier, field.TypeFloat64, value)
 	}
@@ -2585,6 +3019,27 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.ImageSizeBreakdownCleared() {
 		_spec.ClearField(usagelog.FieldImageSizeBreakdown, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoCount(); ok {
+		_spec.SetField(usagelog.FieldVideoCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedVideoCount(); ok {
+		_spec.AddField(usagelog.FieldVideoCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.VideoResolution(); ok {
+		_spec.SetField(usagelog.FieldVideoResolution, field.TypeString, value)
+	}
+	if _u.mutation.VideoResolutionCleared() {
+		_spec.ClearField(usagelog.FieldVideoResolution, field.TypeString)
+	}
+	if value, ok := _u.mutation.VideoDurationSeconds(); ok {
+		_spec.SetField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedVideoDurationSeconds(); ok {
+		_spec.AddField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
+	}
+	if _u.mutation.VideoDurationSecondsCleared() {
+		_spec.ClearField(usagelog.FieldVideoDurationSeconds, field.TypeInt)
 	}
 	if value, ok := _u.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)

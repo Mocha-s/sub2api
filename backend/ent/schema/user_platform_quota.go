@@ -75,6 +75,7 @@ func (UserPlatformQuota) Fields() []ent.Field {
 		field.Float("monthly_usage_usd").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+		field.Int64("revision").Default(0).NonNegative(),
 
 		// 窗口起点（NULL = 首次还未初始化，由 InitWindowStarts 用 COALESCE 兜底）
 		field.Time("daily_window_start").

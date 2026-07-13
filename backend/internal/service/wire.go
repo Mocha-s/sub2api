@@ -40,15 +40,31 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
 }
 
-func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService) *VideoTaskPoller {
-	poller := NewVideoTaskPoller(repo, accountRepo, NewOpenAICompatibleVideoProviderForGateway(openai))
+func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskPoller {
+	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai), settlement)
 	poller.Start()
 	return poller
+}
+
+func ProvideVideoTaskSettlementReconciler(repo VideoTaskSettlementRepository, settlement *VideoTaskSettlementService) *VideoTaskSettlementReconciler {
+	reconciler := NewVideoTaskSettlementReconciler(repo, settlement)
+	reconciler.Start()
+	return reconciler
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
 func ProvideOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCache) *OAuthRefreshAPI {
 	return NewOAuthRefreshAPI(accountRepo, tokenCache)
+}
+
+func ProvideBatchImageModelPricingResolver(resolver *ModelPricingResolver) *BatchImageModelPricingResolver {
+	return &BatchImageModelPricingResolver{Resolver: resolver}
+}
+
+func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo AccountRepository, cfg *config.Config) *BatchImageCleanupService {
+	svc := NewBatchImageCleanupService(repo, accountRepo, cfg)
+	svc.Start()
+	return svc
 }
 
 // ProvideOpenAIOAuthService creates OpenAIOAuthService with privacy/account enrichment support.
@@ -572,6 +588,13 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
+	ProvideBatchImageModelPricingResolver,
+	NewBatchImagePublicService,
+	NewBatchImageDownloadService,
+	ProvideBatchImageCleanupService,
+	ProvideBatchImageWorkerRuntime,
+	NewVideoTaskSettlementService,
+	ProvideVideoTaskSettlementReconciler,
 	NewVideoTaskService,
 	ProvideVideoTaskPoller,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),

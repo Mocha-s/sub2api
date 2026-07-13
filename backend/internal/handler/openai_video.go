@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +22,12 @@ type videoTaskService interface {
 	Create(ctx context.Context, params service.VideoTaskCreateParams) (*service.VideoTaskCreateResult, error)
 	Fetch(ctx context.Context, params service.VideoTaskFetchParams) (*service.VideoTaskFetchResult, error)
 	Content(ctx context.Context, params service.VideoTaskContentParams) (*service.VideoContentStream, error)
+	Refresh(ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)
+	Cancel(ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)
+	List(ctx context.Context, params service.VideoTaskListParams) (*service.VideoTaskListResult, error)
+	Estimate(ctx context.Context, params service.VideoTaskEstimateParams) (*service.VideoTaskEstimateResult, error)
+	References(ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error)
+	MaterialAssets(ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error)
 }
 
 // VideoTaskHandler handles OpenAI-compatible video task endpoints.
@@ -31,7 +36,11 @@ type VideoTaskHandler struct {
 }
 
 func NewVideoTaskHandler(videoTaskService *service.VideoTaskService) *VideoTaskHandler {
-	return &VideoTaskHandler{videoTaskService: videoTaskService}
+	h := &VideoTaskHandler{}
+	if videoTaskService != nil {
+		h.videoTaskService = videoTaskService
+	}
+	return h
 }
 
 func (h *VideoTaskHandler) Create(c *gin.Context) {
@@ -39,25 +48,16 @@ func (h *VideoTaskHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h == nil || h.videoTaskService == nil {
-		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			videoTaskErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
-			return
-		}
-		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+	body, ok := readVideoTaskBody(c)
+	if !ok {
 		return
 	}
-	if len(body) == 0 {
-		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-	h.createWithBody(c, apiKey, body)
+	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideos)
 }
 
 func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
@@ -65,38 +65,26 @@ func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h == nil || h.videoTaskService == nil {
-		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			videoTaskErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
-			return
-		}
-		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-	if len(body) == 0 {
-		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+	body, ok := readVideoTaskBody(c)
+	if !ok {
 		return
 	}
 
-	adaptedBody, err := adaptVideoGenerationsCompatBody(body)
-	if err != nil {
-		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
-		return
-	}
-	c.Request.Body = io.NopCloser(bytes.NewReader(adaptedBody))
-	c.Request.ContentLength = int64(len(adaptedBody))
-	h.createWithBody(c, apiKey, adaptedBody)
+	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideoGenerations)
 }
 
-func (h *VideoTaskHandler) createWithBody(c *gin.Context, apiKey *service.APIKey, body []byte) {
+func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, apiKey *service.APIKey, body []byte, endpoint string) {
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	result, err := h.videoTaskService.Create(c.Request.Context(), service.VideoTaskCreateParams{
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idempotencyKey == "" {
+		idempotencyKey = strings.TrimSpace(c.GetHeader("X-Request-ID"))
+	}
+	result, err := svc.Create(c.Request.Context(), service.VideoTaskCreateParams{
 		APIKey:         apiKey,
 		User:           apiKey.User,
 		Subscription:   subscription,
@@ -104,7 +92,8 @@ func (h *VideoTaskHandler) createWithBody(c *gin.Context, apiKey *service.APIKey
 		ContentType:    c.GetHeader("Content-Type"),
 		UserAgent:      c.GetHeader("User-Agent"),
 		IPAddress:      ip.GetClientIP(c),
-		IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		IdempotencyKey: idempotencyKey,
+		Endpoint:       endpoint,
 	})
 	if err != nil {
 		videoTaskServiceError(c, err)
@@ -122,8 +111,8 @@ func (h *VideoTaskHandler) Fetch(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h == nil || h.videoTaskService == nil {
-		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
 		return
 	}
 
@@ -136,10 +125,164 @@ func (h *VideoTaskHandler) Fetch(c *gin.Context) {
 		return
 	}
 
-	result, err := h.videoTaskService.Fetch(c.Request.Context(), service.VideoTaskFetchParams{
+	result, err := svc.Fetch(c.Request.Context(), service.VideoTaskFetchParams{
 		UserID:       subject.UserID,
 		PublicTaskID: taskID,
 	})
+	if err != nil {
+		videoTaskServiceError(c, err)
+		return
+	}
+	if result == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
+}
+
+func (h *VideoTaskHandler) Refresh(c *gin.Context) {
+	h.taskAction(c, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+		return svc.Refresh(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) Cancel(c *gin.Context) {
+	h.taskAction(c, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+		return svc.Cancel(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) taskAction(c *gin.Context, fn func(videoTaskService, context.Context, service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)) {
+	_, subject, ok := videoTaskAuthContext(c)
+	if !ok {
+		return
+	}
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
+		return
+	}
+	taskID := strings.TrimSpace(c.Param("task_id"))
+	if taskID == "" {
+		taskID = strings.TrimSpace(c.Param("request_id"))
+	}
+	if taskID == "" {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "task_id is required")
+		return
+	}
+	result, err := fn(svc, c.Request.Context(), service.VideoTaskActionParams{UserID: subject.UserID, PublicTaskID: taskID, IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key"))})
+	if err != nil {
+		videoTaskServiceError(c, err)
+		return
+	}
+	if result == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
+}
+
+func (h *VideoTaskHandler) List(c *gin.Context) {
+	_, subject, ok := videoTaskAuthContext(c)
+	if !ok {
+		return
+	}
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
+		return
+	}
+	limitText := strings.TrimSpace(c.Query("limit"))
+	limit := 0
+	if limitText != "" {
+		parsedLimit, err := strconv.Atoi(limitText)
+		if err != nil {
+			videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "limit must be an integer")
+			return
+		}
+		limit = parsedLimit
+	}
+	result, err := svc.List(c.Request.Context(), service.VideoTaskListParams{UserID: subject.UserID, Status: strings.TrimSpace(c.Query("status")), Model: strings.TrimSpace(c.Query("model")), Limit: limit})
+	if err != nil {
+		videoTaskServiceError(c, err)
+		return
+	}
+	if result == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
+}
+
+func (h *VideoTaskHandler) Estimate(c *gin.Context) {
+	h.bodyAction(c, service.VideoTaskEndpointVideos)
+}
+
+func (h *VideoTaskHandler) EstimateGenerationsCompat(c *gin.Context) {
+	h.bodyAction(c, service.VideoTaskEndpointVideoGenerations)
+}
+
+func (h *VideoTaskHandler) bodyAction(c *gin.Context, endpoint string) {
+	apiKey, _, ok := videoTaskAuthContext(c)
+	if !ok {
+		return
+	}
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
+		return
+	}
+	body, ok := readVideoTaskBody(c)
+	if !ok {
+		return
+	}
+	result, err := svc.Estimate(c.Request.Context(), service.VideoTaskEstimateParams{APIKey: apiKey, User: apiKey.User, Body: body, ContentType: c.GetHeader("Content-Type"), Endpoint: endpoint})
+	if err != nil {
+		videoTaskServiceError(c, err)
+		return
+	}
+	if result == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
+}
+
+func (h *VideoTaskHandler) References(c *gin.Context) {
+	h.assetAction(c, service.VideoTaskEndpointVideos, func(svc videoTaskService, ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+		return svc.References(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) ReferencesGenerationsCompat(c *gin.Context) {
+	h.assetAction(c, service.VideoTaskEndpointVideoGenerations, func(svc videoTaskService, ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+		return svc.References(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) MaterialAssets(c *gin.Context) {
+	h.assetAction(c, service.VideoTaskEndpointVideos, func(svc videoTaskService, ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+		return svc.MaterialAssets(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) MaterialAssetsGenerationsCompat(c *gin.Context) {
+	h.assetAction(c, service.VideoTaskEndpointVideoGenerations, func(svc videoTaskService, ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error) {
+		return svc.MaterialAssets(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) assetAction(c *gin.Context, endpoint string, fn func(videoTaskService, context.Context, service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error)) {
+	apiKey, _, ok := videoTaskAuthContext(c)
+	if !ok {
+		return
+	}
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
+		return
+	}
+	body, ok := readVideoTaskBody(c)
+	if !ok {
+		return
+	}
+	result, err := fn(svc, c.Request.Context(), service.VideoTaskAssetParams{APIKey: apiKey, User: apiKey.User, Body: body, ContentType: c.GetHeader("Content-Type"), Endpoint: endpoint, IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key"))})
 	if err != nil {
 		videoTaskServiceError(c, err)
 		return
@@ -156,8 +299,8 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h == nil || h.videoTaskService == nil {
-		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+	svc, ok := h.videoTaskServiceForRequest(c)
+	if !ok {
 		return
 	}
 
@@ -170,7 +313,7 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 		return
 	}
 
-	stream, err := h.videoTaskService.Content(c.Request.Context(), service.VideoTaskContentParams{
+	stream, err := svc.Content(c.Request.Context(), service.VideoTaskContentParams{
 		UserID:       subject.UserID,
 		PublicTaskID: taskID,
 		Header:       c.Request.Header.Clone(),
@@ -183,7 +326,7 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty stream")
 		return
 	}
-	defer stream.Body.Close()
+	defer func() { _ = stream.Body.Close() }()
 
 	status := stream.StatusCode
 	if status == 0 {
@@ -194,6 +337,35 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 	if _, err := io.Copy(c.Writer, stream.Body); err != nil {
 		_ = c.Error(err)
 	}
+}
+
+func (h *VideoTaskHandler) videoTaskServiceForRequest(c *gin.Context) (videoTaskService, bool) {
+	if h == nil || h.videoTaskService == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+		return nil, false
+	}
+	if svc, ok := h.videoTaskService.(*service.VideoTaskService); ok && svc == nil {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service is not configured")
+		return nil, false
+	}
+	return h.videoTaskService, true
+}
+
+func readVideoTaskBody(c *gin.Context) ([]byte, bool) {
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			videoTaskErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return nil, false
+		}
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return nil, false
+	}
+	if len(body) == 0 {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return nil, false
+	}
+	return body, true
 }
 
 func videoTaskAuthContext(c *gin.Context) (*service.APIKey, middleware2.AuthSubject, bool) {
@@ -212,77 +384,6 @@ func videoTaskAuthContext(c *gin.Context) (*service.APIKey, middleware2.AuthSubj
 
 func videoTaskRawJSON(c *gin.Context, status int, body []byte) {
 	c.Data(status, "application/json", body)
-}
-
-func adaptVideoGenerationsCompatBody(body []byte) ([]byte, error) {
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	if payload == nil {
-		return nil, errors.New("video generation JSON body must be an object")
-	}
-
-	if duration, ok := payload["duration"]; ok {
-		if _, hasSeconds := payload["seconds"]; !hasSeconds {
-			if _, err := videoGenerationDurationAsSeconds(duration); err != nil {
-				return nil, err
-			}
-			encodedSeconds, err := json.Marshal("15")
-			if err != nil {
-				return nil, err
-			}
-			payload["seconds"] = encodedSeconds
-		}
-		delete(payload, "duration")
-	}
-
-	allowed := map[string]struct{}{
-		"model":        {},
-		"prompt":       {},
-		"seconds":      {},
-		"aspect_ratio": {},
-		"images":       {},
-		"videos":       {},
-		"audios":       {},
-	}
-	for field := range payload {
-		if _, ok := allowed[field]; !ok {
-			delete(payload, field)
-		}
-	}
-
-	adapted, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	return adapted, nil
-}
-
-func videoGenerationDurationAsSeconds(raw json.RawMessage) (string, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return "", errors.New("duration must be a number or string")
-	}
-	if strings.HasPrefix(trimmed, "\"") {
-		var value string
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return "", err
-		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return "", errors.New("duration must be a number or string")
-		}
-		return value, nil
-	}
-
-	var number json.Number
-	decoder := json.NewDecoder(strings.NewReader(trimmed))
-	decoder.UseNumber()
-	if err := decoder.Decode(&number); err != nil {
-		return "", errors.New("duration must be a number or string")
-	}
-	return number.String(), nil
 }
 
 func videoTaskServiceError(c *gin.Context, err error) {
@@ -305,6 +406,8 @@ func videoTaskServiceError(c *gin.Context, err error) {
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskAccountUnavailable):
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
+	case errors.Is(err, service.ErrVideoTaskActionUnsupported):
+		videoTaskErrorResponse(c, http.StatusNotImplemented, "not_supported_error", videoTaskErrorMessage(err))
 	case isVideoTaskBadRequestError(err):
 		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	default:
@@ -363,11 +466,16 @@ func isVideoTaskBadRequestError(err error) bool {
 	if errors.As(err, &typeErr) {
 		return true
 	}
-	switch strings.TrimSpace(err.Error()) {
-	case "model is required", "model must be video-ds-2.0-fast or video-ds-2.0", "prompt is required", "unexpected end of JSON input":
+	message := strings.TrimSpace(err.Error())
+	if strings.HasPrefix(message, "invalid jimeng OpenAI video create JSON:") {
+		return true
+	}
+	switch message {
+	case "model is required", "model must be video-ds-2.0-fast or video-ds-2.0", "prompt is required", "unexpected end of JSON input", "video create JSON body must be an object":
 		return true
 	default:
-		return strings.HasSuffix(strings.TrimSpace(err.Error()), " is not supported by /v1/videos")
+		return strings.HasSuffix(message, " is not supported by /v1/videos") ||
+			strings.HasSuffix(message, " must be a number or numeric string")
 	}
 }
 

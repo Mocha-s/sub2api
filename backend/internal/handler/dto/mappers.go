@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -18,6 +20,7 @@ func UserFromServiceShallow(u *service.User) *User {
 		Username:                   u.Username,
 		Role:                       u.Role,
 		Balance:                    u.Balance,
+		FrozenBalance:              u.FrozenBalance,
 		Concurrency:                u.Concurrency,
 		Status:                     u.Status,
 		AllowedGroups:              u.AllowedGroups,
@@ -88,6 +91,7 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		IPWhitelist:        k.IPWhitelist,
 		IPBlacklist:        k.IPBlacklist,
 		LastUsedAt:         k.LastUsedAt,
+		LastUsedIP:         k.LastUsedIP,
 		Quota:              k.Quota,
 		QuotaUsed:          k.QuotaUsed,
 		ExpiresAt:          k.ExpiresAt,
@@ -180,9 +184,14 @@ func groupFromServiceBase(g *service.Group) Group {
 		WeeklyLimitUSD:                  g.WeeklyLimitUSD,
 		MonthlyLimitUSD:                 g.MonthlyLimitUSD,
 		AllowImageGeneration:            g.AllowImageGeneration,
+		AllowBatchImageGeneration:       g.AllowBatchImageGeneration,
 		AllowVideoGeneration:            g.AllowVideoGeneration,
 		ImageRateIndependent:            g.ImageRateIndependent,
 		ImageRateMultiplier:             g.ImageRateMultiplier,
+		BatchImageDiscountMultiplier:    g.BatchImageDiscountMultiplier,
+		BatchImageHoldMultiplier:        g.BatchImageHoldMultiplier,
+		VideoRateIndependent:            g.VideoRateIndependent,
+		VideoRateMultiplier:             g.VideoRateMultiplier,
 		PeakRateEnabled:                 g.PeakRateEnabled,
 		PeakStart:                       g.PeakStart,
 		PeakEnd:                         g.PeakEnd,
@@ -190,6 +199,9 @@ func groupFromServiceBase(g *service.Group) Group {
 		ImagePrice1K:                    g.ImagePrice1K,
 		ImagePrice2K:                    g.ImagePrice2K,
 		ImagePrice4K:                    g.ImagePrice4K,
+		VideoPrice480P:                  g.VideoPrice480P,
+		VideoPrice720P:                  g.VideoPrice720P,
+		VideoPrice1080P:                 g.VideoPrice1080P,
 		ClaudeCodeOnly:                  g.ClaudeCodeOnly,
 		FallbackGroupID:                 g.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: g.FallbackGroupIDOnInvalidRequest,
@@ -610,8 +622,14 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		OutputCost:            l.OutputCost,
 		CacheCreationCost:     l.CacheCreationCost,
 		CacheReadCost:         l.CacheReadCost,
-		TotalCost:             l.TotalCost,
-		ActualCost:            l.ActualCost,
+		TotalCost:             usageCostForDTO(l.TotalCost),
+		ActualCost:            usageCostForDTO(l.ActualCost),
+		RefundedCost:          usageCostForDTO(l.RefundedCost),
+		RefundedTotalCost:     usageCostForDTO(l.RefundedTotalCost),
+		NetActualCost:         usageCostForDTO(l.ActualCost - l.RefundedCost),
+		NetTotalCost:          usageCostForDTO(l.TotalCost - l.RefundedTotalCost),
+		RefundReason:          l.RefundReason,
+		RefundedAt:            l.RefundedAt,
 		RateMultiplier:        l.RateMultiplier,
 		BillingType:           l.BillingType,
 		RequestType:           requestType.String(),
@@ -632,6 +650,9 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		IPAddress:             l.IPAddress,
 		CacheTTLOverridden:    l.CacheTTLOverridden,
 		BillingMode:           l.BillingMode,
+		VideoCount:            l.VideoCount,
+		VideoResolution:       l.VideoResolution,
+		VideoDurationSeconds:  l.VideoDurationSeconds,
 		CreatedAt:             l.CreatedAt,
 		User:                  UserFromServiceShallow(l.User),
 		APIKey:                APIKeyFromService(l.APIKey),
@@ -666,9 +687,26 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		BillingTier:           l.BillingTier,
 		AccountRateMultiplier: l.AccountRateMultiplier,
 		AccountStatsCost:      l.AccountStatsCost,
+		RefundedAccountCost:   usageCostForDTO(l.RefundedAccountCost),
+		NetAccountCost:        usageCostForDTO(usageLogAccountCost(l) - l.RefundedAccountCost),
 		IPAddress:             l.IPAddress,
 		Account:               AccountSummaryFromService(l.Account),
 	}
+}
+
+func usageCostForDTO(value float64) float64 {
+	return decimal.NewFromFloat(value).Round(10).InexactFloat64()
+}
+
+func usageLogAccountCost(l *service.UsageLog) float64 {
+	if l.AccountStatsCost != nil {
+		return *l.AccountStatsCost
+	}
+	multiplier := 1.0
+	if l.AccountRateMultiplier != nil {
+		multiplier = *l.AccountRateMultiplier
+	}
+	return l.TotalCost * multiplier
 }
 
 func UsageCleanupTaskFromService(task *service.UsageCleanupTask) *UsageCleanupTask {

@@ -14,6 +14,7 @@ type User struct {
 	Username      string     `json:"username"`
 	Role          string     `json:"role"`
 	Balance       float64    `json:"balance"`
+	FrozenBalance float64    `json:"frozen_balance"`
 	Concurrency   int        `json:"concurrency"`
 	Status        string     `json:"status"`
 	AllowedGroups []int64    `json:"allowed_groups"`
@@ -58,6 +59,7 @@ type APIKey struct {
 	IPWhitelist []string   `json:"ip_whitelist"`
 	IPBlacklist []string   `json:"ip_blacklist"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
+	LastUsedIP  *string    `json:"last_used_ip"`
 	Quota       float64    `json:"quota"`      // Quota limit in USD (0 = unlimited)
 	QuotaUsed   float64    `json:"quota_used"` // Used quota amount in USD
 	ExpiresAt   *time.Time `json:"expires_at"` // Expiration time (nil = never expires)
@@ -99,10 +101,15 @@ type Group struct {
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	AllowImageGeneration bool    `json:"allow_image_generation"`
-	AllowVideoGeneration bool    `json:"allow_video_generation"`
-	ImageRateIndependent bool    `json:"image_rate_independent"`
-	ImageRateMultiplier  float64 `json:"image_rate_multiplier"`
+	AllowImageGeneration         bool    `json:"allow_image_generation"`
+	AllowBatchImageGeneration    bool    `json:"allow_batch_image_generation"`
+	AllowVideoGeneration         bool    `json:"allow_video_generation"`
+	ImageRateIndependent         bool    `json:"image_rate_independent"`
+	ImageRateMultiplier          float64 `json:"image_rate_multiplier"`
+	BatchImageDiscountMultiplier float64 `json:"batch_image_discount_multiplier"`
+	BatchImageHoldMultiplier     float64 `json:"batch_image_hold_multiplier"`
+	VideoRateIndependent         bool    `json:"video_rate_independent"`
+	VideoRateMultiplier          float64 `json:"video_rate_multiplier"`
 	// 高峰时段倍率配置
 	PeakRateEnabled    bool     `json:"peak_rate_enabled"`
 	PeakStart          string   `json:"peak_start"`
@@ -111,6 +118,9 @@ type Group struct {
 	ImagePrice1K       *float64 `json:"image_price_1k"`
 	ImagePrice2K       *float64 `json:"image_price_2k"`
 	ImagePrice4K       *float64 `json:"image_price_4k"`
+	VideoPrice480P     *float64 `json:"video_price_480p"`
+	VideoPrice720P     *float64 `json:"video_price_720p"`
+	VideoPrice1080P    *float64 `json:"video_price_1080p"`
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
@@ -471,13 +481,19 @@ type UsageLog struct {
 	CacheCreation5mTokens int `json:"cache_creation_5m_tokens"`
 	CacheCreation1hTokens int `json:"cache_creation_1h_tokens"`
 
-	InputCost         float64 `json:"input_cost"`
-	OutputCost        float64 `json:"output_cost"`
-	CacheCreationCost float64 `json:"cache_creation_cost"`
-	CacheReadCost     float64 `json:"cache_read_cost"`
-	TotalCost         float64 `json:"total_cost"`
-	ActualCost        float64 `json:"actual_cost"`
-	RateMultiplier    float64 `json:"rate_multiplier"`
+	InputCost         float64    `json:"input_cost"`
+	OutputCost        float64    `json:"output_cost"`
+	CacheCreationCost float64    `json:"cache_creation_cost"`
+	CacheReadCost     float64    `json:"cache_read_cost"`
+	TotalCost         float64    `json:"total_cost"`
+	ActualCost        float64    `json:"actual_cost"`
+	RefundedCost      float64    `json:"refunded_cost"`
+	RefundedTotalCost float64    `json:"refunded_total_cost"`
+	NetActualCost     float64    `json:"net_actual_cost"`
+	NetTotalCost      float64    `json:"net_total_cost"`
+	RefundReason      *string    `json:"refund_reason,omitempty"`
+	RefundedAt        *time.Time `json:"refunded_at,omitempty"`
+	RateMultiplier    float64    `json:"rate_multiplier"`
 
 	BillingType  int8   `json:"billing_type"`
 	RequestType  string `json:"request_type"`
@@ -506,7 +522,10 @@ type UsageLog struct {
 	CacheTTLOverridden bool `json:"cache_ttl_overridden"`
 
 	// BillingMode 计费模式：token/image
-	BillingMode *string `json:"billing_mode,omitempty"`
+	BillingMode          *string `json:"billing_mode,omitempty"`
+	VideoCount           int     `json:"video_count"`
+	VideoResolution      *string `json:"video_resolution"`
+	VideoDurationSeconds *int    `json:"video_duration_seconds"`
 
 	CreatedAt time.Time `json:"created_at"`
 
@@ -534,7 +553,9 @@ type AdminUsageLog struct {
 	// AccountRateMultiplier 账号计费倍率快照（nil 表示按 1.0 处理）
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier"`
 	// AccountStatsCost 自定义定价规则计算的账号统计费用（nil 表示使用默认公式）
-	AccountStatsCost *float64 `json:"account_stats_cost,omitempty"`
+	AccountStatsCost    *float64 `json:"account_stats_cost,omitempty"`
+	RefundedAccountCost float64  `json:"refunded_account_cost"`
+	NetAccountCost      float64  `json:"net_account_cost"`
 
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`

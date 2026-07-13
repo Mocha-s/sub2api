@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -14,12 +15,22 @@ const (
 	BillingModeToken      BillingMode = "token"       // 按 token 区间计费
 	BillingModePerRequest BillingMode = "per_request" // 按次计费（支持上下文窗口分层）
 	BillingModeImage      BillingMode = "image"       // 图片计费（当前按次，预留 token 计费）
+	BillingModeVideo      BillingMode = "video"       // 视频生成计费（按视频生成次数）
 )
 
 // IsValid 检查 BillingMode 是否为合法值
 func (m BillingMode) IsValid() bool {
 	switch m {
-	case BillingModeToken, BillingModePerRequest, BillingModeImage, "":
+	case BillingModeToken, BillingModePerRequest, BillingModeImage, BillingModeVideo, "":
+		return true
+	}
+	return false
+}
+
+// IsValidUsageFilter 检查 BillingMode 是否可用于使用记录筛选。
+func (m BillingMode) IsValidUsageFilter() bool {
+	switch m {
+	case BillingModeToken, BillingModePerRequest, BillingModeImage, BillingModeVideo, "":
 		return true
 	}
 	return false
@@ -73,37 +84,41 @@ type AccountStatsPricingRule struct {
 
 // ChannelModelPricing 渠道模型定价条目
 type ChannelModelPricing struct {
-	ID               int64
-	ChannelID        int64
-	Platform         string            // 所属平台（anthropic/openai/gemini/...）
-	Models           []string          // 绑定的模型列表
-	BillingMode      BillingMode       // 计费模式
-	InputPrice       *float64          // 每 token 输入价格（USD）— 向后兼容 flat 定价
-	OutputPrice      *float64          // 每 token 输出价格（USD）
-	CacheWritePrice  *float64          // 缓存写入价格
-	CacheReadPrice   *float64          // 缓存读取价格
-	ImageOutputPrice *float64          // 图片输出价格（向后兼容）
-	PerRequestPrice  *float64          // 默认按次计费价格（USD）
-	Intervals        []PricingInterval // 区间定价列表
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  int64
+	ChannelID           int64
+	Platform            string            // 所属平台（anthropic/openai/gemini/...）
+	Models              []string          // 绑定的模型列表
+	BillingMode         BillingMode       // 计费模式
+	InputPrice          *float64          // 每 token 输入价格（USD）— 向后兼容 flat 定价
+	OutputPrice         *float64          // 每 token 输出价格（USD）
+	CacheWritePrice     *float64          // 缓存写入价格
+	CacheReadPrice      *float64          // 缓存读取价格
+	ImageOutputPrice    *float64          // 图片输出价格（向后兼容）
+	PerRequestPrice     *float64          // 默认按次计费价格（USD）
+	VideoPricePerSecond *float64          // 默认视频每秒价格（USD）
+	VideoDefaultSeconds *int              // 默认视频时长（秒）
+	VideoAllowedSeconds []int             // 允许的视频时长（秒）
+	Intervals           []PricingInterval // 区间定价列表
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID              int64
-	PricingID       int64
-	MinTokens       int      // 区间下界（含）
-	MaxTokens       *int     // 区间上界（不含），nil = 无上限
-	TierLabel       string   // 层级标签（按次/图片模式：1K, 2K, 4K, HD 等）
-	InputPrice      *float64 // token 模式：每 token 输入价
-	OutputPrice     *float64 // token 模式：每 token 输出价
-	CacheWritePrice *float64 // token 模式：缓存写入价
-	CacheReadPrice  *float64 // token 模式：缓存读取价
-	PerRequestPrice *float64 // 按次/图片模式：每次请求价格
-	SortOrder       int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                  int64
+	PricingID           int64
+	MinTokens           int      // 区间下界（含）
+	MaxTokens           *int     // 区间上界（不含），nil = 无上限
+	TierLabel           string   // 层级标签（按次/图片模式：1K, 2K, 4K, HD 等）
+	InputPrice          *float64 // token 模式：每 token 输入价
+	OutputPrice         *float64 // token 模式：每 token 输出价
+	CacheWritePrice     *float64 // token 模式：缓存写入价
+	CacheReadPrice      *float64 // token 模式：缓存读取价
+	PerRequestPrice     *float64 // 按次/图片模式：每次请求价格
+	VideoPricePerSecond *float64 // 视频模式：每秒价格
+	SortOrder           int
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // IsActive 判断渠道是否启用
@@ -179,6 +194,10 @@ func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	if p.Intervals != nil {
 		cp.Intervals = make([]PricingInterval, len(p.Intervals))
 		copy(cp.Intervals, p.Intervals)
+	}
+	if p.VideoAllowedSeconds != nil {
+		cp.VideoAllowedSeconds = make([]int, len(p.VideoAllowedSeconds))
+		copy(cp.VideoAllowedSeconds, p.VideoAllowedSeconds)
 	}
 	return cp
 }
@@ -277,7 +296,7 @@ func deepCopyFeaturesConfig(src map[string]any) map[string]any {
 // mode 决定区间语义：
 //   - BillingModeToken（含空值）：区间是上下文 token 数分段 (min, max]，
 //     按 MinTokens 排序后无重叠，无界区间（MaxTokens=nil）必须是最后一个。
-//   - BillingModePerRequest / BillingModeImage：区间是按 tier_label
+//   - BillingModePerRequest / BillingModeImage / BillingModeVideo：区间是按 tier_label
 //     (1K/2K/4K 等) 分层，匹配走 label 不依赖 min/max，因此跳过区间重叠
 //     与 last-unlimited 校验，仅做单条字段自洽（min/max/价格非负）检查。
 //
@@ -299,7 +318,24 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 		}
 	}
 
-	// per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
+	// per_request / image / video 模式按 tier_label 匹配，不做 token 区间重叠校验
+	if mode == BillingModeVideo {
+		seen := make(map[string]struct{}, len(sorted))
+		for i := range sorted {
+			if sorted[i].VideoPricePerSecond == nil {
+				continue
+			}
+			label := NormalizeVideoResolutionTier(sorted[i].TierLabel)
+			if label == "" {
+				return fmt.Errorf("interval #%d: tier_label must not be blank for video pricing", i+1)
+			}
+			if _, exists := seen[label]; exists {
+				return fmt.Errorf("interval #%d: normalized video tier_label %q must be unique", i+1, label)
+			}
+			seen[label] = struct{}{}
+		}
+		return nil
+	}
 	if mode == BillingModePerRequest || mode == BillingModeImage {
 		return nil
 	}
@@ -334,10 +370,16 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 		{"cache_write_price", iv.CacheWritePrice},
 		{"cache_read_price", iv.CacheReadPrice},
 		{"per_request_price", iv.PerRequestPrice},
+		{"video_price_per_second", iv.VideoPricePerSecond},
 	}
 	for _, p := range prices {
-		if p.val != nil && *p.val < 0 {
-			return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+		if p.val != nil {
+			if math.IsNaN(*p.val) || math.IsInf(*p.val, 0) {
+				return fmt.Errorf("interval #%d: %s must be finite", idx+1, p.name)
+			}
+			if *p.val < 0 {
+				return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+			}
 		}
 	}
 	return nil

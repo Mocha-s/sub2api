@@ -4,11 +4,26 @@ package service
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestApplyVideoAccountStatsPricingPreservesBaseAndRoundsAppliedCost(t *testing.T) {
+	seconds := 3
+	unit := 0.1234567891
+	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: seconds, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1.234567891}
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &unit})
+	require.Equal(t, unit, quote.AccountUnitPriceUSD)
+	require.Equal(t, 0.3703703673, quote.AccountBaseCostUSD)
+	require.Equal(t, 0.45724736, quote.AccountCostUSD)
+
+	quote.AccountRateMultiplier = math.Inf(1)
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &unit})
+	require.Equal(t, 0.0, quote.AccountCostUSD)
+}
 
 // ---------------------------------------------------------------------------
 // matchAccountStatsRule
@@ -325,6 +340,98 @@ func TestCalculateStatsCost_ImageBilling_PriceNil(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestCalculateStatsCost_VideoBillingUsesDefaultPriceAndOutputCount(t *testing.T) {
+	price := 0.08
+	duration := 5
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+	usage := &UsageLog{VideoCount: 3, VideoDurationSeconds: &duration}
+
+	result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, usage)
+
+	require.NotNil(t, result)
+	require.InDelta(t, 1.2, *result, 1e-12)
+}
+
+func TestCalculateStatsCost_VideoBillingResolutionTierOverridesDefault(t *testing.T) {
+	defaultPrice, tierPrice := 0.08, 0.10
+	duration, resolution := 5, " 1080P "
+	pricing := &ChannelModelPricing{
+		BillingMode: BillingModeVideo, VideoPricePerSecond: &defaultPrice,
+		Intervals: []PricingInterval{{TierLabel: "1080p", VideoPricePerSecond: &tierPrice}},
+	}
+	usage := &UsageLog{VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration}
+
+	result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, usage)
+
+	require.NotNil(t, result)
+	require.InDelta(t, 0.5, *result, 1e-12)
+}
+
+func TestCalculateStatsCost_VideoBillingMetadataFallbacks(t *testing.T) {
+	price := 0.08
+	validDuration, invalidDuration := 5, 0
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+	tests := []struct {
+		name  string
+		usage *UsageLog
+		want  *float64
+	}{
+		{name: "zero output count defaults to one", usage: &UsageLog{VideoDurationSeconds: &validDuration}, want: testPtrFloat64(0.4)},
+		{name: "missing duration does not override", usage: &UsageLog{VideoCount: 1}},
+		{name: "invalid duration does not override", usage: &UsageLog{VideoCount: 1, VideoDurationSeconds: &invalidDuration}},
+		{name: "missing usage does not override"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, tt.usage)
+			if tt.want == nil {
+				require.Nil(t, result)
+				return
+			}
+			require.NotNil(t, result)
+			require.InDelta(t, *tt.want, *result, 1e-12)
+		})
+	}
+}
+
+func TestCalculateStatsCost_VideoBillingRejectsCorruptOutputCount(t *testing.T) {
+	price := 0.08
+	duration := 5
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+
+	valid := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, &UsageLog{VideoCount: VideoTaskMaxOutputs, VideoDurationSeconds: &duration})
+	invalid := calculateStatsCostForUsage(pricing, UsageTokens{}, 1, &UsageLog{VideoCount: VideoTaskMaxOutputs + 1, VideoDurationSeconds: &duration})
+
+	require.NotNil(t, valid)
+	require.Nil(t, invalid)
+}
+
+func TestApplyVideoAccountStatsPricingNormalizesBaseToTenDecimals(t *testing.T) {
+	price := 0.12345678919
+	quote := VideoTaskQuote{Effective: VideoTaskEffectiveParams{Seconds: 1, Resolution: "720p", VideoCount: 1}, AccountRateMultiplier: 1}
+
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price})
+
+	require.Equal(t, 0.1234567892, quote.AccountUnitPriceUSD)
+	require.Equal(t, 0.1234567892, quote.AccountBaseCostUSD)
+}
+
+func TestApplyVideoAccountStatsPricingKeepsCustomerGrossDistinctAndAppliesAccountMultiplierOnce(t *testing.T) {
+	price := 0.10
+	quote := VideoTaskQuote{
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 2},
+		GrossCostUSD: 4, ActualCostUSD: 2, AccountCostUSD: 1, AccountRateMultiplier: 1.25,
+	}
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price}
+
+	applyVideoAccountStatsPricing(&quote, pricing)
+
+	require.Equal(t, 4.0, quote.GrossCostUSD)
+	require.Equal(t, 2.0, quote.ActualCostUSD)
+	require.InDelta(t, 1.0, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, 1.25, quote.AccountCostUSD, 1e-12)
+}
+
 func TestCalculateStatsCost_DefaultBillingMode_FallsToToken(t *testing.T) {
 	// BillingMode is empty string (default) → falls into token billing
 	pricing := &ChannelModelPricing{
@@ -534,13 +641,40 @@ func TestTryModelFilePricing_WithCacheTokens(t *testing.T) {
 // resolveAccountStatsCost — integration tests covering the 4-level priority chain
 // ---------------------------------------------------------------------------
 
+func TestApplyAccountStatsCost_NilUsageLogDoesNotPanic(t *testing.T) {
+	require.NotPanics(t, func() {
+		applyAccountStatsCost(
+			context.Background(), nil, nil, nil,
+			0, 0, "", "", UsageTokens{}, 0,
+		)
+	})
+}
+
+func TestApplyAccountStatsCost_ImageBillingSkipsLiteLLMFallback(t *testing.T) {
+	channel := &Channel{ID: 1, Status: StatusActive}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-sonnet-4": {ImageOutputPricePerToken: 0.01},
+	})
+	billingMode := string(BillingModeImage)
+	usageLog := &UsageLog{BillingMode: &billingMode}
+
+	applyAccountStatsCost(
+		context.Background(), usageLog, cs, bs,
+		1, 10, "claude-sonnet-4", "claude-sonnet-4",
+		UsageTokens{ImageOutputTokens: 10}, 0.21,
+	)
+
+	require.Nil(t, usageLog.AccountStatsCost)
+}
+
 func TestResolveAccountStatsCost_NilChannelService(t *testing.T) {
 	result := resolveAccountStatsCost(
 		context.Background(),
 		nil, // channelService is nil
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 1, "claude-sonnet-4",
-		UsageTokens{InputTokens: 100}, 1, 0.5,
+		UsageTokens{InputTokens: 100}, 1, 0.5, BillingModeToken,
 	)
 	require.Nil(t, result)
 }
@@ -556,7 +690,7 @@ func TestResolveAccountStatsCost_EmptyUpstreamModel(t *testing.T) {
 		cs,
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 1, "", // empty upstream model
-		UsageTokens{InputTokens: 100}, 1, 0.5,
+		UsageTokens{InputTokens: 100}, 1, 0.5, BillingModeToken,
 	)
 	require.Nil(t, result)
 }
@@ -573,7 +707,7 @@ func TestResolveAccountStatsCost_GetChannelForGroupReturnsNil(t *testing.T) {
 		cs,
 		newTestBillingServiceWithPrices(map[string]*ModelPricing{}),
 		1, 99, "claude-sonnet-4", // groupID 99 has no channel
-		UsageTokens{InputTokens: 100}, 1, 0.5,
+		UsageTokens{InputTokens: 100}, 1, 0.5, BillingModeToken,
 	)
 	require.Nil(t, result)
 }
@@ -604,7 +738,7 @@ func TestResolveAccountStatsCost_HitsCustomRule(t *testing.T) {
 		context.Background(),
 		cs, nil, // billingService not needed when custom rule hits
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 999.0, // totalCost ignored because custom rule hits
+		tokens, 1, 999.0, BillingModeToken, // totalCost ignored because custom rule hits
 	)
 	require.NotNil(t, result)
 	// 100*0.01 + 50*0.02 = 1.0 + 1.0 = 2.0
@@ -626,7 +760,7 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_UsesTotalCost(t *tes
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 0.75, // totalCost = 0.75
+		tokens, 1, 0.75, BillingModeToken, // totalCost = 0.75
 	)
 	require.NotNil(t, result)
 	require.InDelta(t, 0.75, *result, 1e-12)
@@ -644,12 +778,12 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_ZeroTotalCost_Return
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		UsageTokens{}, 1, 0.0, // totalCost = 0
+		UsageTokens{}, 1, 0.0, BillingModeToken, // totalCost = 0
 	)
 	require.Nil(t, result)
 }
 
-func TestResolveAccountStatsCost_FallsBackToLiteLLM(t *testing.T) {
+func TestResolveAccountStatsCost_TokenBillingFallsBackToLiteLLM(t *testing.T) {
 	channel := &Channel{
 		ID:                         1,
 		Status:                     StatusActive,
@@ -671,11 +805,98 @@ func TestResolveAccountStatsCost_FallsBackToLiteLLM(t *testing.T) {
 		context.Background(),
 		cs, bs,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 999.0, // totalCost ignored
+		tokens, 1, 999.0, BillingModeToken, // totalCost ignored
 	)
 	require.NotNil(t, result)
 	// 100*0.001 + 50*0.002 = 0.1 + 0.1 = 0.2
 	require.InDelta(t, 0.2, *result, 1e-12)
+}
+
+func TestResolveAccountStatsCost_ImageBillingSkipsLiteLLMFallback(t *testing.T) {
+	channel := &Channel{ID: 1, Status: StatusActive}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-sonnet-4": {ImageOutputPricePerToken: 0.01},
+	})
+
+	result := resolveAccountStatsCost(
+		context.Background(),
+		cs, bs,
+		1, 10, "claude-sonnet-4",
+		UsageTokens{ImageOutputTokens: 10}, 1, 0.21, BillingModeImage,
+	)
+
+	require.Nil(t, result)
+}
+
+func TestResolveAccountStatsCost_PerRequestBillingSkipsLiteLLMFallback(t *testing.T) {
+	channel := &Channel{ID: 1, Status: StatusActive}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-sonnet-4": {InputPricePerToken: 0.001},
+	})
+
+	result := resolveAccountStatsCost(
+		context.Background(),
+		cs, bs,
+		1, 10, "claude-sonnet-4",
+		UsageTokens{InputTokens: 100}, 1, 0.21, BillingModePerRequest,
+	)
+
+	require.Nil(t, result)
+}
+
+func TestResolveAccountStatsCost_ImageBillingCustomRuleOverridesLiteLLMFallback(t *testing.T) {
+	imagePrice := 0.02625
+	channel := &Channel{
+		ID:     1,
+		Status: StatusActive,
+		AccountStatsPricingRules: []AccountStatsPricingRule{
+			{
+				GroupIDs: []int64{10},
+				Pricing: []ChannelModelPricing{{
+					Models:          []string{"claude-sonnet-4"},
+					BillingMode:     BillingModeImage,
+					PerRequestPrice: &imagePrice,
+				}},
+			},
+		},
+	}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+	bs := newTestBillingServiceWithPrices(map[string]*ModelPricing{
+		"claude-sonnet-4": {ImageOutputPricePerToken: 0.01},
+	})
+
+	result := resolveAccountStatsCost(
+		context.Background(),
+		cs, bs,
+		1, 10, "claude-sonnet-4",
+		UsageTokens{ImageOutputTokens: 10}, 1, 0.21, BillingModeImage,
+	)
+
+	require.NotNil(t, result)
+	require.InDelta(t, imagePrice, *result, 1e-12)
+}
+
+func TestResolveAccountStatsCost_ImageBillingApplyPricingUsesTotalCost(t *testing.T) {
+	channel := &Channel{
+		ID:                         1,
+		Status:                     StatusActive,
+		ApplyPricingToAccountStats: true,
+	}
+	cs := newTestChannelServiceForStats(t, channel, 10, "anthropic")
+
+	result := resolveAccountStatsCost(
+		context.Background(),
+		cs, newTestBillingServiceWithPrices(map[string]*ModelPricing{
+			"claude-sonnet-4": {ImageOutputPricePerToken: 0.01},
+		}),
+		1, 10, "claude-sonnet-4",
+		UsageTokens{ImageOutputTokens: 10}, 1, 0.21, BillingModeImage,
+	)
+
+	require.NotNil(t, result)
+	require.InDelta(t, 0.21, *result, 1e-12)
 }
 
 func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
@@ -696,7 +917,7 @@ func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
 		context.Background(),
 		cs, bs,
 		1, 10, "totally-unknown-model",
-		tokens, 1, 0.0,
+		tokens, 1, 0.0, BillingModeToken,
 	)
 	require.Nil(t, result)
 }
@@ -713,7 +934,7 @@ func TestResolveAccountStatsCost_NilBillingService_SkipsLiteLLM(t *testing.T) {
 		context.Background(),
 		cs, nil, // billingService is nil
 		1, 10, "claude-sonnet-4",
-		UsageTokens{InputTokens: 100}, 1, 0.0,
+		UsageTokens{InputTokens: 100}, 1, 0.0, BillingModeToken,
 	)
 	require.Nil(t, result)
 }
@@ -746,7 +967,7 @@ func TestResolveAccountStatsCost_CustomRulePriorityOverApplyPricing(t *testing.T
 		context.Background(),
 		cs, nil,
 		1, 10, "claude-sonnet-4",
-		tokens, 1, 99.0, // totalCost = 99.0 (would be used if ApplyPricing wins)
+		tokens, 1, 99.0, BillingModeToken, // totalCost = 99.0 (would be used if ApplyPricing wins)
 	)
 	require.NotNil(t, result)
 	// Custom rule: 100*0.05 = 5.0 (NOT 99.0 from totalCost)

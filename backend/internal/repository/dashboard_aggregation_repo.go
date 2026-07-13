@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -210,24 +209,9 @@ func (r *dashboardAggregationRepository) CleanupAggregates(ctx context.Context, 
 }
 
 func (r *dashboardAggregationRepository) CleanupUsageLogs(ctx context.Context, cutoff time.Time) error {
-	isPartitioned, err := r.isUsageLogsPartitioned(ctx)
-	if err != nil {
-		return err
-	}
-	if isPartitioned {
-		return r.dropUsageLogsPartitions(ctx, cutoff)
-	}
+	query := buildUsageLogsCleanupBatchSQL("usage_logs", "video_task_refund_reporting_jobs")
 	for {
-		res, err := r.sql.ExecContext(ctx, `
-			WITH victims AS (
-				SELECT ctid
-				FROM usage_logs
-				WHERE created_at < $1
-				LIMIT $2
-			)
-			DELETE FROM usage_logs
-			WHERE ctid IN (SELECT ctid FROM victims)
-		`, cutoff.UTC(), usageLogsCleanupBatchSize)
+		res, err := r.sql.ExecContext(ctx, query, cutoff.UTC(), usageLogsCleanupBatchSize)
 		if err != nil {
 			return err
 		}
@@ -239,6 +223,36 @@ func (r *dashboardAggregationRepository) CleanupUsageLogs(ctx context.Context, c
 			return nil
 		}
 	}
+}
+
+func buildUsageLogsCleanupBatchSQL(usageTable, reportingJobsTable string) string {
+	usageTable = pq.QuoteIdentifier(usageTable)
+	reportingJobsTable = pq.QuoteIdentifier(reportingJobsTable)
+	return fmt.Sprintf(`
+			WITH victims AS (
+				SELECT ul.id, ul.ctid
+				FROM %s ul
+				WHERE ul.created_at < $1
+				AND NOT EXISTS (
+					SELECT 1 FROM %s j
+					WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+				)
+				FOR UPDATE OF ul SKIP LOCKED
+				LIMIT $2
+			), deleted_jobs AS (
+				DELETE FROM %s j
+				USING victims v
+				WHERE j.usage_log_id=v.id AND j.completed_at IS NOT NULL
+				RETURNING j.id
+			)
+			DELETE FROM %s ul
+			USING victims v
+			WHERE ul.id=v.id AND ul.ctid=v.ctid
+			AND NOT EXISTS (
+				SELECT 1 FROM %s j
+				WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+			)
+		`, usageTable, reportingJobsTable, reportingJobsTable, usageTable, reportingJobsTable)
 }
 
 func (r *dashboardAggregationRepository) CleanupUsageBillingDedup(ctx context.Context, cutoff time.Time) error {
@@ -331,7 +345,10 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 				COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
 				COALESCE(SUM(total_cost), 0) AS total_cost,
 				COALESCE(SUM(actual_cost), 0) AS actual_cost,
-				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS account_cost,
+				COALESCE(SUM(` + usageLogGrossAccountCostExpr("") + `), 0) AS account_cost,
+				COALESCE(SUM(refunded_total_cost), 0) AS refunded_total_cost,
+				COALESCE(SUM(refunded_cost), 0) AS refunded_cost,
+				COALESCE(SUM(refunded_account_cost), 0) AS refunded_account_cost,
 				COALESCE(SUM(COALESCE(duration_ms, 0)), 0) AS total_duration_ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
@@ -353,6 +370,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			total_cost,
 			actual_cost,
 			account_cost,
+			refunded_total_cost,
+			refunded_cost,
+			refunded_account_cost,
 			total_duration_ms,
 			active_users,
 			computed_at
@@ -367,6 +387,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			hourly.total_cost,
 			hourly.actual_cost,
 			hourly.account_cost,
+			hourly.refunded_total_cost,
+			hourly.refunded_cost,
+			hourly.refunded_account_cost,
 			hourly.total_duration_ms,
 			COALESCE(user_counts.active_users, 0) AS active_users,
 			NOW()
@@ -382,6 +405,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			total_cost = EXCLUDED.total_cost,
 			actual_cost = EXCLUDED.actual_cost,
 			account_cost = EXCLUDED.account_cost,
+			refunded_total_cost = EXCLUDED.refunded_total_cost,
+			refunded_cost = EXCLUDED.refunded_cost,
+			refunded_account_cost = EXCLUDED.refunded_account_cost,
 			total_duration_ms = EXCLUDED.total_duration_ms,
 			active_users = EXCLUDED.active_users,
 			computed_at = EXCLUDED.computed_at
@@ -404,6 +430,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 				COALESCE(SUM(total_cost), 0) AS total_cost,
 				COALESCE(SUM(actual_cost), 0) AS actual_cost,
 				COALESCE(SUM(account_cost), 0) AS account_cost,
+				COALESCE(SUM(refunded_total_cost), 0) AS refunded_total_cost,
+				COALESCE(SUM(refunded_cost), 0) AS refunded_cost,
+				COALESCE(SUM(refunded_account_cost), 0) AS refunded_account_cost,
 				COALESCE(SUM(total_duration_ms), 0) AS total_duration_ms
 			FROM usage_dashboard_hourly
 			WHERE bucket_start >= $1 AND bucket_start < $2
@@ -425,6 +454,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			total_cost,
 			actual_cost,
 			account_cost,
+			refunded_total_cost,
+			refunded_cost,
+			refunded_account_cost,
 			total_duration_ms,
 			active_users,
 			computed_at
@@ -439,6 +471,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			daily.total_cost,
 			daily.actual_cost,
 			daily.account_cost,
+			daily.refunded_total_cost,
+			daily.refunded_cost,
+			daily.refunded_account_cost,
 			daily.total_duration_ms,
 			COALESCE(user_counts.active_users, 0) AS active_users,
 			NOW()
@@ -454,6 +489,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			total_cost = EXCLUDED.total_cost,
 			actual_cost = EXCLUDED.actual_cost,
 			account_cost = EXCLUDED.account_cost,
+			refunded_total_cost = EXCLUDED.refunded_total_cost,
+			refunded_cost = EXCLUDED.refunded_cost,
+			refunded_account_cost = EXCLUDED.refunded_account_cost,
 			total_duration_ms = EXCLUDED.total_duration_ms,
 			active_users = EXCLUDED.active_users,
 			computed_at = EXCLUDED.computed_at
@@ -476,45 +514,6 @@ func (r *dashboardAggregationRepository) isUsageLogsPartitioned(ctx context.Cont
 		return false, err
 	}
 	return partitioned, nil
-}
-
-func (r *dashboardAggregationRepository) dropUsageLogsPartitions(ctx context.Context, cutoff time.Time) error {
-	rows, err := r.sql.QueryContext(ctx, `
-		SELECT c.relname
-		FROM pg_inherits
-		JOIN pg_class c ON c.oid = pg_inherits.inhrelid
-		JOIN pg_class p ON p.oid = pg_inherits.inhparent
-		WHERE p.relname = 'usage_logs'
-	`)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	cutoffMonth := truncateToMonthUTC(cutoff)
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		if !strings.HasPrefix(name, "usage_logs_") {
-			continue
-		}
-		suffix := strings.TrimPrefix(name, "usage_logs_")
-		month, err := time.Parse("200601", suffix)
-		if err != nil {
-			continue
-		}
-		month = month.UTC()
-		if month.Before(cutoffMonth) {
-			if _, err := r.sql.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", pq.QuoteIdentifier(name))); err != nil {
-				return err
-			}
-		}
-	}
-	return rows.Err()
 }
 
 func (r *dashboardAggregationRepository) createUsageLogsPartition(ctx context.Context, month time.Time) error {

@@ -337,6 +337,76 @@ func (_c *UsageLogCreate) SetNillableActualCost(v *float64) *UsageLogCreate {
 	return _c
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (_c *UsageLogCreate) SetRefundedCost(v float64) *UsageLogCreate {
+	_c.mutation.SetRefundedCost(v)
+	return _c
+}
+
+// SetNillableRefundedCost sets the "refunded_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundedCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundedCost(*v)
+	}
+	return _c
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (_c *UsageLogCreate) SetRefundedTotalCost(v float64) *UsageLogCreate {
+	_c.mutation.SetRefundedTotalCost(v)
+	return _c
+}
+
+// SetNillableRefundedTotalCost sets the "refunded_total_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundedTotalCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundedTotalCost(*v)
+	}
+	return _c
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (_c *UsageLogCreate) SetRefundedAccountCost(v float64) *UsageLogCreate {
+	_c.mutation.SetRefundedAccountCost(v)
+	return _c
+}
+
+// SetNillableRefundedAccountCost sets the "refunded_account_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundedAccountCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundedAccountCost(*v)
+	}
+	return _c
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (_c *UsageLogCreate) SetRefundReason(v string) *UsageLogCreate {
+	_c.mutation.SetRefundReason(v)
+	return _c
+}
+
+// SetNillableRefundReason sets the "refund_reason" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundReason(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundReason(*v)
+	}
+	return _c
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (_c *UsageLogCreate) SetRefundedAt(v time.Time) *UsageLogCreate {
+	_c.mutation.SetRefundedAt(v)
+	return _c
+}
+
+// SetNillableRefundedAt sets the "refunded_at" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundedAt(v *time.Time) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundedAt(*v)
+	}
+	return _c
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_c *UsageLogCreate) SetRateMultiplier(v float64) *UsageLogCreate {
 	_c.mutation.SetRateMultiplier(v)
@@ -525,6 +595,48 @@ func (_c *UsageLogCreate) SetImageSizeBreakdown(v map[string]int) *UsageLogCreat
 	return _c
 }
 
+// SetVideoCount sets the "video_count" field.
+func (_c *UsageLogCreate) SetVideoCount(v int) *UsageLogCreate {
+	_c.mutation.SetVideoCount(v)
+	return _c
+}
+
+// SetNillableVideoCount sets the "video_count" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoCount(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoCount(*v)
+	}
+	return _c
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (_c *UsageLogCreate) SetVideoResolution(v string) *UsageLogCreate {
+	_c.mutation.SetVideoResolution(v)
+	return _c
+}
+
+// SetNillableVideoResolution sets the "video_resolution" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoResolution(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoResolution(*v)
+	}
+	return _c
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (_c *UsageLogCreate) SetVideoDurationSeconds(v int) *UsageLogCreate {
+	_c.mutation.SetVideoDurationSeconds(v)
+	return _c
+}
+
+// SetNillableVideoDurationSeconds sets the "video_duration_seconds" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableVideoDurationSeconds(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetVideoDurationSeconds(*v)
+	}
+	return _c
+}
+
 // SetCacheTTLOverridden sets the "cache_ttl_overridden" field.
 func (_c *UsageLogCreate) SetCacheTTLOverridden(v bool) *UsageLogCreate {
 	_c.mutation.SetCacheTTLOverridden(v)
@@ -661,6 +773,18 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultActualCost
 		_c.mutation.SetActualCost(v)
 	}
+	if _, ok := _c.mutation.RefundedCost(); !ok {
+		v := usagelog.DefaultRefundedCost
+		_c.mutation.SetRefundedCost(v)
+	}
+	if _, ok := _c.mutation.RefundedTotalCost(); !ok {
+		v := usagelog.DefaultRefundedTotalCost
+		_c.mutation.SetRefundedTotalCost(v)
+	}
+	if _, ok := _c.mutation.RefundedAccountCost(); !ok {
+		v := usagelog.DefaultRefundedAccountCost
+		_c.mutation.SetRefundedAccountCost(v)
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		v := usagelog.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
@@ -676,6 +800,10 @@ func (_c *UsageLogCreate) defaults() {
 	if _, ok := _c.mutation.ImageCount(); !ok {
 		v := usagelog.DefaultImageCount
 		_c.mutation.SetImageCount(v)
+	}
+	if _, ok := _c.mutation.VideoCount(); !ok {
+		v := usagelog.DefaultVideoCount
+		_c.mutation.SetVideoCount(v)
 	}
 	if _, ok := _c.mutation.CacheTTLOverridden(); !ok {
 		v := usagelog.DefaultCacheTTLOverridden
@@ -775,6 +903,15 @@ func (_c *UsageLogCreate) check() error {
 	if _, ok := _c.mutation.ActualCost(); !ok {
 		return &ValidationError{Name: "actual_cost", err: errors.New(`ent: missing required field "UsageLog.actual_cost"`)}
 	}
+	if _, ok := _c.mutation.RefundedCost(); !ok {
+		return &ValidationError{Name: "refunded_cost", err: errors.New(`ent: missing required field "UsageLog.refunded_cost"`)}
+	}
+	if _, ok := _c.mutation.RefundedTotalCost(); !ok {
+		return &ValidationError{Name: "refunded_total_cost", err: errors.New(`ent: missing required field "UsageLog.refunded_total_cost"`)}
+	}
+	if _, ok := _c.mutation.RefundedAccountCost(); !ok {
+		return &ValidationError{Name: "refunded_account_cost", err: errors.New(`ent: missing required field "UsageLog.refunded_account_cost"`)}
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "UsageLog.rate_multiplier"`)}
 	}
@@ -815,6 +952,14 @@ func (_c *UsageLogCreate) check() error {
 	if v, ok := _c.mutation.ImageSizeSource(); ok {
 		if err := usagelog.ImageSizeSourceValidator(v); err != nil {
 			return &ValidationError{Name: "image_size_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size_source": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.VideoCount(); !ok {
+		return &ValidationError{Name: "video_count", err: errors.New(`ent: missing required field "UsageLog.video_count"`)}
+	}
+	if v, ok := _c.mutation.VideoResolution(); ok {
+		if err := usagelog.VideoResolutionValidator(v); err != nil {
+			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.CacheTTLOverridden(); !ok {
@@ -939,6 +1084,26 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldActualCost, field.TypeFloat64, value)
 		_node.ActualCost = value
 	}
+	if value, ok := _c.mutation.RefundedCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+		_node.RefundedCost = value
+	}
+	if value, ok := _c.mutation.RefundedTotalCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+		_node.RefundedTotalCost = value
+	}
+	if value, ok := _c.mutation.RefundedAccountCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+		_node.RefundedAccountCost = value
+	}
+	if value, ok := _c.mutation.RefundReason(); ok {
+		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
+		_node.RefundReason = &value
+	}
+	if value, ok := _c.mutation.RefundedAt(); ok {
+		_spec.SetField(usagelog.FieldRefundedAt, field.TypeTime, value)
+		_node.RefundedAt = &value
+	}
 	if value, ok := _c.mutation.RateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
@@ -994,6 +1159,18 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ImageSizeBreakdown(); ok {
 		_spec.SetField(usagelog.FieldImageSizeBreakdown, field.TypeJSON, value)
 		_node.ImageSizeBreakdown = value
+	}
+	if value, ok := _c.mutation.VideoCount(); ok {
+		_spec.SetField(usagelog.FieldVideoCount, field.TypeInt, value)
+		_node.VideoCount = value
+	}
+	if value, ok := _c.mutation.VideoResolution(); ok {
+		_spec.SetField(usagelog.FieldVideoResolution, field.TypeString, value)
+		_node.VideoResolution = &value
+	}
+	if value, ok := _c.mutation.VideoDurationSeconds(); ok {
+		_spec.SetField(usagelog.FieldVideoDurationSeconds, field.TypeInt, value)
+		_node.VideoDurationSeconds = &value
 	}
 	if value, ok := _c.mutation.CacheTTLOverridden(); ok {
 		_spec.SetField(usagelog.FieldCacheTTLOverridden, field.TypeBool, value)
@@ -1566,6 +1743,96 @@ func (u *UsageLogUpsert) AddActualCost(v float64) *UsageLogUpsert {
 	return u
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (u *UsageLogUpsert) SetRefundedCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundedCost, v)
+	return u
+}
+
+// UpdateRefundedCost sets the "refunded_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundedCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundedCost)
+	return u
+}
+
+// AddRefundedCost adds v to the "refunded_cost" field.
+func (u *UsageLogUpsert) AddRefundedCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldRefundedCost, v)
+	return u
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (u *UsageLogUpsert) SetRefundedTotalCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundedTotalCost, v)
+	return u
+}
+
+// UpdateRefundedTotalCost sets the "refunded_total_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundedTotalCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundedTotalCost)
+	return u
+}
+
+// AddRefundedTotalCost adds v to the "refunded_total_cost" field.
+func (u *UsageLogUpsert) AddRefundedTotalCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldRefundedTotalCost, v)
+	return u
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (u *UsageLogUpsert) SetRefundedAccountCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundedAccountCost, v)
+	return u
+}
+
+// UpdateRefundedAccountCost sets the "refunded_account_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundedAccountCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundedAccountCost)
+	return u
+}
+
+// AddRefundedAccountCost adds v to the "refunded_account_cost" field.
+func (u *UsageLogUpsert) AddRefundedAccountCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldRefundedAccountCost, v)
+	return u
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (u *UsageLogUpsert) SetRefundReason(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundReason, v)
+	return u
+}
+
+// UpdateRefundReason sets the "refund_reason" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundReason() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundReason)
+	return u
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (u *UsageLogUpsert) ClearRefundReason() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldRefundReason)
+	return u
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (u *UsageLogUpsert) SetRefundedAt(v time.Time) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundedAt, v)
+	return u
+}
+
+// UpdateRefundedAt sets the "refunded_at" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundedAt() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundedAt)
+	return u
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (u *UsageLogUpsert) ClearRefundedAt() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldRefundedAt)
+	return u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *UsageLogUpsert) SetRateMultiplier(v float64) *UsageLogUpsert {
 	u.Set(usagelog.FieldRateMultiplier, v)
@@ -1827,6 +2094,66 @@ func (u *UsageLogUpsert) UpdateImageSizeBreakdown() *UsageLogUpsert {
 // ClearImageSizeBreakdown clears the value of the "image_size_breakdown" field.
 func (u *UsageLogUpsert) ClearImageSizeBreakdown() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldImageSizeBreakdown)
+	return u
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsert) SetVideoCount(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoCount, v)
+	return u
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoCount() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoCount)
+	return u
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsert) AddVideoCount(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldVideoCount, v)
+	return u
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsert) SetVideoResolution(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoResolution, v)
+	return u
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoResolution() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoResolution)
+	return u
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsert) ClearVideoResolution() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoResolution)
+	return u
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (u *UsageLogUpsert) SetVideoDurationSeconds(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldVideoDurationSeconds, v)
+	return u
+}
+
+// UpdateVideoDurationSeconds sets the "video_duration_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateVideoDurationSeconds() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldVideoDurationSeconds)
+	return u
+}
+
+// AddVideoDurationSeconds adds v to the "video_duration_seconds" field.
+func (u *UsageLogUpsert) AddVideoDurationSeconds(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldVideoDurationSeconds, v)
+	return u
+}
+
+// ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
+func (u *UsageLogUpsert) ClearVideoDurationSeconds() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldVideoDurationSeconds)
 	return u
 }
 
@@ -2384,6 +2711,111 @@ func (u *UsageLogUpsertOne) UpdateActualCost() *UsageLogUpsertOne {
 	})
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (u *UsageLogUpsertOne) SetRefundedCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedCost(v)
+	})
+}
+
+// AddRefundedCost adds v to the "refunded_cost" field.
+func (u *UsageLogUpsertOne) AddRefundedCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedCost(v)
+	})
+}
+
+// UpdateRefundedCost sets the "refunded_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundedCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedCost()
+	})
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (u *UsageLogUpsertOne) SetRefundedTotalCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedTotalCost(v)
+	})
+}
+
+// AddRefundedTotalCost adds v to the "refunded_total_cost" field.
+func (u *UsageLogUpsertOne) AddRefundedTotalCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedTotalCost(v)
+	})
+}
+
+// UpdateRefundedTotalCost sets the "refunded_total_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundedTotalCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedTotalCost()
+	})
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (u *UsageLogUpsertOne) SetRefundedAccountCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedAccountCost(v)
+	})
+}
+
+// AddRefundedAccountCost adds v to the "refunded_account_cost" field.
+func (u *UsageLogUpsertOne) AddRefundedAccountCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedAccountCost(v)
+	})
+}
+
+// UpdateRefundedAccountCost sets the "refunded_account_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundedAccountCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedAccountCost()
+	})
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (u *UsageLogUpsertOne) SetRefundReason(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundReason(v)
+	})
+}
+
+// UpdateRefundReason sets the "refund_reason" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundReason() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundReason()
+	})
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (u *UsageLogUpsertOne) ClearRefundReason() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRefundReason()
+	})
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (u *UsageLogUpsertOne) SetRefundedAt(v time.Time) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedAt(v)
+	})
+}
+
+// UpdateRefundedAt sets the "refunded_at" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundedAt() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedAt()
+	})
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (u *UsageLogUpsertOne) ClearRefundedAt() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRefundedAt()
+	})
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *UsageLogUpsertOne) SetRateMultiplier(v float64) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2689,6 +3121,76 @@ func (u *UsageLogUpsertOne) UpdateImageSizeBreakdown() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearImageSizeBreakdown() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearImageSizeBreakdown()
+	})
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsertOne) SetVideoCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoCount(v)
+	})
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsertOne) AddVideoCount(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoCount(v)
+	})
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoCount() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoCount()
+	})
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsertOne) SetVideoResolution(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoResolution(v)
+	})
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoResolution() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoResolution()
+	})
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsertOne) ClearVideoResolution() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoResolution()
+	})
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (u *UsageLogUpsertOne) SetVideoDurationSeconds(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoDurationSeconds(v)
+	})
+}
+
+// AddVideoDurationSeconds adds v to the "video_duration_seconds" field.
+func (u *UsageLogUpsertOne) AddVideoDurationSeconds(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoDurationSeconds(v)
+	})
+}
+
+// UpdateVideoDurationSeconds sets the "video_duration_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateVideoDurationSeconds() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoDurationSeconds()
+	})
+}
+
+// ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
+func (u *UsageLogUpsertOne) ClearVideoDurationSeconds() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoDurationSeconds()
 	})
 }
 
@@ -3414,6 +3916,111 @@ func (u *UsageLogUpsertBulk) UpdateActualCost() *UsageLogUpsertBulk {
 	})
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (u *UsageLogUpsertBulk) SetRefundedCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedCost(v)
+	})
+}
+
+// AddRefundedCost adds v to the "refunded_cost" field.
+func (u *UsageLogUpsertBulk) AddRefundedCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedCost(v)
+	})
+}
+
+// UpdateRefundedCost sets the "refunded_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundedCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedCost()
+	})
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (u *UsageLogUpsertBulk) SetRefundedTotalCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedTotalCost(v)
+	})
+}
+
+// AddRefundedTotalCost adds v to the "refunded_total_cost" field.
+func (u *UsageLogUpsertBulk) AddRefundedTotalCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedTotalCost(v)
+	})
+}
+
+// UpdateRefundedTotalCost sets the "refunded_total_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundedTotalCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedTotalCost()
+	})
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (u *UsageLogUpsertBulk) SetRefundedAccountCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedAccountCost(v)
+	})
+}
+
+// AddRefundedAccountCost adds v to the "refunded_account_cost" field.
+func (u *UsageLogUpsertBulk) AddRefundedAccountCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRefundedAccountCost(v)
+	})
+}
+
+// UpdateRefundedAccountCost sets the "refunded_account_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundedAccountCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedAccountCost()
+	})
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (u *UsageLogUpsertBulk) SetRefundReason(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundReason(v)
+	})
+}
+
+// UpdateRefundReason sets the "refund_reason" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundReason() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundReason()
+	})
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (u *UsageLogUpsertBulk) ClearRefundReason() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRefundReason()
+	})
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (u *UsageLogUpsertBulk) SetRefundedAt(v time.Time) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundedAt(v)
+	})
+}
+
+// UpdateRefundedAt sets the "refunded_at" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundedAt() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundedAt()
+	})
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (u *UsageLogUpsertBulk) ClearRefundedAt() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRefundedAt()
+	})
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (u *UsageLogUpsertBulk) SetRateMultiplier(v float64) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -3719,6 +4326,76 @@ func (u *UsageLogUpsertBulk) UpdateImageSizeBreakdown() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearImageSizeBreakdown() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearImageSizeBreakdown()
+	})
+}
+
+// SetVideoCount sets the "video_count" field.
+func (u *UsageLogUpsertBulk) SetVideoCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoCount(v)
+	})
+}
+
+// AddVideoCount adds v to the "video_count" field.
+func (u *UsageLogUpsertBulk) AddVideoCount(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoCount(v)
+	})
+}
+
+// UpdateVideoCount sets the "video_count" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoCount() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoCount()
+	})
+}
+
+// SetVideoResolution sets the "video_resolution" field.
+func (u *UsageLogUpsertBulk) SetVideoResolution(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoResolution(v)
+	})
+}
+
+// UpdateVideoResolution sets the "video_resolution" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoResolution() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoResolution()
+	})
+}
+
+// ClearVideoResolution clears the value of the "video_resolution" field.
+func (u *UsageLogUpsertBulk) ClearVideoResolution() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoResolution()
+	})
+}
+
+// SetVideoDurationSeconds sets the "video_duration_seconds" field.
+func (u *UsageLogUpsertBulk) SetVideoDurationSeconds(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetVideoDurationSeconds(v)
+	})
+}
+
+// AddVideoDurationSeconds adds v to the "video_duration_seconds" field.
+func (u *UsageLogUpsertBulk) AddVideoDurationSeconds(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddVideoDurationSeconds(v)
+	})
+}
+
+// UpdateVideoDurationSeconds sets the "video_duration_seconds" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateVideoDurationSeconds() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateVideoDurationSeconds()
+	})
+}
+
+// ClearVideoDurationSeconds clears the value of the "video_duration_seconds" field.
+func (u *UsageLogUpsertBulk) ClearVideoDurationSeconds() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearVideoDurationSeconds()
 	})
 }
 

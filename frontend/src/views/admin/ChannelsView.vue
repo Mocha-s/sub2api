@@ -447,6 +447,7 @@
                   :key="idx"
                   :entry="entry"
                   :platform="section.platform"
+                  :input-id-prefix="`${section.platform}-model-pricing-${idx}`"
                   @update="updatePricingEntry(sIdx, idx, $event)"
                   @remove="removePricingEntry(sIdx, idx)"
                 />
@@ -577,6 +578,7 @@
                       :key="pIdx"
                       :entry="entry"
                       :platform="section.platform"
+                      :input-id-prefix="`${section.platform}-account-rule-${ruleIndex}-pricing-${pIdx}`"
                       @update="rule.pricing.splice(pIdx, 1, $event)"
                       @remove="removeRulePricingEntry(sIdx, ruleIndex, pIdx)"
                     />
@@ -632,7 +634,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
-import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
+import { apiIntervalsToForm, apiVideoPricingToForm, findModelConflict, formPricingToAPI, perTokenToMTok, validatePricingEntry } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -847,9 +849,9 @@ function toggleGroupInSection(sectionIdx: number, groupId: number) {
 }
 
 // ── Pricing helpers ──
-function addPricingEntry(sectionIdx: number) {
-  form.platforms[sectionIdx].model_pricing.push({
-    models: [],
+function createPricingEntry(models: string[] = []): PricingFormEntry {
+  return {
+    models,
     billing_mode: 'token',
     input_price: null,
     output_price: null,
@@ -857,8 +859,15 @@ function addPricingEntry(sectionIdx: number) {
     cache_read_price: null,
     image_output_price: null,
     per_request_price: null,
+    video_price_per_second: null,
+    video_default_seconds: null,
+    video_allowed_seconds: [],
     intervals: []
-  })
+  }
+}
+
+function addPricingEntry(sectionIdx: number) {
+  form.platforms[sectionIdx].model_pricing.push(createPricingEntry())
 }
 
 const syncingPlatform = ref<string | null>(null)
@@ -880,17 +889,7 @@ async function syncLatestModels(sectionIdx: number) {
       return
     }
     // Add new models as a single new pricing entry (user fills in prices)
-    form.platforms[sectionIdx].model_pricing.push({
-      models: newModels,
-      billing_mode: 'token',
-      input_price: null,
-      output_price: null,
-      cache_write_price: null,
-      cache_read_price: null,
-      image_output_price: null,
-      per_request_price: null,
-      intervals: []
-    })
+    form.platforms[sectionIdx].model_pricing.push(createPricingEntry(newModels))
     appStore.showSuccess(t('admin.channels.form.syncModelsSuccess', { count: newModels.length }))
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncModelsError')))
@@ -944,17 +943,7 @@ function addAccountStatsRule(sectionIdx: number) {
 }
 
 function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
-  form.platforms[sectionIdx].account_stats_pricing_rules[ruleIndex].pricing.push({
-    models: [],
-    billing_mode: 'token',
-    input_price: null,
-    output_price: null,
-    cache_write_price: null,
-    cache_read_price: null,
-    image_output_price: null,
-    per_request_price: null,
-    intervals: []
-  })
+  form.platforms[sectionIdx].account_stats_pricing_rules[ruleIndex].pricing.push(createPricingEntry())
 }
 
 function removeAccountStatsRule(sectionIdx: number, ruleIndex: number) {
@@ -1058,18 +1047,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
         account_ids: rule.account_ids,
         pricing: rule.pricing
           .filter(p => p.models.length > 0)
-          .map(p => ({
-            platform: section.platform,
-            models: p.models,
-            billing_mode: p.billing_mode,
-            input_price: mTokToPerToken(p.input_price),
-            output_price: mTokToPerToken(p.output_price),
-            cache_write_price: mTokToPerToken(p.cache_write_price),
-            cache_read_price: mTokToPerToken(p.cache_read_price),
-            image_output_price: mTokToPerToken(p.image_output_price),
-            per_request_price: p.per_request_price != null && p.per_request_price !== '' ? Number(p.per_request_price) : null,
-            intervals: formIntervalsToAPI(p.intervals || [])
-          }))
+          .map(p => formPricingToAPI(p, section.platform))
       })
     }
   }
@@ -1098,18 +1076,7 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
     // Model pricing with platform tag
     for (const entry of section.model_pricing) {
       if (entry.models.length === 0) continue
-      model_pricing.push({
-        platform: section.platform,
-        models: entry.models,
-        billing_mode: entry.billing_mode,
-        input_price: mTokToPerToken(entry.input_price),
-        output_price: mTokToPerToken(entry.output_price),
-        cache_write_price: mTokToPerToken(entry.cache_write_price),
-        cache_read_price: mTokToPerToken(entry.cache_read_price),
-        image_output_price: mTokToPerToken(entry.image_output_price),
-        per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
-        intervals: formIntervalsToAPI(entry.intervals || [])
-      })
+      model_pricing.push(formPricingToAPI(entry, section.platform))
     }
   }
 
@@ -1196,6 +1163,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
         cache_read_price: perTokenToMTok(p.cache_read_price),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
+        ...apiVideoPricingToForm(p),
         intervals: apiIntervalsToForm(p.intervals || [])
       } as PricingFormEntry))
 
@@ -1384,6 +1352,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
         cache_read_price: perTokenToMTok(p.cache_read_price),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
+        ...apiVideoPricingToForm(p),
         intervals: apiIntervalsToForm(p.intervals || [])
       } as PricingFormEntry))
     }
@@ -1479,28 +1448,20 @@ async function handleSubmit() {
     }
   }
 
-  // 校验 per_request/image 模式必须有价格 (只校验启用的平台)
+  // Validate prices, durations, and tiers before serializing. Account-stat rule entries
+  // share the same pricing contract as channel-level entries.
   for (const section of form.platforms.filter(s => s.enabled)) {
-    for (const entry of section.model_pricing) {
+    const entries = [
+      ...section.model_pricing,
+      ...section.account_stats_pricing_rules.flatMap(rule => rule.pricing),
+    ]
+    for (const entry of entries) {
       if (entry.models.length === 0) continue
-      if ((entry.billing_mode === 'per_request' || entry.billing_mode === 'image') &&
-          (entry.per_request_price == null || entry.per_request_price === '') &&
-          (!entry.intervals || entry.intervals.length === 0)) {
-        appStore.showError(t('admin.channels.form.perRequestPriceRequired'))
-        return
-      }
-    }
-  }
-
-  // 校验区间合法性（范围、重叠等）
-  for (const section of form.platforms.filter(s => s.enabled)) {
-    for (const entry of section.model_pricing) {
-      if (!entry.intervals || entry.intervals.length === 0) continue
-      const intervalErr = validateIntervals(entry.intervals, entry.billing_mode, t)
-      if (intervalErr) {
+      const pricingError = validatePricingEntry(entry, t)
+      if (pricingError) {
         const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
         const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')
-        appStore.showError(`${platformLabel} - ${modelLabel}: ${intervalErr}`)
+        appStore.showError(`${platformLabel} - ${modelLabel}: ${pricingError}`)
         activeTab.value = section.platform
         return
       }
