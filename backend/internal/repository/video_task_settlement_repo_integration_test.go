@@ -2564,7 +2564,7 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 		require.NoError(t, cleanupErr)
 	})
 	for _, table := range []string{
-		"groups", "users", "accounts", "api_keys", "usage_logs", "video_tasks", "user_platform_quotas",
+		"groups", "users", "accounts", "api_keys", "usage_logs", "video_tasks", "user_subscriptions", "user_platform_quotas",
 		"video_task_settlements", "video_task_settlement_events", "video_task_refund_reporting_jobs", "video_task_cache_invalidation_jobs",
 	} {
 		_, err = conn.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s.%s (LIKE public.%s INCLUDING ALL)", schema, table, table))
@@ -2581,6 +2581,8 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 			(60,24,'sk-legacy-probe','legacy-probe',3001,100,12.5,7,8,9);
 		INSERT INTO user_platform_quotas (user_id,platform,daily_usage_usd,weekly_usage_usd,monthly_usage_usd) VALUES
 			(24,'openai',12.5,13.5,14.5);
+		INSERT INTO user_subscriptions (id,user_id,group_id,starts_at,expires_at,daily_usage_usd,weekly_usage_usd,monthly_usage_usd) VALUES
+			(4001,24,3001,NOW()-INTERVAL '1 day',NOW()+INTERVAL '30 days',15.5,16.5,17.5);
 		INSERT INTO usage_logs
 			(id,user_id,api_key_id,account_id,request_id,model,total_cost,actual_cost,account_stats_cost,account_rate_multiplier,billing_type,billing_mode,created_at)
 		VALUES
@@ -2588,32 +2590,63 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 		INSERT INTO video_tasks
 			(public_task_id,provider,platform,user_id,api_key_id,group_id,account_id,requested_model,upstream_model,billing_model,status,prompt,request_hash,result_metadata)
 		VALUES
-			('task_32d91ebd2001e678fca0ad8310067765','test','openai',24,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-hash',jsonb_build_object('request_id','legacy-probe-request'))`)
+			('task_32d91ebd2001e678fca0ad8310067765','test','openai',24,60,3001,221,'video-ds-2.0-fast','video-ds-2.0-fast','video-ds-2.0-fast','failed','probe','legacy-probe-hash',jsonb_build_object('request_id','legacy-probe-request-mismatch'))`)
+	require.NoError(t, err)
+
+	var balanceBefore, apiQuotaBefore, apiUsage5hBefore, apiUsage1dBefore, apiUsage7dBefore float64
+	var accountQuotaBefore, accountDailyBefore, accountWeeklyBefore float64
+	var platformDailyBefore, platformWeeklyBefore, platformMonthlyBefore float64
+	var subscriptionDailyBefore, subscriptionWeeklyBefore, subscriptionMonthlyBefore float64
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h,usage_1d,usage_7d FROM api_keys WHERE id=60`).Scan(&apiQuotaBefore, &apiUsage5hBefore, &apiUsage1dBefore, &apiUsage7dBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric,(extra->>'quota_daily_used')::numeric,(extra->>'quota_weekly_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaBefore, &accountDailyBefore, &accountWeeklyBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformDailyBefore, &platformWeeklyBefore, &platformMonthlyBefore))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_subscriptions WHERE id=4001`).Scan(&subscriptionDailyBefore, &subscriptionWeeklyBefore, &subscriptionMonthlyBefore))
+
+	_, err = conn.ExecContext(ctx, string(compensationSQL))
+	require.Error(t, err)
+	_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
+	require.NoError(t, rollbackErr)
+	var balanceAfterMismatch float64
+	var settlementsAfterMismatch int
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfterMismatch))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_settlements`).Scan(&settlementsAfterMismatch))
+	require.Equal(t, balanceBefore, balanceAfterMismatch)
+	require.Zero(t, settlementsAfterMismatch)
+
+	_, err = conn.ExecContext(ctx, `UPDATE video_tasks SET result_metadata=jsonb_build_object('request_id','legacy-probe-request') WHERE public_task_id='task_32d91ebd2001e678fca0ad8310067765'`)
 	require.NoError(t, err)
 	auditSQL, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "ops", "2026-07-13-audit-failed-per-request-video.sql"))
 	require.NoError(t, err)
 	_, err = conn.ExecContext(ctx, string(auditSQL))
 	require.NoError(t, err)
 
-	var balanceBefore, apiQuotaBefore, apiRateBefore, accountQuotaBefore, platformQuotaBefore float64
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceBefore))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=60`).Scan(&apiQuotaBefore, &apiRateBefore))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaBefore))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformQuotaBefore))
-
 	_, err = conn.ExecContext(ctx, string(compensationSQL))
 	require.NoError(t, err)
 
-	var balanceAfter, apiQuotaAfter, apiRateAfter, accountQuotaAfter, platformQuotaAfter float64
+	var balanceAfter, apiQuotaAfter, apiUsage5hAfter, apiUsage1dAfter, apiUsage7dAfter float64
+	var accountQuotaAfter, accountDailyAfter, accountWeeklyAfter float64
+	var platformDailyAfter, platformWeeklyAfter, platformMonthlyAfter float64
+	var subscriptionDailyAfter, subscriptionWeeklyAfter, subscriptionMonthlyAfter float64
 	require.NoError(t, conn.QueryRowContext(ctx, `SELECT balance FROM users WHERE id=24`).Scan(&balanceAfter))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=60`).Scan(&apiQuotaAfter, &apiRateAfter))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaAfter))
-	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformQuotaAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT quota_used,usage_5h,usage_1d,usage_7d FROM api_keys WHERE id=60`).Scan(&apiQuotaAfter, &apiUsage5hAfter, &apiUsage1dAfter, &apiUsage7dAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT (extra->>'quota_used')::numeric,(extra->>'quota_daily_used')::numeric,(extra->>'quota_weekly_used')::numeric FROM accounts WHERE id=221`).Scan(&accountQuotaAfter, &accountDailyAfter, &accountWeeklyAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_platform_quotas WHERE user_id=24 AND platform='openai'`).Scan(&platformDailyAfter, &platformWeeklyAfter, &platformMonthlyAfter))
+	require.NoError(t, conn.QueryRowContext(ctx, `SELECT daily_usage_usd,weekly_usage_usd,monthly_usage_usd FROM user_subscriptions WHERE id=4001`).Scan(&subscriptionDailyAfter, &subscriptionWeeklyAfter, &subscriptionMonthlyAfter))
 	require.InDelta(t, balanceBefore+6.9225, balanceAfter, 1e-9)
 	require.Equal(t, apiQuotaBefore, apiQuotaAfter)
-	require.Equal(t, apiRateBefore, apiRateAfter)
+	require.Equal(t, apiUsage5hBefore, apiUsage5hAfter)
+	require.Equal(t, apiUsage1dBefore, apiUsage1dAfter)
+	require.Equal(t, apiUsage7dBefore, apiUsage7dAfter)
 	require.Equal(t, accountQuotaBefore, accountQuotaAfter)
-	require.Equal(t, platformQuotaBefore, platformQuotaAfter)
+	require.Equal(t, accountDailyBefore, accountDailyAfter)
+	require.Equal(t, accountWeeklyBefore, accountWeeklyAfter)
+	require.Equal(t, platformDailyBefore, platformDailyAfter)
+	require.Equal(t, platformWeeklyBefore, platformWeeklyAfter)
+	require.Equal(t, platformMonthlyBefore, platformMonthlyAfter)
+	require.Equal(t, subscriptionDailyBefore, subscriptionDailyAfter)
+	require.Equal(t, subscriptionWeeklyBefore, subscriptionWeeklyAfter)
+	require.Equal(t, subscriptionMonthlyBefore, subscriptionMonthlyAfter)
 
 	var refundedCost, refundedTotal, refundedAccount float64
 	var refundReason sql.NullString
@@ -2661,7 +2694,7 @@ func TestVideoTaskLegacyProbeCompensation(t *testing.T) {
 
 	_, err = conn.ExecContext(ctx, string(compensationSQL))
 	require.Error(t, err)
-	_, rollbackErr := conn.ExecContext(ctx, "ROLLBACK")
+	_, rollbackErr = conn.ExecContext(ctx, "ROLLBACK")
 	require.NoError(t, rollbackErr)
 	var balanceAfterRetry float64
 	var settlementsAfterRetry, eventsAfterRetry, reportingAfterRetry, cacheAfterRetry int

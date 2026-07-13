@@ -37,7 +37,14 @@ BEGIN
         OR v_task.user_id <> 24
         OR v_task.api_key_id <> 60
         OR v_task.account_id <> 221
-        OR (v_task.usage_log_id IS NOT NULL AND v_task.usage_log_id <> 70697) THEN
+        OR (v_task.usage_log_id IS NOT NULL AND v_task.usage_log_id <> 70697)
+        OR (
+            v_task.usage_log_id IS NULL
+            AND (
+                NULLIF(BTRIM(v_task.result_metadata ->> 'request_id'), '') IS NULL
+                OR (v_task.result_metadata ->> 'request_id') IS DISTINCT FROM v_usage.request_id
+            )
+        ) THEN
         RAISE EXCEPTION 'legacy per-request video compensation guard failed for task';
     END IF;
 
