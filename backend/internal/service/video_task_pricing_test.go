@@ -466,6 +466,8 @@ func TestValidVideoTaskQuoteRejectsTamperedPerRequestAmounts(t *testing.T) {
 		{name: "actual", tamper: func(q *VideoTaskQuote) { q.ActualCostUSD += 0.00000001 }},
 		{name: "account base", tamper: func(q *VideoTaskQuote) { q.AccountBaseCostUSD++ }},
 		{name: "account final", tamper: func(q *VideoTaskQuote) { q.AccountCostUSD += 0.00000001 }},
+		{name: "negative audit duration", tamper: func(q *VideoTaskQuote) { q.Effective.Seconds = -1 }},
+		{name: "out of range audit duration", tamper: func(q *VideoTaskQuote) { q.Effective.Seconds = videoTaskMaxSeconds + 1 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

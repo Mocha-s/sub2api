@@ -481,6 +481,9 @@ func validVideoTaskQuote(quote *VideoTaskQuote) bool {
 		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(seconds).Mul(count).Round(10)
 		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(seconds).Mul(count).Round(10)
 	case BillingModePerRequest:
+		if quote.Effective.Seconds < 0 || quote.Effective.Seconds > videoTaskMaxSeconds {
+			return false
+		}
 		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(count).Round(10)
 		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(count).Round(10)
 	default:
