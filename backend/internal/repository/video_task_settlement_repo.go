@@ -79,7 +79,7 @@ func (r *videoTaskSettlementRepository) Reserve(ctx context.Context, cmd *servic
 		}
 		existing, err := getSettlementForTask(ctx, tx, task.id, true)
 		if err == nil {
-			return resultFor(task, existing, false), nil
+			return resultFor(taskFromSettlement(task, existing), existing, false), nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
@@ -88,14 +88,24 @@ func (r *videoTaskSettlementRepository) Reserve(ctx context.Context, cmd *servic
 			return nil, service.ErrVideoTaskSettlementStateConflict
 		}
 		if cmd.Admission != nil {
+			if cmd.Admission.SubscriptionID != nil {
+				task.subscriptionID = sql.NullInt64{Int64: *cmd.Admission.SubscriptionID, Valid: true}
+			} else {
+				task.subscriptionID = sql.NullInt64{}
+			}
+		}
+		if err := lockSettlementFunding(ctx, tx, task, cmd.BillingType); err != nil {
+			return nil, err
+		}
+		if err := lockSettlementAccountPlatform(ctx, tx, task); err != nil {
+			return nil, err
+		}
+		if cmd.Admission != nil {
 			if err := applySettlementAdmission(ctx, tx, task, cmd); err != nil {
 				return nil, err
 			}
 		}
 		if err := validateSettlementTaskRelations(ctx, tx, task); err != nil {
-			return nil, err
-		}
-		if err := lockSettlementFunding(ctx, tx, task, cmd.BillingType); err != nil {
 			return nil, err
 		}
 
@@ -537,6 +547,7 @@ func (r *videoTaskSettlementRepository) RepairChargedUsage(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
+		task.platform = row.platform
 		if row.state != string(service.VideoTaskSettlementCharged) {
 			return resultFor(task, row, false), nil
 		}
@@ -950,12 +961,12 @@ func (r *videoTaskSettlementRepository) inTx(ctx context.Context, fn func(*sql.T
 
 func lockSettlementTask(ctx context.Context, tx *sql.Tx, publicID string) (*settlementTaskRow, error) {
 	t := &settlementTaskRow{}
-	err := tx.QueryRowContext(ctx, `SELECT id,user_id,api_key_id,group_id,account_id,channel_id,subscription_id,usage_log_id,public_task_id,platform,status,
+	err := tx.QueryRowContext(ctx, `SELECT id,user_id,api_key_id,group_id,account_id,channel_id,subscription_id,usage_log_id,public_task_id,status,
 		(upstream_task_id IS NOT NULL OR submitted_at IS NOT NULL OR provider_status IS NOT NULL OR next_poll_at IS NOT NULL
 		 OR upstream_response_body IS NOT NULL OR COALESCE(upstream_response,'{}'::jsonb)<>'{}'::jsonb OR COALESCE(result_metadata,'{}'::jsonb)<>'{}'::jsonb
 		 OR request_metadata ? 'reconciliation_accepted_snapshot' OR request_metadata ? 'reconciliation_upstream_task_id')
 		FROM video_tasks WHERE public_task_id=$1 FOR UPDATE`, publicID).
-		Scan(&t.id, &t.userID, &t.apiKeyID, &t.groupID, &t.accountID, &t.channelID, &t.subscriptionID, &t.usageLogID, &t.publicID, &t.platform, &t.status, &t.providerEvidence)
+		Scan(&t.id, &t.userID, &t.apiKeyID, &t.groupID, &t.accountID, &t.channelID, &t.subscriptionID, &t.usageLogID, &t.publicID, &t.status, &t.providerEvidence)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrVideoTaskNotFound
 	}
@@ -1104,6 +1115,14 @@ func lockSettlementFunding(ctx context.Context, tx *sql.Tx, task *settlementTask
 	return err
 }
 
+func lockSettlementAccountPlatform(ctx context.Context, tx *sql.Tx, task *settlementTaskRow) error {
+	err := tx.QueryRowContext(ctx, `SELECT platform FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, task.accountID).Scan(&task.platform)
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ErrVideoTaskSettlementRelationInvalid
+	}
+	return err
+}
+
 func lockOriginalSettlementFunding(ctx context.Context, tx *sql.Tx, task *settlementTaskRow, billingType int8) error {
 	var id int64
 	if billingType == service.BillingTypeSubscription {
@@ -1129,7 +1148,7 @@ func taskFromSettlement(current *settlementTaskRow, row *settlementRow) *settlem
 }
 
 func taskIdentityDrifted(task *settlementTaskRow, row *settlementRow) bool {
-	return task.userID != row.userID || task.apiKeyID != row.apiKeyID || task.groupID != row.groupID || task.accountID != row.accountID || task.platform != row.platform ||
+	return task.userID != row.userID || task.apiKeyID != row.apiKeyID || task.groupID != row.groupID || task.accountID != row.accountID ||
 		!nullIntEqual(task.channelID, row.channelID) || !nullIntEqual(task.subscriptionID, row.subscriptionID) || !nullIntEqual(task.usageLogID, row.usageLogID)
 }
 

@@ -220,6 +220,50 @@ func TestVideoTaskSettlementRepository_BalanceLifecycleExactlyOnce(t *testing.T)
 	require.True(t, completedAt.Valid, "refunded reporting job must be claimable and durably completed")
 }
 
+func TestVideoTaskSettlementRepository_TransportPlatformCannotRedirectSettlementPlatform(t *testing.T) {
+	ctx := context.Background()
+	f := newVideoSettlementFixture(t, false, false)
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+
+	_, err := integrationDB.ExecContext(ctx, `UPDATE video_tasks SET platform=$1 WHERE public_task_id=$2`, service.VideoTaskPlatformOpenAIVideo, f.publicID)
+	require.NoError(t, err)
+
+	reserved, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{
+		PublicTaskID: f.publicID,
+		BillingType:  service.BillingTypeBalance,
+		GrossCostUSD: 3,
+		Effects:      settlementEffects(time.Now().UTC().Truncate(time.Microsecond)),
+	})
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformOpenAI, reserved.Settlement.Platform)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET platform='changed_transport' WHERE public_task_id=$1`, f.publicID)
+	require.NoError(t, err)
+	idempotent, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, Effects: settlementEffects(time.Now().UTC())})
+	require.NoError(t, err)
+	require.False(t, idempotent.Applied)
+	require.Equal(t, service.PlatformOpenAI, idempotent.Platform)
+	require.Equal(t, service.PlatformOpenAI, idempotent.Settlement.Platform)
+
+	markVideoTaskProviderAccepted(t, f.publicID)
+	captured, err := repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID})
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformOpenAI, captured.Settlement.Platform)
+	var openAIUsage float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.PlatformOpenAI).Scan(&openAIUsage))
+	require.InDelta(t, 3, openAIUsage, 1e-9)
+	var transportQuotaRows int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.VideoTaskPlatformOpenAIVideo).Scan(&transportQuotaRows))
+	require.Zero(t, transportQuotaRows)
+
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET status='failed' WHERE public_task_id=$1`, f.publicID)
+	require.NoError(t, err)
+	refunded, err := repo.RefundFailed(ctx, &service.VideoTaskSettlementRefundCommand{PublicTaskID: f.publicID, Reason: "upstream failed"})
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformOpenAI, refunded.Settlement.Platform)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.PlatformOpenAI).Scan(&openAIUsage))
+	require.Zero(t, openAIUsage)
+}
+
 func TestUsageLogRefundConstraintsRejectNegativeOverRefundAndInconsistentMetadata(t *testing.T) {
 	ctx := context.Background()
 	f := newVideoSettlementFixture(t, false, true)
@@ -899,7 +943,7 @@ func TestVideoTaskSettlementRepository_RepairChargedUsageRecreatesMissingRowAndL
 	_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID})
 	require.NoError(t, err)
 	originalID := usage.ID
-	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET usage_log_id=NULL,billed_usd=0 WHERE public_task_id=$1`, f.publicID)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET usage_log_id=NULL,billed_usd=0,platform='changed_transport' WHERE public_task_id=$1`, f.publicID)
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET usage_log_id=NULL WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$1)`, f.publicID)
 	require.NoError(t, err)
@@ -909,6 +953,7 @@ func TestVideoTaskSettlementRepository_RepairChargedUsageRecreatesMissingRowAndL
 	result, err := repo.RepairChargedUsage(ctx, f.publicID)
 	require.NoError(t, err)
 	require.True(t, result.Applied)
+	require.Equal(t, service.PlatformOpenAI, result.Platform)
 	var settlementUsageID, taskUsageID int64
 	var billed float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT s.usage_log_id,t.usage_log_id,t.billed_usd FROM video_task_settlements s JOIN video_tasks t ON t.id=s.video_task_id WHERE t.public_task_id=$1`, f.publicID).Scan(&settlementUsageID, &taskUsageID, &billed))
@@ -1517,6 +1562,46 @@ func TestVideoTaskSettlementRepository_ConcurrentReserveAndInsufficientBalance(t
 	require.Zero(t, events)
 }
 
+func TestVideoTaskSettlementRepository_ReserveLocksFundingBeforeAccount(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	f := newVideoSettlementFixture(t, false, false)
+
+	accountBlocker, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = accountBlocker.Rollback() }()
+	var accountID int64
+	require.NoError(t, accountBlocker.QueryRowContext(ctx, `SELECT id FROM accounts WHERE id=$1 FOR UPDATE`, f.accountID).Scan(&accountID))
+
+	type reserveOutcome struct {
+		result *service.VideoTaskSettlementResult
+		err    error
+	}
+	done := make(chan reserveOutcome, 1)
+	go func() {
+		result, reserveErr := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+		done <- reserveOutcome{result: result, err: reserveErr}
+	}()
+	select {
+	case outcome := <-done:
+		t.Fatalf("Reserve did not wait for the account lock: result=%v err=%v", outcome.result, outcome.err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	fundingProbe, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	var userID int64
+	err = fundingProbe.QueryRowContext(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE NOWAIT`, f.userID).Scan(&userID)
+	require.Error(t, err, "Reserve must hold the funding lock while waiting for the account lock")
+	require.NoError(t, fundingProbe.Rollback())
+	require.NoError(t, accountBlocker.Rollback())
+
+	outcome := <-done
+	require.NoError(t, outcome.err)
+	require.True(t, outcome.result.Applied)
+}
+
 func TestVideoTaskSettlementRepository_ConcurrentCapturePreservesReserve(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1757,12 +1842,14 @@ func TestVideoTaskSettlementRepository_RejectsUnrelatedTaskReferences(t *testing
 		assertUserMoney(t, f.userID, 20, 0)
 	})
 
-	t.Run("group platform", func(t *testing.T) {
+	t.Run("account and group platform mismatch", func(t *testing.T) {
 		f := newVideoSettlementFixture(t, false, false)
-		_, err := integrationDB.ExecContext(ctx, `UPDATE groups SET platform='anthropic' WHERE id=$1`, f.groupID)
+		_, err := integrationDB.ExecContext(ctx, `UPDATE groups SET platform=$1 WHERE id=$2`, service.PlatformAnthropic, f.groupID)
 		require.NoError(t, err)
 		_, err = repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
 		require.ErrorIs(t, err, service.ErrVideoTaskSettlementRelationInvalid)
+		assertUserMoney(t, f.userID, 20, 0)
+		assertSettlementEventCount(t, f.publicID, "reserve", 0)
 	})
 
 	t.Run("channel existence", func(t *testing.T) {
@@ -1849,6 +1936,57 @@ func TestVideoTaskSettlementRepository_TaskIdentityDriftCaptureRejectsReleaseRec
 	require.True(t, released.IntegrityDrift)
 	assertUserMoney(t, original.userID, 20, 0)
 	assertUserMoney(t, other.userID, 20, 0)
+}
+
+func TestVideoTaskSettlementRepository_MissingTaskAccountCaptureRejectsThenReleaseUsesSettlement(t *testing.T) {
+	ctx := context.Background()
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	f := newVideoSettlementFixture(t, false, false)
+	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+	require.NoError(t, err)
+	markVideoTaskProviderAccepted(t, f.publicID)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET account_id=9223372036854775807 WHERE public_task_id=$1`, f.publicID)
+	require.NoError(t, err)
+
+	_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID, ActualCostUSD: 1})
+	require.ErrorIs(t, err, service.ErrVideoTaskSettlementIntegrity)
+	assertUserMoney(t, f.userID, 19, 1)
+	assertSettlementEventCount(t, f.publicID, "capture", 0)
+
+	released, err := repo.Release(ctx, &service.VideoTaskSettlementReleaseCommand{PublicTaskID: f.publicID})
+	require.NoError(t, err)
+	require.True(t, released.Applied)
+	require.True(t, released.IntegrityDrift)
+	require.Equal(t, f.accountID, released.AccountID)
+	require.Equal(t, service.PlatformOpenAI, released.Platform)
+	assertUserMoney(t, f.userID, 20, 0)
+}
+
+func TestVideoTaskSettlementRepository_MissingTaskAccountRefundUsesChargedSettlement(t *testing.T) {
+	ctx := context.Background()
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	f := newVideoSettlementFixture(t, false, false)
+	effects := service.VideoTaskBillingEffects{BalanceCost: 1, AccountQuotaCost: 1, PlatformQuotaCost: 1}
+	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: effects})
+	require.NoError(t, err)
+	markVideoTaskProviderAccepted(t, f.publicID)
+	_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID, ActualCostUSD: 1})
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET account_id=9223372036854775807,status='failed' WHERE public_task_id=$1`, f.publicID)
+	require.NoError(t, err)
+
+	refunded, err := repo.RefundFailed(ctx, &service.VideoTaskSettlementRefundCommand{PublicTaskID: f.publicID, Reason: "upstream failed"})
+	require.NoError(t, err)
+	require.True(t, refunded.Applied)
+	require.True(t, refunded.IntegrityDrift)
+	require.Equal(t, f.accountID, refunded.AccountID)
+	require.Equal(t, service.PlatformOpenAI, refunded.Platform)
+	assertUserMoney(t, f.userID, 20, 0)
+	var accountQuota, platformQuota float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COALESCE((extra->>'quota_used')::numeric,0) FROM accounts WHERE id=$1`, f.accountID).Scan(&accountQuota))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.PlatformOpenAI).Scan(&platformQuota))
+	require.Zero(t, accountQuota)
+	require.Zero(t, platformQuota)
 }
 
 func TestVideoTaskSettlementRepository_RouteDriftAfterCaptureRefundsOriginalRows(t *testing.T) {
