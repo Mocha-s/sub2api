@@ -13,7 +13,7 @@ import (
 // 优先级（先命中为准）：
 //  1. 自定义规则（始终尝试，不依赖 ApplyPricingToAccountStats 开关）
 //  2. ApplyPricingToAccountStats 启用时，直接使用本次请求的客户计费（倍率前的 totalCost）
-//  3. 模型定价文件（LiteLLM）中上游模型的默认价格
+//  3. 图片和按次计费以外，模型定价文件（LiteLLM）中上游模型的默认价格
 //  4. nil → 走默认公式（total_cost × account_rate_multiplier）
 //
 // upstreamModel 是最终发往上游的模型 ID。
@@ -28,6 +28,7 @@ func resolveAccountStatsCost(
 	tokens UsageTokens,
 	requestCount int,
 	totalCost float64,
+	billingMode BillingMode,
 ) *float64 {
 	if channelService == nil || upstreamModel == "" {
 		return nil
@@ -51,6 +52,11 @@ func resolveAccountStatsCost(
 			return nil
 		}
 		return &cost
+	}
+
+	// 优先级 3：图片和按次计费不使用 LiteLLM 的 token 定价兜底。
+	if billingMode == BillingModeImage || billingMode == BillingModePerRequest {
+		return nil
 	}
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
@@ -294,6 +300,10 @@ func applyAccountStatsCost(
 	tokens UsageTokens,
 	totalCost float64,
 ) {
+	if usageLog == nil {
+		return
+	}
+
 	model := upstreamModel
 	if model == "" {
 		model = requestedModel
@@ -302,7 +312,11 @@ func applyAccountStatsCost(
 	if usageLog != nil && usageLog.ImageCount > 0 {
 		requestCount = usageLog.ImageCount
 	}
+	billingMode := BillingModeToken
+	if usageLog != nil && usageLog.BillingMode != nil {
+		billingMode = BillingMode(*usageLog.BillingMode)
+	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost,
+		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, billingMode,
 	)
 }
