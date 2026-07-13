@@ -25,6 +25,54 @@ func TestApplyVideoAccountStatsPricingPreservesBaseAndRoundsAppliedCost(t *testi
 	require.Equal(t, 0.0, quote.AccountCostUSD)
 }
 
+func TestApplyVideoAccountStatsPricingPerRequestOverridesDefaultOnceAndNormalizes(t *testing.T) {
+	customPrice := 0.12345678919
+	quote := VideoTaskQuote{
+		BillingMode:  BillingModePerRequest,
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 1},
+		GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 81.25,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1.25,
+	}
+
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{
+		BillingMode:         BillingModePerRequest,
+		PerRequestPrice:     &customPrice,
+		VideoPricePerSecond: testPtrFloat64(99),
+		VideoDefaultSeconds: testPtrInt(30),
+		Intervals:           []PricingInterval{{TierLabel: "1080p", PerRequestPrice: testPtrFloat64(100)}},
+	})
+
+	require.InDelta(t, 0.1234567892, quote.AccountUnitPriceUSD, 1e-12)
+	require.InDelta(t, 0.1234567892, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, 0.15432099, quote.AccountCostUSD, 1e-12)
+}
+
+func TestApplyVideoAccountStatsPricingPerRequestKeepsDefaultForUnusableOverride(t *testing.T) {
+	zero := 0.0
+	tiny := 0.0000000001
+	quote := VideoTaskQuote{
+		BillingMode:  BillingModePerRequest,
+		Effective:    VideoTaskEffectiveParams{VideoCount: 1},
+		GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 4.615,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 0.071,
+	}
+
+	for _, tt := range []struct {
+		name  string
+		price *float64
+	}{
+		{name: "nil", price: nil},
+		{name: "zero", price: &zero},
+		{name: "settlement rounds to zero", price: &tiny},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := quote
+			applyVideoAccountStatsPricing(&got, &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: tt.price})
+			require.Equal(t, quote, got)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // matchAccountStatsRule
 // ---------------------------------------------------------------------------

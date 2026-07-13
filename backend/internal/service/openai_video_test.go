@@ -481,6 +481,100 @@ func TestOpenAICompatibleVideoProviderForGatewayValidatesBaseURL(t *testing.T) {
 	require.Nil(t, upstream.lastReq)
 }
 
+func TestResolveVideoTaskPricingRetainsSupportedPricingModesAndSelectsModeSpecificMultiplier(t *testing.T) {
+	groupID := int64(42)
+	const (
+		requestMultiplier = 0.1065
+		videoMultiplier   = 0.0817
+	)
+
+	for _, tt := range []struct {
+		name           string
+		billingMode    BillingMode
+		wantMultiplier float64
+	}{
+		{name: "per-request keeps normal request multiplier", billingMode: BillingModePerRequest, wantMultiplier: requestMultiplier},
+		{name: "video keeps independent video multiplier", billingMode: BillingModeVideo, wantMultiplier: videoMultiplier},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			price := 65.0
+			channel := &Channel{ID: 7, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+			cache := newEmptyChannelCache()
+			cache.loadedAt = time.Now()
+			cache.channelByGroupID[groupID] = channel
+			cache.groupPlatform[groupID] = PlatformOpenAI
+			cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: "sora-2"}] = &ChannelModelPricing{
+				BillingMode:     tt.billingMode,
+				PerRequestPrice: &price,
+			}
+			channelService := &ChannelService{}
+			channelService.cache.Store(cache)
+			service := &OpenAIGatewayService{
+				cfg:            &config.Config{Default: config.DefaultConfig{RateMultiplier: 0.25}},
+				channelService: channelService,
+			}
+
+			selection := service.ResolveVideoTaskPricing(context.Background(), VideoTaskPricingResolveInput{
+				GroupID: groupID,
+				UserID:  99,
+				APIKey: &APIKey{
+					GroupID: &groupID,
+					Group: &Group{
+						RateMultiplier:       requestMultiplier,
+						VideoRateIndependent: true,
+						VideoRateMultiplier:  videoMultiplier,
+					},
+				},
+				Account:        &Account{},
+				RequestedModel: "sora-2",
+			})
+
+			require.NotNil(t, selection.Pricing)
+			require.Equal(t, tt.billingMode, selection.Pricing.BillingMode)
+			require.InDelta(t, tt.wantMultiplier, selection.RateMultiplier, 1e-12)
+		})
+	}
+}
+
+func TestResolveVideoTaskPricingUsesAPIKeyGroupForUserRate(t *testing.T) {
+	pricingGroupID := int64(42)
+	apiKeyGroupID := int64(43)
+	userRate := 0.1065
+	price := 65.0
+	channel := &Channel{ID: 7, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+	cache := newEmptyChannelCache()
+	cache.loadedAt = time.Now()
+	cache.channelByGroupID[pricingGroupID] = channel
+	cache.groupPlatform[pricingGroupID] = PlatformOpenAI
+	cache.pricingByGroupModel[channelModelKey{groupID: pricingGroupID, platform: PlatformOpenAI, model: "sora-2"}] = &ChannelModelPricing{
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: &price,
+	}
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	rateRepo := &openAIVideoRateResolverRepoStub{rate: &userRate}
+	service := &OpenAIGatewayService{
+		cfg:                   &config.Config{Default: config.DefaultConfig{RateMultiplier: 0.25}},
+		channelService:        channelService,
+		userGroupRateResolver: newUserGroupRateResolver(rateRepo, nil, time.Minute, nil, "service.openai_video.test"),
+	}
+
+	selection := service.ResolveVideoTaskPricing(context.Background(), VideoTaskPricingResolveInput{
+		GroupID: pricingGroupID,
+		UserID:  99,
+		APIKey: &APIKey{
+			GroupID: &apiKeyGroupID,
+			Group:   &Group{RateMultiplier: 0.5},
+		},
+		Account:        &Account{},
+		RequestedModel: "sora-2",
+	})
+
+	require.NotNil(t, selection.Pricing)
+	require.InDelta(t, userRate, selection.RateMultiplier, 1e-12)
+	require.Equal(t, apiKeyGroupID, rateRepo.groupID)
+}
+
 type openAIVideoHTTPUpstreamRecorder struct {
 	lastReq                *http.Request
 	lastBody               []byte
@@ -491,6 +585,18 @@ type openAIVideoHTTPUpstreamRecorder struct {
 	usedTLSDo              bool
 	resp                   *http.Response
 	err                    error
+}
+
+type openAIVideoRateResolverRepoStub struct {
+	UserGroupRateRepository
+
+	rate    *float64
+	groupID int64
+}
+
+func (s *openAIVideoRateResolverRepoStub) GetByUserAndGroup(_ context.Context, _, groupID int64) (*float64, error) {
+	s.groupID = groupID
+	return s.rate, nil
 }
 
 func (u *openAIVideoHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
