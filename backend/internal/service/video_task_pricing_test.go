@@ -276,14 +276,46 @@ func TestResolveVideoTaskQuotePerRequestRejectsNonfinitePrice(t *testing.T) {
 	}
 }
 
-func TestResolveVideoTaskQuotePerRequestPrioritizesNonfinitePriceOverMalformedBody(t *testing.T) {
+func TestResolveVideoTaskQuotePerRequestPrioritizesInvalidConfigOverMalformedBody(t *testing.T) {
 	nan := math.NaN()
-	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &nan}
+	inf := math.Inf(1)
+	price := 65.0
+	outOfRangePrice := 10000000000.0
+	tests := []struct {
+		name        string
+		price       float64
+		rate        float64
+		accountRate float64
+	}{
+		{name: "NaN price", price: nan, rate: 1, accountRate: 1},
+		{name: "infinite price", price: inf, rate: 1, accountRate: 1},
+		{name: "out of range price", price: outOfRangePrice, rate: 1, accountRate: 1},
+		{name: "NaN rate multiplier", price: price, rate: nan, accountRate: 1},
+		{name: "infinite rate multiplier", price: price, rate: inf, accountRate: 1},
+		{name: "rate multiplier overflow", price: price, rate: math.MaxFloat64, accountRate: 1},
+		{name: "NaN account multiplier", price: price, rate: 1, accountRate: nan},
+		{name: "infinite account multiplier", price: price, rate: 1, accountRate: inf},
+		{name: "account multiplier overflow", price: price, rate: 1, accountRate: math.MaxFloat64},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &tt.price}
+			_, err := ResolveVideoTaskQuote([]byte(`{`), "seedance-2.0", pricing, tt.rate, tt.accountRate)
+			require.Error(t, err)
+			require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+			require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+		})
+	}
+}
+
+func TestResolveVideoTaskQuotePerRequestRejectsMalformedBodyWhenConfigValid(t *testing.T) {
+	price := 65.0
+	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}
 
 	_, err := ResolveVideoTaskQuote([]byte(`{`), "seedance-2.0", pricing, 1, 1)
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
-	require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+	require.Equal(t, "VIDEO_TASK_INVALID_REQUEST", infraerrors.Reason(err))
 }
 
 func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *testing.T) {

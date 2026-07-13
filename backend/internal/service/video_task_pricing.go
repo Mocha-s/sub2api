@@ -153,9 +153,6 @@ func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *Ch
 }
 
 func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
-	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
-	}
 	unitPrice := 0.0
 	if pricing.PerRequestPrice != nil {
 		unitPrice = *pricing.PerRequestPrice
@@ -163,10 +160,8 @@ func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *
 	if !validVideoPriceMultiplier(unitPrice) {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request price must be finite and non-negative")
 	}
-
-	payload, err := decodeVideoPricingPayload(body)
-	if err != nil {
-		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
+	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
 	}
 
 	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice)
@@ -193,6 +188,10 @@ func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *
 	accountCost, err = NormalizeVideoTaskSettlementAmount(accountCost)
 	if err != nil {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account cost is outside applied precision")
+	}
+	payload, err := decodeVideoPricingPayload(body)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
 	}
 	return VideoTaskQuote{
 		BillingMode:           BillingModePerRequest,
