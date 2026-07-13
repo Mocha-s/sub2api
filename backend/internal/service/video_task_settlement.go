@@ -126,7 +126,7 @@ func (s *VideoTaskSettlementService) Prepare(ctx context.Context, input VideoTas
 		subscriptionID = &id
 	}
 	usage := buildVideoTaskSettlementUsage(input, billingType, subscriptionID)
-	metadata := map[string]any{"request_id": input.RequestID, "billing_mode": string(BillingModeVideo), "quote": input.Quote}
+	metadata := map[string]any{"request_id": input.RequestID, "billing_mode": string(input.Quote.BillingMode), "quote": input.Quote}
 	effects := s.videoTaskBillingEffects(ctx, input, billingType)
 	pricing, err := quoteMap(input.Quote)
 	if err != nil {
@@ -305,7 +305,7 @@ func (s *VideoTaskSettlementService) videoTaskBillingEffects(ctx context.Context
 }
 
 func buildVideoTaskSettlementUsage(input VideoTaskSettlementCreateInput, billingType int8, subscriptionID *int64) *UsageLog {
-	mode, inbound, upstream := string(BillingModeVideo), videoTaskInboundEndpoint(input.Params.Endpoint), "/v1/videos"
+	mode, inbound, upstream := string(input.Quote.BillingMode), videoTaskInboundEndpoint(input.Params.Endpoint), "/v1/videos"
 	groupID := input.Params.APIKey.GroupID
 	if input.Account == nil {
 		input.Account = &Account{}
@@ -314,7 +314,13 @@ func buildVideoTaskSettlementUsage(input VideoTaskSettlementCreateInput, billing
 	if input.ChannelID > 0 {
 		channelID = &input.ChannelID
 	}
-	return &UsageLog{UserID: input.Params.User.ID, APIKeyID: input.Params.APIKey.ID, AccountID: input.Account.ID, RequestID: VideoTaskChargeRequestID(input.PublicTaskID), Model: input.Quote.BillingModel, RequestedModel: input.Quote.BillingModel, UpstreamModel: optionalTrimmedStringPtr(input.UpstreamModel), ChannelID: channelID, GroupID: groupID, SubscriptionID: subscriptionID, BillingMode: &mode, BillingType: billingType, RequestType: RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, VideoCount: input.Quote.Effective.VideoCount, VideoResolution: optionalTrimmedStringPtr(input.Quote.Effective.Resolution), VideoDurationSeconds: &input.Quote.Effective.Seconds, TotalCost: input.Quote.GrossCostUSD, ActualCost: 0, RateMultiplier: input.Quote.RateMultiplier, AccountRateMultiplier: &input.Quote.AccountRateMultiplier, AccountStatsCost: &input.Quote.AccountCostUSD, CreatedAt: time.Now()}
+	usage := &UsageLog{UserID: input.Params.User.ID, APIKeyID: input.Params.APIKey.ID, AccountID: input.Account.ID, RequestID: VideoTaskChargeRequestID(input.PublicTaskID), Model: input.Quote.BillingModel, RequestedModel: input.Quote.BillingModel, UpstreamModel: optionalTrimmedStringPtr(input.UpstreamModel), ChannelID: channelID, GroupID: groupID, SubscriptionID: subscriptionID, BillingMode: &mode, BillingType: billingType, RequestType: RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: input.Quote.GrossCostUSD, ActualCost: 0, RateMultiplier: input.Quote.RateMultiplier, AccountRateMultiplier: &input.Quote.AccountRateMultiplier, AccountStatsCost: &input.Quote.AccountCostUSD, CreatedAt: time.Now()}
+	if input.Quote.BillingMode == BillingModeVideo {
+		usage.VideoCount = input.Quote.Effective.VideoCount
+		usage.VideoResolution = optionalTrimmedStringPtr(input.Quote.Effective.Resolution)
+		usage.VideoDurationSeconds = &input.Quote.Effective.Seconds
+	}
+	return usage
 }
 
 func quoteMap(quote VideoTaskQuote) (map[string]any, error) {

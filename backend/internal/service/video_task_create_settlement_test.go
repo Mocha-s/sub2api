@@ -21,6 +21,18 @@ func pricedVideoTaskServiceFixture(events *videoTaskServiceTestEvents) (*VideoTa
 	return svc, repo, provider, settlement
 }
 
+func perRequestVideoTaskServiceFixture(events *videoTaskServiceTestEvents, usage *fakeVideoTaskUsageRecorder) (*VideoTaskService, *fakeVideoTaskRepository, *fakeVideoTaskProvider, *fakeVideoTaskSettlementOrchestrator) {
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{ProviderTaskID: "upstream", Status: VideoTaskStatusQueued, ProviderStatus: "queued", RawBody: []byte(`{"id":"upstream","status":"queued"}`)}}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	price := 65.0
+	pricing := &fakeVideoTaskPricingResolver{events: events, selection: VideoTaskPricingSelection{Pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}, BillingModel: "seedance", BillingModelSource: BillingModelSourceRequested, RateMultiplier: 0.1065, AccountRateMultiplier: 1}}
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events, state: VideoTaskSettlementCharged}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, usage)
+	svc.pricingResolver, svc.settlement = pricing, settlement
+	return svc, repo, provider, settlement
+}
+
 func TestVideoTaskCreateImmediateProviderFailurePersistsThenReleasesWithoutCapture(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	svc, repo, provider, settlement := pricedVideoTaskServiceFixture(events)
@@ -45,6 +57,24 @@ func TestVideoTaskServiceCreateVideoPricingSettlesInStrictOrder(t *testing.T) {
 	require.Equal(t, "video:"+result.Task.PublicTaskID+":charge", settlement.reserveInput.RequestID)
 	require.InDelta(t, 0.4, settlement.reserveInput.Quote.GrossCostUSD, 1e-12)
 	require.InDelta(t, 0.2, settlement.reserveInput.Quote.ActualCostUSD, 1e-12)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingSettlesInStrictOrderWithoutLegacyUsage(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	body := []byte(`{"model":"seedance","prompt":"city","seconds":"5","duration":10,"duration_seconds":"15"}`)
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, []string{"selector_select", "pricing_resolve", "repo_create", "settlement_reserve", "provider_create", "repo_attach", "settlement_capture", "repo_get_public"}, events.snapshot())
+	require.Equal(t, body, provider.createBody)
+	require.Equal(t, BillingModePerRequest, settlement.reserveInput.Quote.BillingMode)
+	require.InDelta(t, 65, settlement.reserveInput.Quote.GrossCostUSD, 1e-12)
+	require.InDelta(t, 6.9225, settlement.reserveInput.Quote.ActualCostUSD, 1e-12)
+	require.Zero(t, usage.calls)
 }
 
 func TestVideoTaskServiceCreateVideoPricingReserveFailurePreventsProvider(t *testing.T) {
@@ -135,6 +165,36 @@ func TestVideoTaskServiceCreateVideoPricingProviderFailureFailsAndReleases(t *te
 	require.ErrorIs(t, err, provider.createErr)
 	require.Equal(t, []string{"selector_select", "pricing_resolve", "repo_create", "settlement_reserve", "provider_create", "settlement_fail_release"}, events.snapshot())
 	require.Equal(t, 1, settlement.failAndReleaseCalls)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingProviderFailureFailsAndReleases(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	provider.createErr = errors.New("provider failed")
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"seedance","prompt":"city"}`)})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, provider.createErr)
+	require.Equal(t, 1, settlement.failAndReleaseCalls)
+	require.Zero(t, settlement.captureCalls)
+	require.Zero(t, usage.calls)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingImmediateFailureReconcilesPersistedTask(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	provider.createResult = &VideoProviderCreateResult{ProviderTaskID: "upstream_failed", Status: VideoTaskStatusFailed, ProviderStatus: "failed", RawBody: []byte(`{"id":"upstream_failed","status":"failed"}`)}
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"seedance","prompt":"city"}`)})
+
+	require.NoError(t, err)
+	require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
+	require.Equal(t, 1, settlement.reconcilePersistedCalls)
+	require.Zero(t, settlement.captureCalls)
+	require.Zero(t, usage.calls)
 }
 
 func TestVideoTaskServiceBlankAcceptedProviderIDFailsAndReleasesWithoutCapture(t *testing.T) {

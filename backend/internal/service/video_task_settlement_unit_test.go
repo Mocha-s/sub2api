@@ -144,6 +144,34 @@ func TestVideoTaskSettlementAfterCommit_LeavesRefundReportingToDurableWorker(t *
 	require.Zero(t, dashboardCache.deletes)
 }
 
+func TestVideoTaskSettlementPreparePerRequestUsageOmitsVideoFields(t *testing.T) {
+	apiKey := videoTaskTestAPIKey()
+	quote := VideoTaskQuote{
+		BillingMode: BillingModePerRequest, BillingModel: "seedance",
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "1080p", VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 65,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1,
+	}
+	svc := &VideoTaskSettlementService{repo: &videoTaskSettlementRepoStub{}, tasks: newFakeVideoTaskRepository(nil)}
+
+	command, err := svc.Prepare(t.Context(), VideoTaskSettlementCreateInput{
+		PublicTaskID: "task_per_request",
+		Quote:        quote,
+		Params:       VideoTaskCreateParams{APIKey: apiKey, User: &User{ID: 7}},
+		Account:      &Account{ID: 99},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, string(BillingModePerRequest), command.Admission.UsageMetadata["billing_mode"])
+	usage := command.Admission.UsageLog
+	require.NotNil(t, usage.BillingMode)
+	require.Equal(t, string(BillingModePerRequest), *usage.BillingMode)
+	require.Zero(t, usage.VideoCount)
+	require.Nil(t, usage.VideoResolution)
+	require.Nil(t, usage.VideoDurationSeconds)
+}
+
 func TestVideoTaskSettlementAfterCommitInvalidatesRefundCachesFromCommittedResult(t *testing.T) {
 	cache := &settlementInvalidationCacheStub{}
 	svc := &VideoTaskSettlementService{cache: cache}
