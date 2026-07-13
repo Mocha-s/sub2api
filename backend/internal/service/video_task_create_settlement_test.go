@@ -133,6 +133,45 @@ func TestVideoTaskServiceReplayRetriesAtomicAdmissionOnlyBeforeProvider(t *testi
 	require.Equal(t, 1, repo.captureCalls)
 }
 
+func TestVideoTaskServicePerRequestReplayReservesPersistedAdmissionWithoutDurationRewrite(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, tasks, provider, _ := perRequestVideoTaskServiceFixture(events, usage)
+	reserveErr := errors.New("reserve transaction failed")
+	repo := &videoTaskSettlementRepoStub{getErr: ErrVideoTaskSettlementNotFound, reserveErr: reserveErr}
+	svc.settlement = &VideoTaskSettlementService{repo: repo, tasks: tasks}
+	svc.accountLookup = &fakeVideoTaskAccountStore{accounts: map[int64]*Account{99: {ID: 99, Platform: PlatformOpenAI}}}
+	body := []byte(`{"model":"seedance","prompt":"city","duration":10,"duration_seconds":"15","provider_extra":"keep"}`)
+	params := VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "per-request-reserve-retry"}
+
+	first, err := svc.Create(context.Background(), params)
+	require.Nil(t, first)
+	require.ErrorIs(t, err, reserveErr)
+	require.Zero(t, provider.createCalls)
+	require.Equal(t, 1, repo.reserveCalls)
+
+	repo.reserveErr = nil
+	repo.reserveResult = &VideoTaskSettlementResult{Applied: true, Settlement: &VideoTaskSettlementSnapshot{State: VideoTaskSettlementReserved}}
+	repo.captureResult = &VideoTaskSettlementResult{Applied: true, Settlement: &VideoTaskSettlementSnapshot{State: VideoTaskSettlementCharged, ActualCostUSD: 6.9225}}
+	second, err := svc.Create(context.Background(), params)
+
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.Equal(t, 2, repo.reserveCalls)
+	require.Equal(t, 1, repo.captureCalls)
+	require.Equal(t, 1, provider.createCalls)
+	require.Equal(t, body, provider.createBody)
+	require.NotContains(t, string(provider.createBody), `"seconds"`)
+	require.NotNil(t, repo.reserveCommand)
+	require.InDelta(t, 65, repo.reserveCommand.GrossCostUSD, 1e-12)
+	require.InDelta(t, 6.9225, repo.reserveCommand.ActualCostUSD, 1e-12)
+	require.Equal(t, string(BillingModePerRequest), repo.reserveCommand.PricingSnapshot["billing_mode"])
+	require.NotNil(t, repo.reserveCommand.Admission)
+	require.NotNil(t, repo.reserveCommand.Admission.UsageLog)
+	require.Equal(t, string(BillingModePerRequest), *repo.reserveCommand.Admission.UsageLog.BillingMode)
+	require.Nil(t, repo.reserveCommand.Admission.UsageLog.VideoDurationSeconds)
+}
+
 func TestVideoTaskServiceReplayRecoversPerRequestTaskWithoutSynthesizingDuration(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	repo := newFakeVideoTaskRepository(events)
@@ -580,18 +619,20 @@ func TestVideoTaskSettlementServiceBuildsExactEffectsAndProvisionalUsage(t *test
 }
 
 type videoTaskSettlementRepoStub struct {
-	failCommand   *VideoTaskSettlementFailCommand
-	failResult    *VideoTaskSettlementResult
-	releaseCalls  int
-	snapshot      *VideoTaskSettlementSnapshot
-	getErr        error
-	getCalls      int
-	captureResult *VideoTaskSettlementResult
-	captureErr    error
-	captureCalls  int
-	reserveResult *VideoTaskSettlementResult
-	reserveErr    error
-	reserveCalls  int
+	failCommand    *VideoTaskSettlementFailCommand
+	failResult     *VideoTaskSettlementResult
+	releaseCalls   int
+	snapshot       *VideoTaskSettlementSnapshot
+	getErr         error
+	getCalls       int
+	captureResult  *VideoTaskSettlementResult
+	captureErr     error
+	captureCalls   int
+	captureCommand *VideoTaskSettlementCaptureCommand
+	reserveResult  *VideoTaskSettlementResult
+	reserveErr     error
+	reserveCalls   int
+	reserveCommand *VideoTaskSettlementReserveCommand
 }
 
 type videoTaskSettlementCacheStub struct{ platformLimited bool }
@@ -612,12 +653,14 @@ func (s *videoTaskSettlementCacheStub) HasUserPlatformQuotaLimit(context.Context
 	return s.platformLimited
 }
 
-func (r *videoTaskSettlementRepoStub) Reserve(context.Context, *VideoTaskSettlementReserveCommand) (*VideoTaskSettlementResult, error) {
+func (r *videoTaskSettlementRepoStub) Reserve(_ context.Context, command *VideoTaskSettlementReserveCommand) (*VideoTaskSettlementResult, error) {
 	r.reserveCalls++
+	r.reserveCommand = command
 	return r.reserveResult, r.reserveErr
 }
-func (r *videoTaskSettlementRepoStub) Capture(context.Context, *VideoTaskSettlementCaptureCommand) (*VideoTaskSettlementResult, error) {
+func (r *videoTaskSettlementRepoStub) Capture(_ context.Context, command *VideoTaskSettlementCaptureCommand) (*VideoTaskSettlementResult, error) {
 	r.captureCalls++
+	r.captureCommand = command
 	return r.captureResult, r.captureErr
 }
 func (r *videoTaskSettlementRepoStub) Release(context.Context, *VideoTaskSettlementReleaseCommand) (*VideoTaskSettlementResult, error) {

@@ -220,6 +220,148 @@ func TestVideoTaskSettlementRepository_BalanceLifecycleExactlyOnce(t *testing.T)
 	require.True(t, completedAt.Valid, "refunded reporting job must be claimable and durably completed")
 }
 
+func TestVideoTaskSettlementRepository_PerRequestCanonicalUsageSkipsReconciliation(t *testing.T) {
+	ctx := context.Background()
+	f := newVideoSettlementFixture(t, false, false)
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	mode, inbound, upstream := string(service.BillingModePerRequest), "/v1/videos", "/v1/videos"
+	quote := service.VideoTaskQuote{
+		BillingMode: service.BillingModePerRequest, BillingModel: "seedance",
+		Effective:    service.VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 4.615,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 0.071,
+	}
+	pricingJSON, err := json.Marshal(quote)
+	require.NoError(t, err)
+	pricing := map[string]any{}
+	require.NoError(t, json.Unmarshal(pricingJSON, &pricing))
+	usage := &service.UsageLog{
+		UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID,
+		RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "seedance", RequestedModel: "seedance", GroupID: &f.groupID,
+		BillingMode: &mode, BillingType: service.BillingTypeBalance, RequestType: service.RequestTypeSync,
+		InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: 65, ActualCost: 0,
+		RateMultiplier: 0.1065, AccountRateMultiplier: testFloat64Ptr(0.071), AccountStatsCost: testFloat64Ptr(4.615), CreatedAt: time.Now().UTC(),
+	}
+	effects := service.VideoTaskBillingEffects{BalanceCost: 6.9225, APIKeyQuotaCost: 6.9225, APIKeyRateLimitCost: 6.9225, AccountQuotaCost: 4.615, PlatformQuotaCost: 6.9225, AccountStatsCost: 4.615}
+	_, err = repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{
+		PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance,
+		GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountCostUSD: 4.615, PricingSnapshot: pricing, Effects: effects,
+		Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage, UsageMetadata: map[string]any{"request_id": usage.RequestID}},
+	})
+	require.NoError(t, err)
+	markVideoTaskProviderAccepted(t, f.publicID)
+	_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID})
+	require.NoError(t, err)
+
+	var settlementUsageID, taskUsageID int64
+	var billingMode string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT s.usage_log_id,t.usage_log_id,l.billing_mode
+		FROM video_task_settlements s JOIN video_tasks t ON t.id=s.video_task_id JOIN usage_logs l ON l.id=s.usage_log_id
+		WHERE t.public_task_id=$1`, f.publicID).Scan(&settlementUsageID, &taskUsageID, &billingMode))
+	require.Equal(t, usage.ID, settlementUsageID)
+	require.Equal(t, usage.ID, taskUsageID)
+	require.Equal(t, string(service.BillingModePerRequest), billingMode)
+
+	now := time.Now().UTC()
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET next_reconcile_at=$1`, now.Add(24*time.Hour))
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET next_reconcile_at=$1 WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$2)`, now.Add(-time.Minute), f.publicID)
+	require.NoError(t, err)
+	claims, err := repo.ClaimDueReconciliation(ctx, now, 1, "per-request-canonical", time.Minute)
+	require.NoError(t, err)
+	require.Empty(t, claims)
+}
+
+func TestVideoTaskSettlementRepository_PerRequestBalanceLifecycleExactlyOnce(t *testing.T) {
+	ctx := context.Background()
+	f := newVideoSettlementFixture(t, false, false)
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	mode, inbound, upstream := string(service.BillingModePerRequest), "/v1/videos", "/v1/videos"
+	quote := service.VideoTaskQuote{
+		BillingMode: service.BillingModePerRequest, BillingModel: "seedance",
+		Effective:    service.VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 4.615,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 0.071,
+	}
+	pricingJSON, err := json.Marshal(quote)
+	require.NoError(t, err)
+	pricing := map[string]any{}
+	require.NoError(t, json.Unmarshal(pricingJSON, &pricing))
+	usage := &service.UsageLog{
+		UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID,
+		RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "seedance", RequestedModel: "seedance", GroupID: &f.groupID,
+		BillingMode: &mode, BillingType: service.BillingTypeBalance, RequestType: service.RequestTypeSync,
+		InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: 65, ActualCost: 0,
+		RateMultiplier: 0.1065, AccountRateMultiplier: testFloat64Ptr(0.071), AccountStatsCost: testFloat64Ptr(4.615), CreatedAt: time.Now().UTC(),
+	}
+	effects := service.VideoTaskBillingEffects{BalanceCost: 6.9225, APIKeyQuotaCost: 6.9225, APIKeyRateLimitCost: 6.9225, AccountQuotaCost: 4.615, PlatformQuotaCost: 6.9225, AccountStatsCost: 4.615}
+	_, err = repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{
+		PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance,
+		GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountCostUSD: 4.615, PricingSnapshot: pricing, Effects: effects,
+		Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage, UsageMetadata: map[string]any{"request_id": usage.RequestID}},
+	})
+	require.NoError(t, err)
+	assertUserMoney(t, f.userID, 13.0775, 6.9225)
+	markVideoTaskProviderAccepted(t, f.publicID)
+	captured, err := repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID})
+	require.NoError(t, err)
+	require.True(t, captured.Applied)
+	assertUserMoney(t, f.userID, 13.0775, 0)
+
+	var settlementUsageID, taskUsageID int64
+	var billingMode string
+	var actual, total, accountStats float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT s.usage_log_id,t.usage_log_id,l.billing_mode,l.actual_cost,l.total_cost,l.account_stats_cost
+		FROM video_task_settlements s JOIN video_tasks t ON t.id=s.video_task_id JOIN usage_logs l ON l.id=s.usage_log_id
+		WHERE t.public_task_id=$1`, f.publicID).Scan(&settlementUsageID, &taskUsageID, &billingMode, &actual, &total, &accountStats))
+	require.Equal(t, usage.ID, settlementUsageID)
+	require.Equal(t, usage.ID, taskUsageID)
+	require.Equal(t, string(service.BillingModePerRequest), billingMode)
+	require.InDelta(t, 6.9225, actual, 1e-9)
+	require.InDelta(t, 65, total, 1e-9)
+	require.InDelta(t, 4.615, accountStats, 1e-9)
+
+	var quota, rate, accountQuota, platformQuota float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=$1`, f.apiKeyID).Scan(&quota, &rate))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COALESCE((extra->>'quota_used')::numeric,0) FROM accounts WHERE id=$1`, f.accountID).Scan(&accountQuota))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.PlatformOpenAI).Scan(&platformQuota))
+	require.InDelta(t, 6.9225, quota, 1e-9)
+	require.InDelta(t, 6.9225, rate, 1e-9)
+	require.InDelta(t, 4.615, accountQuota, 1e-9)
+	require.InDelta(t, 6.9225, platformQuota, 1e-9)
+
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET status='failed' WHERE public_task_id=$1`, f.publicID)
+	require.NoError(t, err)
+	refunded, err := repo.RefundFailed(ctx, &service.VideoTaskSettlementRefundCommand{PublicTaskID: f.publicID, Reason: "upstream failed"})
+	require.NoError(t, err)
+	require.True(t, refunded.Applied)
+	assertUserMoney(t, f.userID, 20, 0)
+
+	var refundedCost, refundedTotal, refundedAccount float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT refunded_cost,refunded_total_cost,refunded_account_cost FROM usage_logs WHERE id=$1`, usage.ID).Scan(&refundedCost, &refundedTotal, &refundedAccount))
+	require.InDelta(t, 6.9225, refundedCost, 1e-9)
+	require.InDelta(t, 65, refundedTotal, 1e-9)
+	require.InDelta(t, 4.615, refundedAccount, 1e-9)
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT quota_used,usage_5h FROM api_keys WHERE id=$1`, f.apiKeyID).Scan(&quota, &rate))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COALESCE((extra->>'quota_used')::numeric,0) FROM accounts WHERE id=$1`, f.accountID).Scan(&accountQuota))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT daily_usage_usd FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, f.userID, service.PlatformOpenAI).Scan(&platformQuota))
+	require.Zero(t, quota)
+	require.Zero(t, rate)
+	require.Zero(t, accountQuota)
+	require.Zero(t, platformQuota)
+
+	second, err := repo.RefundFailed(ctx, &service.VideoTaskSettlementRefundCommand{PublicTaskID: f.publicID, Reason: "upstream failed"})
+	require.NoError(t, err)
+	require.False(t, second.Applied)
+	assertUserMoney(t, f.userID, 20, 0)
+	assertSettlementEventCount(t, f.publicID, "refund", 1)
+	var refundJobs int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_task_refund_reporting_jobs j JOIN video_task_settlements s ON s.id=j.settlement_id WHERE s.charge_request_id=$1`, service.VideoTaskChargeRequestID(f.publicID)).Scan(&refundJobs))
+	require.Equal(t, 1, refundJobs)
+}
+
 func TestVideoTaskSettlementRepository_TransportPlatformCannotRedirectSettlementPlatform(t *testing.T) {
 	ctx := context.Background()
 	f := newVideoSettlementFixture(t, false, false)
