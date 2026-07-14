@@ -47,12 +47,12 @@ BEGIN
         OR v_task.platform IS DISTINCT FROM 'openai_video'
         OR v_task.subscription_id IS NOT NULL
         OR (v_task.usage_log_id IS NOT NULL AND v_task.usage_log_id <> 70697)
+        -- This legacy task persisted neither usage_log_id nor request_id. If a
+        -- request_id exists, it must still match the immutable target usage.
         OR (
             v_task.usage_log_id IS NULL
-            AND (
-                NULLIF(BTRIM(v_task.result_metadata ->> 'request_id'), '') IS NULL
-                OR (v_task.result_metadata ->> 'request_id') IS DISTINCT FROM v_usage.request_id
-            )
+            AND NULLIF(BTRIM(v_task.result_metadata ->> 'request_id'), '') IS NOT NULL
+            AND (v_task.result_metadata ->> 'request_id') IS DISTINCT FROM v_usage.request_id
         ) THEN
         RAISE EXCEPTION 'legacy per-request video compensation guard failed for task';
     END IF;
