@@ -44,7 +44,7 @@ export interface UserSupportedModelPricing {
   per_request_price: number | null
   video_price_per_second: number | null
   video_default_seconds: number | null
-  video_allowed_seconds: number[]
+  video_allowed_seconds: number[] | null
   intervals: UserPricingInterval[]
 }
 

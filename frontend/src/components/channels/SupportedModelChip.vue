@@ -122,12 +122,13 @@
             />
 
             <template v-if="model.pricing.billing_mode === BILLING_MODE_VIDEO">
-              <div class="flex justify-between gap-2">
-                <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('videoPricePerSecond')) }}</span>
-                <span class="font-mono">
-                  {{ formatVideoPrice(model.pricing.video_price_per_second) }} {{ t(prefixKey('unitPerSecond')) }}
-                </span>
-              </div>
+              <PricingRow
+                v-if="model.pricing.video_price_per_second != null"
+                :label="t(prefixKey('videoPricePerSecond'))"
+                :value="model.pricing.video_price_per_second"
+                :unit="t(prefixKey('unitPerSecond'))"
+                :scale="1"
+              />
               <div v-if="model.pricing.video_default_seconds != null" class="flex justify-between gap-2">
                 <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('videoDefaultSeconds')) }}</span>
                 <span>{{ formatSeconds(model.pricing.video_default_seconds) }}</span>
@@ -252,10 +253,6 @@ function formatRange(min: number, max: number | null): string {
   return `(${min}, ${maxLabel}]`
 }
 
-function formatVideoPrice(value: number | null): string {
-  return value == null ? '-' : `$${value.toFixed(6)}`
-}
-
 function formatSeconds(seconds: number): string {
   return `${seconds} ${t(prefixKey('unitSeconds'))}`
 }
@@ -270,7 +267,7 @@ function formatAllowedSeconds(allowedSeconds: number[] | null | undefined): stri
 
 function formatInterval(iv: UserPricingInterval, mode: BillingMode): string {
   if (mode === BILLING_MODE_VIDEO) {
-    return `${formatVideoPrice(iv.video_price_per_second)} ${t(prefixKey('unitPerSecond'))}`
+    return `${formatScaled(iv.video_price_per_second, 1)} ${t(prefixKey('unitPerSecond'))}`
   }
   if (mode === BILLING_MODE_PER_REQUEST || mode === BILLING_MODE_IMAGE) {
     return formatScaled(iv.per_request_price, 1)
