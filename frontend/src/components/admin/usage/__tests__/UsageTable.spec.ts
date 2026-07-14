@@ -790,6 +790,33 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.700000')
   })
 
+  it('marks rounded repeating video price calculations as approximate', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-video-repeating-unit-price',
+          billing_mode: 'video',
+          image_count: 0,
+          video_count: 1,
+          video_resolution: '1080p',
+          video_duration_seconds: 3,
+          total_cost: 1,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('$0.333333 x 3 x 1 ≈ $1.000000')
+    expect(text).not.toContain('$0.333333 x 3 x 1 = $1.000000')
+  })
+
   it('hides account billing details in user mode for video usage', async () => {
     const wrapper = mount(UsageTable, {
       props: {
