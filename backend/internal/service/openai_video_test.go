@@ -747,11 +747,13 @@ func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T)
 		price      = 65.0
 		peakActual = 10.38375
 	)
-	offPeakStart, offPeakEnd := videoResolverOffPeakWindow(timezone.Now())
+	peakTime := time.Date(2026, 6, 29, 12, 0, 0, 0, timezone.Location())
+	peakEndBoundary := time.Date(2026, 6, 29, 13, 0, 0, 0, timezone.Location())
 
 	for _, tt := range []struct {
 		name              string
 		billingMode       BillingMode
+		at                time.Time
 		peakStart         string
 		peakEnd           string
 		wantRate          float64
@@ -760,15 +762,15 @@ func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T)
 	}{
 		{
 			name: "peak per-request includes peak multiplier and quote actual cost", billingMode: BillingModePerRequest,
-			peakStart: "00:00", peakEnd: "23:59", wantRate: userRate * peakRate, wantQuoteActual: peakActual, verifyQuoteActual: true,
+			at: peakTime, peakStart: "11:00", peakEnd: "13:00", wantRate: userRate * peakRate, wantQuoteActual: peakActual, verifyQuoteActual: true,
 		},
 		{
-			name: "outside peak per-request keeps user rate", billingMode: BillingModePerRequest,
-			peakStart: offPeakStart, peakEnd: offPeakEnd, wantRate: userRate,
+			name: "peak end boundary per-request keeps user rate", billingMode: BillingModePerRequest,
+			at: peakEndBoundary, peakStart: "11:00", peakEnd: "13:00", wantRate: userRate,
 		},
 		{
 			name: "peak video keeps independent video rate", billingMode: BillingModeVideo,
-			peakStart: "00:00", peakEnd: "23:59", wantRate: videoRate,
+			at: peakTime, peakStart: "11:00", peakEnd: "13:00", wantRate: videoRate,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -791,7 +793,7 @@ func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T)
 				userGroupRateResolver: newUserGroupRateResolver(rateRepo, nil, time.Minute, nil, "service.openai_video.test"),
 			}
 
-			selection := service.ResolveVideoTaskPricing(context.Background(), VideoTaskPricingResolveInput{
+			selection := service.resolveVideoTaskPricingAt(context.Background(), VideoTaskPricingResolveInput{
 				GroupID: groupID,
 				UserID:  99,
 				APIKey: &APIKey{
@@ -810,7 +812,7 @@ func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T)
 				},
 				Account:        &Account{},
 				RequestedModel: "sora-2",
-			})
+			}, tt.at)
 
 			require.NotNil(t, selection.Pricing)
 			require.Equal(t, tt.billingMode, selection.Pricing.BillingMode)
@@ -825,16 +827,6 @@ func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T)
 			require.InDelta(t, tt.wantQuoteActual, quote.ActualCostUSD, 1e-12)
 		})
 	}
-}
-
-func videoResolverOffPeakWindow(now time.Time) (string, string) {
-	candidate := now.In(timezone.Location()).Truncate(time.Minute).Add(2 * time.Minute)
-	start := candidate.Format("15:04")
-	end := candidate.Add(time.Minute).Format("15:04")
-	if start >= end {
-		return "00:00", "00:01"
-	}
-	return start, end
 }
 
 type openAIVideoHTTPUpstreamRecorder struct {
