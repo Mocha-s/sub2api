@@ -319,6 +319,28 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 	require.NotContains(t, string(body), `"image_size":"2K"`)
 }
 
+func TestUsageLogFromServiceAdmin_ImageStatsFallbackDisplaysMultiplierCostNotLiteLLMTokenEstimate(t *testing.T) {
+	t.Parallel()
+
+	log := &service.UsageLog{
+		BillingMode:           stringPtr("image"),
+		ImageCount:            1,
+		TotalCost:             0.21,
+		ActualCost:            0.039375,
+		RateMultiplier:        0.1875,
+		AccountRateMultiplier: f64Ptr(0.125),
+	}
+
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.Nil(t, adminDTO.AccountStatsCost)
+	require.InDelta(t, 0.02625, adminDTO.NetAccountCost, 1e-12)
+}
+
 func f64Ptr(value float64) *float64 {
+	return &value
+}
+
+func stringPtr(value string) *string {
 	return &value
 }
