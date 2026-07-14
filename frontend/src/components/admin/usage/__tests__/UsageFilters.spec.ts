@@ -28,7 +28,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per Request',
   'admin.usage.billingModeImage': 'Image',
-  'admin.usage.billingModeVideo': 'Video',
+  'admin.usage.billingModeVideo': 'Per-second video',
   'admin.usage.group': 'Group',
   'admin.usage.allGroups': 'All Groups',
   'common.refresh': 'Refresh',
@@ -198,6 +198,6 @@ describe('UsageFilters — model options come from prop (no dup request)', () =>
 describe('UsageFilters — video billing mode', () => {
   it('offers the video value with its localized label', () => {
     const wrapper = mountFilters()
-    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Video' })
+    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Per-second video' })
   })
 })

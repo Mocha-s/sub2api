@@ -246,16 +246,18 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
 			RequestedModel: req.Model, UpstreamModel: upstreamModel,
 		})
-		if pricingSelection.Pricing != nil && pricingSelection.Pricing.BillingMode == BillingModeVideo {
+		if pricingSelection.Pricing != nil && (pricingSelection.Pricing.BillingMode == BillingModeVideo || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
 			resolved, err := ResolveVideoTaskQuote(req.RawBody, pricingSelection.BillingModel, pricingSelection.Pricing, pricingSelection.RateMultiplier, pricingSelection.AccountRateMultiplier)
 			if err != nil {
 				return nil, err
 			}
 			applyVideoAccountStatsPricing(&resolved, pricingSelection.AccountStatsPricing)
 			quote = &resolved
-			forwardBody, err = applyEffectiveVideoDuration(req.RawBody, resolved.Effective.Seconds)
-			if err != nil {
-				return nil, err
+			if pricingSelection.Pricing.BillingMode == BillingModeVideo {
+				forwardBody, err = applyEffectiveVideoDuration(req.RawBody, resolved.Effective.Seconds)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -679,15 +681,17 @@ func (s *VideoTaskService) Estimate(ctx context.Context, params VideoTaskEstimat
 			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
 			RequestedModel: req.Model, UpstreamModel: upstreamModel,
 		})
-		if pricing.Pricing != nil && pricing.Pricing.BillingMode == BillingModeVideo {
+		if pricing.Pricing != nil && (pricing.Pricing.BillingMode == BillingModeVideo || pricing.Pricing.BillingMode == BillingModePerRequest) {
 			resolved, err := ResolveVideoTaskQuote(params.Body, pricing.BillingModel, pricing.Pricing, pricing.RateMultiplier, pricing.AccountRateMultiplier)
 			if err != nil {
 				return nil, err
 			}
 			applyVideoAccountStatsPricing(&resolved, pricing.AccountStatsPricing)
-			forwardBody, err = applyEffectiveVideoDuration(params.Body, resolved.Effective.Seconds)
-			if err != nil {
-				return nil, err
+			if pricing.Pricing.BillingMode == BillingModeVideo {
+				forwardBody, err = applyEffectiveVideoDuration(params.Body, resolved.Effective.Seconds)
+				if err != nil {
+					return nil, err
+				}
 			}
 			quote = &resolved
 		}
@@ -710,7 +714,14 @@ func applyVideoTaskEstimateQuote(result *VideoTaskEstimateResult, quote VideoTas
 	response["billing_mode"] = quote.BillingMode
 	response["billing_model"] = quote.BillingModel
 	response["effective"] = quote.Effective
-	response["unit_price_usd"] = quote.UnitPriceUSD
+	switch quote.BillingMode {
+	case BillingModeVideo:
+		delete(response, "per_request_price_usd")
+		response["unit_price_usd"] = quote.UnitPriceUSD
+	case BillingModePerRequest:
+		delete(response, "unit_price_usd")
+		response["per_request_price_usd"] = quote.UnitPriceUSD
+	}
 	response["gross_cost_usd"] = quote.GrossCostUSD
 	response["rate_multiplier"] = quote.RateMultiplier
 	response["actual_cost_usd"] = quote.ActualCostUSD
@@ -1012,9 +1023,12 @@ func (s *VideoTaskService) resumePristineVideoTask(ctx context.Context, task *Vi
 	if !ok {
 		return nil, errors.Join(ErrVideoTaskSettlementRetriable, errors.New("video task pricing snapshot is missing"))
 	}
-	forwardBody, err := applyEffectiveVideoDuration(task.RequestBody, quote.Effective.Seconds)
-	if err != nil {
-		return nil, errors.Join(ErrVideoTaskSettlementRetriable, err)
+	forwardBody := task.RequestBody
+	if quote.BillingMode == BillingModeVideo {
+		forwardBody, err = applyEffectiveVideoDuration(task.RequestBody, quote.Effective.Seconds)
+		if err != nil {
+			return nil, errors.Join(ErrVideoTaskSettlementRetriable, err)
+		}
 	}
 	upstreamModel := videoTaskMetadataString(task.Metadata, "upstream_model")
 	if upstreamModel == "" {

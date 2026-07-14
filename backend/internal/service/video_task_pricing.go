@@ -77,9 +77,20 @@ type videoTaskPricingResolver interface {
 }
 
 func ResolveVideoTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
-	if pricing == nil || pricing.BillingMode != BillingModeVideo {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("matched pricing must use video billing mode")
+	if pricing == nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("matched pricing is required")
 	}
+	switch pricing.BillingMode {
+	case BillingModeVideo:
+		return resolveDurationVideoTaskQuote(body, billingModel, pricing, rateMultiplier, accountRateMultiplier)
+	case BillingModePerRequest:
+		return resolvePerRequestVideoTaskQuote(body, billingModel, pricing, rateMultiplier, accountRateMultiplier)
+	default:
+		return VideoTaskQuote{}, invalidVideoPricingConfig("matched pricing must use video or per-request billing mode")
+	}
+}
+
+func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
 	if pricing.VideoDefaultSeconds == nil || *pricing.VideoDefaultSeconds <= 0 || *pricing.VideoDefaultSeconds > videoTaskMaxSeconds {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video_default_seconds must be between 1 and 3600")
 	}
@@ -141,6 +152,62 @@ func ResolveVideoTaskQuote(body []byte, billingModel string, pricing *ChannelMod
 	}, nil
 }
 
+func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
+	unitPrice := 0.0
+	if pricing.PerRequestPrice != nil {
+		unitPrice = *pricing.PerRequestPrice
+	}
+	if !validVideoPriceMultiplier(unitPrice) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request price must be finite and non-negative")
+	}
+	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
+	}
+
+	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request gross cost must be finite")
+	}
+	actualCost := grossCost * rateMultiplier
+	if !validVideoPriceMultiplier(actualCost) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request actual cost must be finite")
+	}
+	accountUnitPrice, _ := decimal.NewFromFloat(unitPrice).Round(10).Float64()
+	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account base cost is outside pricing precision")
+	}
+	accountCost := accountBaseCost * accountRateMultiplier
+	if !validVideoPriceMultiplier(accountCost) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account cost must be finite")
+	}
+	actualCost, err = NormalizeVideoTaskSettlementAmount(actualCost)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request actual cost is outside applied precision")
+	}
+	accountCost, err = NormalizeVideoTaskSettlementAmount(accountCost)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account cost is outside applied precision")
+	}
+	payload, err := decodeVideoPricingPayload(body)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
+	}
+	return VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		BillingModel:          strings.TrimSpace(billingModel),
+		Effective:             VideoTaskEffectiveParams{Seconds: resolveOptionalVideoTaskSeconds(payload), Resolution: resolveOptionalVideoTaskResolution(payload), VideoCount: 1},
+		UnitPriceUSD:          unitPrice,
+		GrossCostUSD:          grossCost,
+		ActualCostUSD:         actualCost,
+		AccountUnitPriceUSD:   accountUnitPrice,
+		AccountBaseCostUSD:    accountBaseCost,
+		AccountCostUSD:        accountCost,
+		RateMultiplier:        rateMultiplier,
+		AccountRateMultiplier: accountRateMultiplier,
+	}, nil
+}
+
 func decodeVideoPricingPayload(body []byte) (map[string]any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
@@ -184,6 +251,21 @@ func resolveVideoTaskSeconds(payload map[string]any, defaultSeconds int, allowed
 		}
 	}
 	return seconds, nil
+}
+
+func resolveOptionalVideoTaskSeconds(payload map[string]any) int {
+	for _, field := range []string{"seconds", "duration", "duration_seconds"} {
+		value, exists := payload[field]
+		if !exists {
+			continue
+		}
+		seconds, err := parseVideoTaskSeconds(value)
+		if err != nil {
+			return 0
+		}
+		return seconds
+	}
+	return 0
 }
 
 func parseVideoTaskSeconds(value any) (int, error) {
@@ -257,6 +339,19 @@ func resolveVideoTaskResolution(payload map[string]any, model string) string {
 		return strings.ToLower(match[1])
 	}
 	return "720p"
+}
+
+func resolveOptionalVideoTaskResolution(payload map[string]any) string {
+	for _, field := range []string{"resolution", "size"} {
+		value, ok := payload[field].(string)
+		if !ok {
+			continue
+		}
+		if normalized := NormalizeVideoResolutionTier(value); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
 }
 
 // NormalizeVideoResolutionTier returns the canonical label used for video tier matching.
@@ -368,16 +463,33 @@ func videoTaskMetadataMap(value any) (map[string]any, bool) {
 }
 
 func validVideoTaskQuote(quote *VideoTaskQuote) bool {
-	if quote == nil || quote.BillingMode != BillingModeVideo || quote.Effective.VideoCount <= 0 || quote.Effective.VideoCount > VideoTaskMaxOutputs || quote.Effective.Seconds <= 0 || quote.Effective.Seconds > videoTaskMaxSeconds {
+	if quote == nil || quote.Effective.VideoCount <= 0 || quote.Effective.VideoCount > VideoTaskMaxOutputs ||
+		!validVideoPriceMultiplier(quote.UnitPriceUSD) || !validVideoPriceMultiplier(quote.GrossCostUSD) ||
+		!validVideoPriceMultiplier(quote.ActualCostUSD) || !validVideoPriceMultiplier(quote.AccountUnitPriceUSD) ||
+		!validVideoPriceMultiplier(quote.AccountBaseCostUSD) || !validVideoPriceMultiplier(quote.AccountCostUSD) ||
+		!validVideoPriceMultiplier(quote.RateMultiplier) || !validVideoPriceMultiplier(quote.AccountRateMultiplier) {
 		return false
 	}
-	gross := decimal.NewFromFloat(quote.UnitPriceUSD).Mul(decimal.NewFromInt(int64(quote.Effective.Seconds))).Mul(decimal.NewFromInt(int64(quote.Effective.VideoCount))).Round(10)
-	accountBase := decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(decimal.NewFromInt(int64(quote.Effective.Seconds))).Mul(decimal.NewFromInt(int64(quote.Effective.VideoCount))).Round(10)
+	count := decimal.NewFromInt(int64(quote.Effective.VideoCount))
+	var gross, accountBase decimal.Decimal
+	switch quote.BillingMode {
+	case BillingModeVideo:
+		if quote.Effective.Seconds <= 0 || quote.Effective.Seconds > videoTaskMaxSeconds || strings.TrimSpace(quote.Effective.Resolution) == "" {
+			return false
+		}
+		seconds := decimal.NewFromInt(int64(quote.Effective.Seconds))
+		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(seconds).Mul(count).Round(10)
+		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(seconds).Mul(count).Round(10)
+	case BillingModePerRequest:
+		if quote.Effective.Seconds < 0 || quote.Effective.Seconds > videoTaskMaxSeconds {
+			return false
+		}
+		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(count).Round(10)
+		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(count).Round(10)
+	default:
+		return false
+	}
 	expectedActual := decimal.NewFromFloat(quote.GrossCostUSD).Mul(decimal.NewFromFloat(quote.RateMultiplier)).Round(8)
 	expectedAccount := decimal.NewFromFloat(quote.AccountBaseCostUSD).Mul(decimal.NewFromFloat(quote.AccountRateMultiplier)).Round(8)
-	return gross.Equal(decimal.NewFromFloat(quote.GrossCostUSD)) && accountBase.Equal(decimal.NewFromFloat(quote.AccountBaseCostUSD)) && expectedActual.Equal(decimal.NewFromFloat(quote.ActualCostUSD)) && expectedAccount.Equal(decimal.NewFromFloat(quote.AccountCostUSD)) &&
-		strings.TrimSpace(quote.Effective.Resolution) != "" && validVideoPriceMultiplier(quote.UnitPriceUSD) &&
-		validVideoPriceMultiplier(quote.GrossCostUSD) && validVideoPriceMultiplier(quote.ActualCostUSD) &&
-		validVideoPriceMultiplier(quote.AccountUnitPriceUSD) && validVideoPriceMultiplier(quote.AccountBaseCostUSD) && validVideoPriceMultiplier(quote.AccountCostUSD) && validVideoPriceMultiplier(quote.RateMultiplier) &&
-		validVideoPriceMultiplier(quote.AccountRateMultiplier)
+	return gross.Equal(decimal.NewFromFloat(quote.GrossCostUSD)) && accountBase.Equal(decimal.NewFromFloat(quote.AccountBaseCostUSD)) && expectedActual.Equal(decimal.NewFromFloat(quote.ActualCostUSD)) && expectedAccount.Equal(decimal.NewFromFloat(quote.AccountCostUSD))
 }

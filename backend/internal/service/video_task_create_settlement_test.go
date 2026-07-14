@@ -21,6 +21,18 @@ func pricedVideoTaskServiceFixture(events *videoTaskServiceTestEvents) (*VideoTa
 	return svc, repo, provider, settlement
 }
 
+func perRequestVideoTaskServiceFixture(events *videoTaskServiceTestEvents, usage *fakeVideoTaskUsageRecorder) (*VideoTaskService, *fakeVideoTaskRepository, *fakeVideoTaskProvider, *fakeVideoTaskSettlementOrchestrator) {
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{ProviderTaskID: "upstream", Status: VideoTaskStatusQueued, ProviderStatus: "queued", RawBody: []byte(`{"id":"upstream","status":"queued"}`)}}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	price := 65.0
+	pricing := &fakeVideoTaskPricingResolver{events: events, selection: VideoTaskPricingSelection{Pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}, BillingModel: "seedance", BillingModelSource: BillingModelSourceRequested, RateMultiplier: 0.1065, AccountRateMultiplier: 1}}
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events, state: VideoTaskSettlementCharged}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, usage)
+	svc.pricingResolver, svc.settlement = pricing, settlement
+	return svc, repo, provider, settlement
+}
+
 func TestVideoTaskCreateImmediateProviderFailurePersistsThenReleasesWithoutCapture(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	svc, repo, provider, settlement := pricedVideoTaskServiceFixture(events)
@@ -45,6 +57,24 @@ func TestVideoTaskServiceCreateVideoPricingSettlesInStrictOrder(t *testing.T) {
 	require.Equal(t, "video:"+result.Task.PublicTaskID+":charge", settlement.reserveInput.RequestID)
 	require.InDelta(t, 0.4, settlement.reserveInput.Quote.GrossCostUSD, 1e-12)
 	require.InDelta(t, 0.2, settlement.reserveInput.Quote.ActualCostUSD, 1e-12)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingSettlesInStrictOrderWithoutLegacyUsage(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	body := []byte(`{"model":"seedance","prompt":"city","seconds":"5","duration":10,"duration_seconds":"15"}`)
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, []string{"selector_select", "pricing_resolve", "repo_create", "settlement_reserve", "provider_create", "repo_attach", "settlement_capture", "repo_get_public"}, events.snapshot())
+	require.Equal(t, body, provider.createBody)
+	require.Equal(t, BillingModePerRequest, settlement.reserveInput.Quote.BillingMode)
+	require.InDelta(t, 65, settlement.reserveInput.Quote.GrossCostUSD, 1e-12)
+	require.InDelta(t, 6.9225, settlement.reserveInput.Quote.ActualCostUSD, 1e-12)
+	require.Zero(t, usage.calls)
 }
 
 func TestVideoTaskServiceCreateVideoPricingReserveFailurePreventsProvider(t *testing.T) {
@@ -103,6 +133,82 @@ func TestVideoTaskServiceReplayRetriesAtomicAdmissionOnlyBeforeProvider(t *testi
 	require.Equal(t, 1, repo.captureCalls)
 }
 
+func TestVideoTaskServicePerRequestReplayReservesPersistedAdmissionWithoutDurationRewrite(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, tasks, provider, _ := perRequestVideoTaskServiceFixture(events, usage)
+	reserveErr := errors.New("reserve transaction failed")
+	repo := &videoTaskSettlementRepoStub{getErr: ErrVideoTaskSettlementNotFound, reserveErr: reserveErr}
+	svc.settlement = &VideoTaskSettlementService{repo: repo, tasks: tasks}
+	svc.accountLookup = &fakeVideoTaskAccountStore{accounts: map[int64]*Account{99: {ID: 99, Platform: PlatformOpenAI}}}
+	body := []byte(`{"model":"seedance","prompt":"city","duration":10,"duration_seconds":"15","provider_extra":"keep"}`)
+	params := VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "per-request-reserve-retry"}
+
+	first, err := svc.Create(context.Background(), params)
+	require.Nil(t, first)
+	require.ErrorIs(t, err, reserveErr)
+	require.Zero(t, provider.createCalls)
+	require.Equal(t, 1, repo.reserveCalls)
+
+	repo.reserveErr = nil
+	repo.reserveResult = &VideoTaskSettlementResult{Applied: true, Settlement: &VideoTaskSettlementSnapshot{State: VideoTaskSettlementReserved}}
+	repo.captureResult = &VideoTaskSettlementResult{Applied: true, Settlement: &VideoTaskSettlementSnapshot{State: VideoTaskSettlementCharged, ActualCostUSD: 6.9225}}
+	second, err := svc.Create(context.Background(), params)
+
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.Equal(t, 2, repo.reserveCalls)
+	require.Equal(t, 1, repo.captureCalls)
+	require.Equal(t, 1, provider.createCalls)
+	require.Equal(t, body, provider.createBody)
+	require.NotContains(t, string(provider.createBody), `"seconds"`)
+	require.NotNil(t, repo.reserveCommand)
+	require.InDelta(t, 65, repo.reserveCommand.GrossCostUSD, 1e-12)
+	require.InDelta(t, 6.9225, repo.reserveCommand.ActualCostUSD, 1e-12)
+	require.Equal(t, string(BillingModePerRequest), repo.reserveCommand.PricingSnapshot["billing_mode"])
+	require.NotNil(t, repo.reserveCommand.Admission)
+	require.NotNil(t, repo.reserveCommand.Admission.UsageLog)
+	require.Equal(t, string(BillingModePerRequest), *repo.reserveCommand.Admission.UsageLog.BillingMode)
+	require.Nil(t, repo.reserveCommand.Admission.UsageLog.VideoDurationSeconds)
+}
+
+func TestVideoTaskServiceReplayRecoversPerRequestTaskWithoutSynthesizingDuration(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{ProviderTaskID: "upstream_recovered", Status: VideoTaskStatusQueued, ProviderStatus: "queued", RawBody: []byte(`{"id":"upstream_recovered","status":"queued"}`)}}
+	quote := VideoTaskQuote{
+		BillingMode: BillingModePerRequest, BillingModel: "seedance",
+		Effective:    VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 65,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1,
+	}
+	body := []byte(`{"model":"seedance","prompt":"city","provider_extra":"keep"}`)
+	req, err := ParseVideoTaskCreateEnvelope(body)
+	require.NoError(t, err)
+	repo.seedTask(&VideoTask{
+		PublicTaskID: "task_per_request_recovery", APIKeyID: 42, UserID: 7, AccountID: 99,
+		Model: "seedance", Status: VideoTaskStatusSubmitting, RequestHash: req.RequestHash, RequestBody: body,
+		Metadata: map[string]any{
+			"idempotency_key":            "per-request-recovery",
+			"upstream_model":             "seedance-upstream",
+			VideoTaskEndpointMetadataKey: VideoTaskEndpointVideos,
+			"request_metadata":           map[string]any{"video_pricing_snapshot": quote},
+		},
+	})
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events, reconcileErr: ErrVideoTaskAdmissionRecovered}
+	svc := newVideoTaskServiceForTest(repo, &fakeVideoTaskAccountStore{events: events, accounts: map[int64]*Account{99: {ID: 99, Platform: PlatformOpenAI}}}, nil, provider, nil)
+	svc.settlement = settlement
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "per-request-recovery"})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, body, provider.createBody)
+	require.NotContains(t, string(provider.createBody), `"seconds"`)
+	require.Equal(t, 1, provider.createCalls)
+}
+
 func TestVideoTaskServiceRecoveredAdmissionProviderFailureReleases(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	svc, tasks, provider, settlement := pricedVideoTaskServiceFixture(events)
@@ -135,6 +241,36 @@ func TestVideoTaskServiceCreateVideoPricingProviderFailureFailsAndReleases(t *te
 	require.ErrorIs(t, err, provider.createErr)
 	require.Equal(t, []string{"selector_select", "pricing_resolve", "repo_create", "settlement_reserve", "provider_create", "settlement_fail_release"}, events.snapshot())
 	require.Equal(t, 1, settlement.failAndReleaseCalls)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingProviderFailureFailsAndReleases(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	provider.createErr = errors.New("provider failed")
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"seedance","prompt":"city"}`)})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, provider.createErr)
+	require.Equal(t, 1, settlement.failAndReleaseCalls)
+	require.Zero(t, settlement.captureCalls)
+	require.Zero(t, usage.calls)
+}
+
+func TestVideoTaskServiceCreatePerRequestPricingImmediateFailureReconcilesPersistedTask(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	usage := &fakeVideoTaskUsageRecorder{events: events}
+	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
+	provider.createResult = &VideoProviderCreateResult{ProviderTaskID: "upstream_failed", Status: VideoTaskStatusFailed, ProviderStatus: "failed", RawBody: []byte(`{"id":"upstream_failed","status":"failed"}`)}
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"seedance","prompt":"city"}`)})
+
+	require.NoError(t, err)
+	require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
+	require.Equal(t, 1, settlement.reconcilePersistedCalls)
+	require.Zero(t, settlement.captureCalls)
+	require.Zero(t, usage.calls)
 }
 
 func TestVideoTaskServiceBlankAcceptedProviderIDFailsAndReleasesWithoutCapture(t *testing.T) {
@@ -483,18 +619,20 @@ func TestVideoTaskSettlementServiceBuildsExactEffectsAndProvisionalUsage(t *test
 }
 
 type videoTaskSettlementRepoStub struct {
-	failCommand   *VideoTaskSettlementFailCommand
-	failResult    *VideoTaskSettlementResult
-	releaseCalls  int
-	snapshot      *VideoTaskSettlementSnapshot
-	getErr        error
-	getCalls      int
-	captureResult *VideoTaskSettlementResult
-	captureErr    error
-	captureCalls  int
-	reserveResult *VideoTaskSettlementResult
-	reserveErr    error
-	reserveCalls  int
+	failCommand    *VideoTaskSettlementFailCommand
+	failResult     *VideoTaskSettlementResult
+	releaseCalls   int
+	snapshot       *VideoTaskSettlementSnapshot
+	getErr         error
+	getCalls       int
+	captureResult  *VideoTaskSettlementResult
+	captureErr     error
+	captureCalls   int
+	captureCommand *VideoTaskSettlementCaptureCommand
+	reserveResult  *VideoTaskSettlementResult
+	reserveErr     error
+	reserveCalls   int
+	reserveCommand *VideoTaskSettlementReserveCommand
 }
 
 type videoTaskSettlementCacheStub struct{ platformLimited bool }
@@ -515,12 +653,14 @@ func (s *videoTaskSettlementCacheStub) HasUserPlatformQuotaLimit(context.Context
 	return s.platformLimited
 }
 
-func (r *videoTaskSettlementRepoStub) Reserve(context.Context, *VideoTaskSettlementReserveCommand) (*VideoTaskSettlementResult, error) {
+func (r *videoTaskSettlementRepoStub) Reserve(_ context.Context, command *VideoTaskSettlementReserveCommand) (*VideoTaskSettlementResult, error) {
 	r.reserveCalls++
+	r.reserveCommand = command
 	return r.reserveResult, r.reserveErr
 }
-func (r *videoTaskSettlementRepoStub) Capture(context.Context, *VideoTaskSettlementCaptureCommand) (*VideoTaskSettlementResult, error) {
+func (r *videoTaskSettlementRepoStub) Capture(_ context.Context, command *VideoTaskSettlementCaptureCommand) (*VideoTaskSettlementResult, error) {
 	r.captureCalls++
+	r.captureCommand = command
 	return r.captureResult, r.captureErr
 }
 func (r *videoTaskSettlementRepoStub) Release(context.Context, *VideoTaskSettlementReleaseCommand) (*VideoTaskSettlementResult, error) {

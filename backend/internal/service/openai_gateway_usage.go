@@ -539,7 +539,7 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 		return &CostBreakdown{
 			TotalCost:   quote.GrossCostUSD,
 			ActualCost:  quote.ActualCostUSD,
-			BillingMode: string(BillingModeVideo),
+			BillingMode: string(quote.BillingMode),
 		}
 	}
 	videoCount := result.VideoCount

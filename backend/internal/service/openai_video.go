@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
@@ -37,6 +39,10 @@ func NewOpenAICompatibleVideoProviderForGateway(openai *OpenAIGatewayService) Vi
 }
 
 func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, input VideoTaskPricingResolveInput) VideoTaskPricingSelection {
+	return s.resolveVideoTaskPricingAt(ctx, input, timezone.Now())
+}
+
+func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, input VideoTaskPricingResolveInput, now time.Time) VideoTaskPricingSelection {
 	selection := VideoTaskPricingSelection{
 		BillingModel:          strings.TrimSpace(input.RequestedModel),
 		BillingModelSource:    BillingModelSourceRequested,
@@ -74,7 +80,7 @@ func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, inpu
 			}
 		}
 	}
-	if selection.Pricing == nil || selection.Pricing.BillingMode != BillingModeVideo {
+	if selection.Pricing == nil || (selection.Pricing.BillingMode != BillingModeVideo && selection.Pricing.BillingMode != BillingModePerRequest) {
 		selection.Pricing = nil
 		return selection
 	}
@@ -90,8 +96,14 @@ func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, inpu
 		}
 		groupMultiplier = resolver.Resolve(ctx, input.UserID, input.GroupID, input.APIKey.Group.RateMultiplier)
 	}
-	groupMultiplier = effectiveRequestRateMultiplier(input.Account, groupMultiplier)
-	selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, groupMultiplier)
+	baseMultiplier := effectiveRequestRateMultiplier(input.Account, groupMultiplier)
+	selection.RateMultiplier = baseMultiplier
+	if selection.Pricing.BillingMode == BillingModePerRequest {
+		selection.RateMultiplier, _ = computePeakAwareMultipliers(input.APIKey, baseMultiplier, now)
+	}
+	if selection.Pricing.BillingMode == BillingModeVideo {
+		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, baseMultiplier)
+	}
 	return selection
 }
 

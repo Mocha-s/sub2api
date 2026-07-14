@@ -199,6 +199,152 @@ func TestResolveVideoTaskQuoteSelectsNormalizedTierBeforeDefaultAndCalculatesAmo
 	require.Equal(t, defaultPrice, quote.UnitPriceUSD)
 }
 
+func TestResolveVideoTaskQuotePerRequestPricing(t *testing.T) {
+	price := 65.0
+	defaultSeconds := 30
+	videoPrice := 0.08
+	intervalPrice := 100.0
+	pricing := &ChannelModelPricing{
+		BillingMode:         BillingModePerRequest,
+		PerRequestPrice:     &price,
+		VideoDefaultSeconds: &defaultSeconds,
+		VideoPricePerSecond: &videoPrice,
+		Intervals:           []PricingInterval{{TierLabel: "480p", PerRequestPrice: &intervalPrice}},
+	}
+
+	quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":"5","resolution":"480p"}`), "seedance-2.0", pricing, 0.1065, 0.071)
+	require.NoError(t, err)
+	require.Equal(t, VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		BillingModel:          "seedance-2.0",
+		Effective:             VideoTaskEffectiveParams{Seconds: 5, Resolution: "480p", VideoCount: 1},
+		UnitPriceUSD:          65,
+		GrossCostUSD:          65,
+		ActualCostUSD:         6.9225,
+		AccountUnitPriceUSD:   65,
+		AccountBaseCostUSD:    65,
+		AccountCostUSD:        4.615,
+		RateMultiplier:        0.1065,
+		AccountRateMultiplier: 0.071,
+	}, quote)
+	require.True(t, validVideoTaskQuote(&quote))
+}
+
+func TestResolveVideoTaskQuotePerRequestNilPriceIsZeroCost(t *testing.T) {
+	defaultSeconds := 30
+	videoPrice := 0.08
+	intervalPrice := 100.0
+	pricing := &ChannelModelPricing{
+		BillingMode:         BillingModePerRequest,
+		VideoDefaultSeconds: &defaultSeconds,
+		VideoPricePerSecond: &videoPrice,
+		Intervals:           []PricingInterval{{TierLabel: "480p", PerRequestPrice: &intervalPrice}},
+	}
+
+	quote, err := ResolveVideoTaskQuote([]byte(`{}`), "seedance-2.0", pricing, 0.1065, 0.071)
+	require.NoError(t, err)
+	require.Equal(t, VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		BillingModel:          "seedance-2.0",
+		Effective:             VideoTaskEffectiveParams{VideoCount: 1},
+		RateMultiplier:        0.1065,
+		AccountRateMultiplier: 0.071,
+	}, quote)
+	require.True(t, validVideoTaskQuote(&quote))
+}
+
+func TestResolveVideoTaskQuotePerRequestRejectsNonfinitePrice(t *testing.T) {
+	nan := math.NaN()
+	price := 65.0
+	tests := []struct {
+		name        string
+		pricing     *ChannelModelPricing
+		rate        float64
+		accountRate float64
+	}{
+		{name: "price", pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &nan}, rate: 1, accountRate: 1},
+		{name: "rate multiplier", pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}, rate: nan, accountRate: 1},
+		{name: "account multiplier", pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}, rate: 1, accountRate: nan},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ResolveVideoTaskQuote([]byte(`{}`), "seedance-2.0", tt.pricing, tt.rate, tt.accountRate)
+			require.Error(t, err)
+			require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+			require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+		})
+	}
+}
+
+func TestResolveVideoTaskQuotePerRequestPrioritizesInvalidConfigOverMalformedBody(t *testing.T) {
+	nan := math.NaN()
+	inf := math.Inf(1)
+	price := 65.0
+	outOfRangePrice := 10000000000.0
+	tests := []struct {
+		name        string
+		price       float64
+		rate        float64
+		accountRate float64
+	}{
+		{name: "NaN price", price: nan, rate: 1, accountRate: 1},
+		{name: "infinite price", price: inf, rate: 1, accountRate: 1},
+		{name: "out of range price", price: outOfRangePrice, rate: 1, accountRate: 1},
+		{name: "NaN rate multiplier", price: price, rate: nan, accountRate: 1},
+		{name: "infinite rate multiplier", price: price, rate: inf, accountRate: 1},
+		{name: "rate multiplier overflow", price: price, rate: math.MaxFloat64, accountRate: 1},
+		{name: "NaN account multiplier", price: price, rate: 1, accountRate: nan},
+		{name: "infinite account multiplier", price: price, rate: 1, accountRate: inf},
+		{name: "account multiplier overflow", price: price, rate: 1, accountRate: math.MaxFloat64},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &tt.price}
+			_, err := ResolveVideoTaskQuote([]byte(`{`), "seedance-2.0", pricing, tt.rate, tt.accountRate)
+			require.Error(t, err)
+			require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+			require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+		})
+	}
+}
+
+func TestResolveVideoTaskQuotePerRequestRejectsMalformedBodyWhenConfigValid(t *testing.T) {
+	price := 65.0
+	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}
+
+	_, err := ResolveVideoTaskQuote([]byte(`{`), "seedance-2.0", pricing, 1, 1)
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Equal(t, "VIDEO_TASK_INVALID_REQUEST", infraerrors.Reason(err))
+}
+
+func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *testing.T) {
+	price := 65.0
+	pricing := &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price}
+	tests := []struct {
+		name       string
+		body       string
+		wantSecond int
+		wantRes    string
+	}{
+		{name: "missing duration", body: `{}`, wantSecond: 0, wantRes: ""},
+		{name: "empty duration", body: `{"seconds":""}`, wantSecond: 0, wantRes: ""},
+		{name: "malformed duration", body: `{"duration":"five"}`, wantSecond: 0, wantRes: ""},
+		{name: "out of range duration", body: `{"duration_seconds":3601}`, wantSecond: 0, wantRes: ""},
+		{name: "size metadata", body: `{"size":"1920x1080"}`, wantSecond: 0, wantRes: "1080p"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quote, err := ResolveVideoTaskQuote([]byte(tt.body), "seedance-2.0", pricing, 1, 1)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantSecond, quote.Effective.Seconds)
+			require.Equal(t, tt.wantRes, quote.Effective.Resolution)
+			require.Equal(t, 1, quote.Effective.VideoCount)
+			require.True(t, validVideoTaskQuote(&quote))
+		})
+	}
+}
+
 func TestResolveVideoTaskQuoteRejectsInvalidConfigurationWithTyped400(t *testing.T) {
 	defaultSeconds := 5
 	nan := math.NaN()
@@ -207,7 +353,7 @@ func TestResolveVideoTaskQuoteRejectsInvalidConfigurationWithTyped400(t *testing
 		pricing *ChannelModelPricing
 	}{
 		{name: "nil pricing", pricing: nil},
-		{name: "wrong mode", pricing: &ChannelModelPricing{BillingMode: BillingModePerRequest, VideoDefaultSeconds: &defaultSeconds}},
+		{name: "unsupported mode", pricing: &ChannelModelPricing{BillingMode: BillingModeToken}},
 		{name: "missing default", pricing: &ChannelModelPricing{BillingMode: BillingModeVideo}},
 		{name: "nonfinite price", pricing: &ChannelModelPricing{BillingMode: BillingModeVideo, VideoDefaultSeconds: &defaultSeconds, VideoPricePerSecond: &nan}},
 		{name: "missing matching and default price", pricing: &ChannelModelPricing{BillingMode: BillingModeVideo, VideoDefaultSeconds: &defaultSeconds}},
@@ -223,12 +369,23 @@ func TestResolveVideoTaskQuoteRejectsInvalidConfigurationWithTyped400(t *testing
 }
 
 func TestVideoTaskQuoteSnapshotJSONRoundTrip(t *testing.T) {
-	want := VideoTaskQuote{BillingMode: BillingModeVideo, BillingModel: "seedance", Effective: VideoTaskEffectiveParams{Seconds: 5, Resolution: "720p", VideoCount: 1}, UnitPriceUSD: 0.08}
-	raw, err := json.Marshal(want)
-	require.NoError(t, err)
-	var got VideoTaskQuote
-	require.NoError(t, json.Unmarshal(raw, &got))
-	require.Equal(t, want, got)
+	tests := []VideoTaskQuote{
+		{BillingMode: BillingModeVideo, BillingModel: "seedance", Effective: VideoTaskEffectiveParams{Seconds: 5, Resolution: "720p", VideoCount: 1}, UnitPriceUSD: 0.08, GrossCostUSD: 0.4, ActualCostUSD: 0.2, AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 0.4, AccountCostUSD: 0.4, RateMultiplier: 0.5, AccountRateMultiplier: 1},
+		{BillingMode: BillingModePerRequest, BillingModel: "seedance", Effective: VideoTaskEffectiveParams{VideoCount: 1}, UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225, AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 4.615, RateMultiplier: 0.1065, AccountRateMultiplier: 0.071},
+	}
+	for _, want := range tests {
+		raw, err := json.Marshal(want)
+		require.NoError(t, err)
+		var got VideoTaskQuote
+		require.NoError(t, json.Unmarshal(raw, &got))
+		require.Equal(t, want, got)
+
+		var snapshot map[string]any
+		require.NoError(t, json.Unmarshal(raw, &snapshot))
+		fromMetadata, ok := videoTaskQuoteFromMetadata(map[string]any{"request_metadata": map[string]any{"video_pricing_snapshot": snapshot}})
+		require.True(t, ok)
+		require.Equal(t, want, fromMetadata)
+	}
 }
 
 func TestValidVideoTaskQuoteEnforcesOutputBoundAndAccountBaseFormula(t *testing.T) {
@@ -275,6 +432,42 @@ func TestVideoTaskQuotePreservesPricingPrecisionAndRoundsAppliedAmounts(t *testi
 		{name: "actual eighth digit", tamper: func(q *VideoTaskQuote) { q.ActualCostUSD += 0.00000001 }},
 		{name: "account base tenth digit", tamper: func(q *VideoTaskQuote) { q.AccountBaseCostUSD += 0.0000000001 }},
 		{name: "account final eighth digit", tamper: func(q *VideoTaskQuote) { q.AccountCostUSD += 0.00000001 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tampered := quote
+			tt.tamper(&tampered)
+			require.False(t, validVideoTaskQuote(&tampered))
+		})
+	}
+}
+
+func TestValidVideoTaskQuoteRejectsTamperedPerRequestAmounts(t *testing.T) {
+	quote := VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		BillingModel:          "video",
+		Effective:             VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD:          65,
+		GrossCostUSD:          65,
+		ActualCostUSD:         6.9225,
+		AccountUnitPriceUSD:   65,
+		AccountBaseCostUSD:    65,
+		AccountCostUSD:        4.615,
+		RateMultiplier:        0.1065,
+		AccountRateMultiplier: 0.071,
+	}
+	require.True(t, validVideoTaskQuote(&quote))
+
+	tests := []struct {
+		name   string
+		tamper func(*VideoTaskQuote)
+	}{
+		{name: "gross", tamper: func(q *VideoTaskQuote) { q.GrossCostUSD++ }},
+		{name: "actual", tamper: func(q *VideoTaskQuote) { q.ActualCostUSD += 0.00000001 }},
+		{name: "account base", tamper: func(q *VideoTaskQuote) { q.AccountBaseCostUSD++ }},
+		{name: "account final", tamper: func(q *VideoTaskQuote) { q.AccountCostUSD += 0.00000001 }},
+		{name: "negative audit duration", tamper: func(q *VideoTaskQuote) { q.Effective.Seconds = -1 }},
+		{name: "out of range audit duration", tamper: func(q *VideoTaskQuote) { q.Effective.Seconds = videoTaskMaxSeconds + 1 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

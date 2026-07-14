@@ -402,6 +402,33 @@
                 <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
               </div>
             </template>
+            <template v-else-if="tooltipData && isVideoUsage(tooltipData)">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoResolution') }}</span>
+                <span class="font-medium text-white">{{ tooltipData.video_resolution || '-' }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoDuration') }}</span>
+                <span class="font-medium text-white">{{ formatVideoDuration(tooltipData) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoOutputCount') }}</span>
+                <span class="font-medium text-white">{{ formatVideoCount(tooltipData) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoUnitPrice') }}</span>
+                <span class="font-medium text-sky-300">${{ formatVideoPrice(videoUnitPrice(tooltipData)) }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.videoPriceCalculation') }}</span>
+                <span class="font-medium text-white">
+                  <template v-if="hasVideoPriceCalculation(tooltipData)">
+                    {{ formatVideoPriceCalculation(tooltipData) }}
+                  </template>
+                  <template v-else>-</template>
+                </span>
+              </div>
+            </template>
             <div v-else class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.unitPrice') }}</span>
               <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
@@ -507,6 +534,7 @@ import {
 } from '@/utils/latencyHealth'
 import {
   BILLING_MODE_TOKEN,
+  BILLING_MODE_VIDEO,
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
@@ -576,6 +604,40 @@ const formatVideoMetadata = (row: AdminUsageLog): string => {
   const resolution = row.video_resolution || '-'
   const count = row.video_count ?? 0
   return `${duration} · ${resolution} · ${t('usage.videoCount', { count }, count)}`
+}
+
+const formatVideoDuration = (row: AdminUsageLog): string =>
+  row.video_duration_seconds != null && row.video_duration_seconds > 0 ? `${row.video_duration_seconds}s` : '-'
+
+const formatVideoCount = (row: AdminUsageLog): string => {
+  const count = row.video_count ?? 0
+  return count > 0 ? t('usage.videoCount', { count }, count) : '-'
+}
+
+const hasVideoPriceCalculation = (row: AdminUsageLog): boolean =>
+  row.billing_mode === BILLING_MODE_VIDEO && (row.video_duration_seconds ?? 0) > 0 && (row.video_count ?? 0) > 0
+
+const videoUnitPrice = (row: AdminUsageLog): number => {
+  if (!hasVideoPriceCalculation(row)) return 0
+  const price = (row.total_cost ?? 0) / (row.video_duration_seconds! * row.video_count!)
+  return Number.isFinite(price) ? price : 0
+}
+
+const formatVideoPrice = (value: number | null | undefined): string =>
+  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : '0.000000'
+
+const formatVideoPriceCalculation = (row: AdminUsageLog): string => {
+  const duration = row.video_duration_seconds ?? 0
+  const count = row.video_count ?? 0
+  const unitPrice = videoUnitPrice(row)
+  const totalCost = typeof row.total_cost === 'number' && Number.isFinite(row.total_cost) ? row.total_cost : 0
+  const displayedUnitPrice = Number(formatVideoPrice(unitPrice))
+  const displayedTotalCost = Number(formatVideoPrice(totalCost))
+  const displayedProduct = displayedUnitPrice * duration * count
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(displayedProduct), Math.abs(displayedTotalCost)) * 16
+  const operator = Math.abs(displayedProduct - displayedTotalCost) <= tolerance ? '=' : '≈'
+
+  return `$${formatVideoPrice(unitPrice)} x ${duration} x ${count} ${operator} $${formatVideoPrice(totalCost)}`
 }
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))

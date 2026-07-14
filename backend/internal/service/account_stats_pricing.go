@@ -223,6 +223,27 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	if quote == nil || pricing == nil {
 		return
 	}
+	if quote.BillingMode == BillingModePerRequest {
+		base := calculatePerRequestStatsCost(pricing, 1)
+		if base == nil {
+			return
+		}
+		accountBase, err := NormalizeVideoTaskPricingAmount(*base)
+		if err != nil || accountBase <= 0 {
+			return
+		}
+		accountCost, err := NormalizeVideoTaskSettlementAmount(accountBase * quote.AccountRateMultiplier)
+		if err != nil || accountCost <= 0 {
+			return
+		}
+		quote.AccountUnitPriceUSD = accountBase
+		quote.AccountBaseCostUSD = accountBase
+		quote.AccountCostUSD = accountCost
+		return
+	}
+	if quote.BillingMode != BillingModeVideo {
+		return
+	}
 	duration, resolution := quote.Effective.Seconds, quote.Effective.Resolution
 	usage := &UsageLog{VideoCount: quote.Effective.VideoCount, VideoResolution: &resolution, VideoDurationSeconds: &duration}
 	base := calculateVideoStatsCost(pricing, usage)

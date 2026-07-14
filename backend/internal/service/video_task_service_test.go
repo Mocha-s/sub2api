@@ -130,6 +130,24 @@ func TestVideoTaskForwardResultCarriesSnapshotUsageMetadataAndCost(t *testing.T)
 	require.InDelta(t, 0.2, cost.ActualCost, 1e-12)
 }
 
+func TestCalculateOpenAIVideoCostKeepsPerRequestQuoteMode(t *testing.T) {
+	quote := VideoTaskQuote{
+		BillingMode: BillingModePerRequest, BillingModel: "seedance-priced",
+		Effective:    VideoTaskEffectiveParams{VideoCount: 1},
+		UnitPriceUSD: 65, GrossCostUSD: 65, ActualCostUSD: 6.9225,
+		AccountUnitPriceUSD: 65, AccountBaseCostUSD: 65, AccountCostUSD: 65,
+		RateMultiplier: 0.1065, AccountRateMultiplier: 1,
+	}
+	task := &VideoTask{Model: "seedance", ProviderTaskID: "upstream", Metadata: map[string]any{"request_metadata": map[string]any{"video_pricing_snapshot": quote}}}
+
+	result := videoTaskSubmissionForwardResult(task, &VideoProviderCreateResult{ProviderTaskID: "upstream"}, "seedance-upstream")
+	cost := (&OpenAIGatewayService{}).calculateOpenAIVideoCost(context.Background(), "other-model", videoTaskTestAPIKey(), result, 99)
+
+	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
+	require.InDelta(t, 65, cost.TotalCost, 1e-12)
+	require.InDelta(t, 6.9225, cost.ActualCost, 1e-12)
+}
+
 func TestVideoTaskServiceCreateUsesGenericEnvelopeAndPersistsVideoAdapter(t *testing.T) {
 	ctx := context.Background()
 	events := &videoTaskServiceTestEvents{}
@@ -1594,6 +1612,31 @@ func TestVideoTaskServiceEstimateUsesSelectedChannelVideoPricing(t *testing.T) {
 	}
 }
 
+func TestVideoTaskServiceEstimatePerRequestPricingPreservesDurationFieldsAndPresentation(t *testing.T) {
+	price := 65.0
+	selector := &fakeVideoTaskSelector{selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	provider := &fakeVideoTaskEstimator{fakeVideoTaskProvider: &fakeVideoTaskProvider{}}
+	pricing := &fakeVideoTaskPricingResolver{selection: VideoTaskPricingSelection{
+		Pricing:               &ChannelModelPricing{BillingMode: BillingModePerRequest, PerRequestPrice: &price},
+		BillingModel:          "seedance",
+		RateMultiplier:        0.1065,
+		AccountRateMultiplier: 1,
+	}}
+	svc := newVideoTaskServiceForTest(newFakeVideoTaskRepository(nil), nil, selector, provider, nil)
+	svc.pricingResolver = pricing
+	body := []byte(`{"model":"seedance","prompt":"city","seconds":"5","duration":10,"duration_seconds":"15"}`)
+
+	result, err := svc.Estimate(context.Background(), VideoTaskEstimateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body})
+
+	require.NoError(t, err)
+	require.Equal(t, body, provider.estimateBody)
+	var response map[string]any
+	require.NoError(t, json.Unmarshal(result.ResponseBody, &response))
+	require.Equal(t, string(BillingModePerRequest), response["billing_mode"])
+	require.InDelta(t, 65, response["per_request_price_usd"], 1e-12)
+	require.NotContains(t, response, "unit_price_usd")
+}
+
 func TestVideoTaskServiceEstimateVideoPricingRejectsInvalidOrDisallowedDuration(t *testing.T) {
 	defaultSeconds := 10
 	price := 0.08
@@ -2109,6 +2152,16 @@ type fakeVideoTaskProvider struct {
 	refreshCtx          context.Context
 	contentAccountIDs   []int64
 	contentTaskMetadata map[string]any
+}
+
+type fakeVideoTaskEstimator struct {
+	*fakeVideoTaskProvider
+	estimateBody []byte
+}
+
+func (p *fakeVideoTaskEstimator) Estimate(_ context.Context, _ *Account, body []byte, _ string, _ string) (*VideoTaskEstimateResult, error) {
+	p.estimateBody = append([]byte(nil), body...)
+	return &VideoTaskEstimateResult{ResponseBody: []byte(`{"object":"video.estimate"}`)}, nil
 }
 
 type videoTaskProviderMetadataError struct {
