@@ -387,6 +387,25 @@ func (s *VideoTaskSettlementService) ReconcilePersistedTask(ctx context.Context,
 	if task == nil || settlement == nil {
 		return nil
 	}
+	if task.Status == VideoTaskStatusFailed {
+		var result *VideoTaskSettlementResult
+		switch settlement.State {
+		case VideoTaskSettlementReserved:
+			result, err = s.repo.ReleaseFailed(ctx, &VideoTaskSettlementReleaseCommand{PublicTaskID: publicTaskID})
+		case VideoTaskSettlementCharged:
+			reason := strings.TrimSpace(task.ErrorMessage)
+			if reason == "" {
+				reason = "video task provider failed"
+			}
+			result, err = s.repo.RefundFailed(ctx, &VideoTaskSettlementRefundCommand{PublicTaskID: publicTaskID, Reason: reason})
+		}
+		if err != nil {
+			return err
+		}
+		s.afterCommit(ctx, result)
+		return nil
+	}
+
 	if settlement.State == VideoTaskSettlementCharged {
 		result, err := s.repo.RepairChargedUsage(ctx, publicTaskID)
 		if err != nil {
@@ -397,28 +416,9 @@ func (s *VideoTaskSettlementService) ReconcilePersistedTask(ctx context.Context,
 	if task.Status == VideoTaskStatusCancelled || task.Status == VideoTaskStatusExpired {
 		return nil
 	}
-	if task.Status != VideoTaskStatusFailed {
-		if settlement.State == VideoTaskSettlementReserved {
-			_, err := s.Reconcile(ctx, task)
-			return err
-		}
-		return nil
-	}
-
-	var result *VideoTaskSettlementResult
-	switch settlement.State {
-	case VideoTaskSettlementReserved:
-		result, err = s.repo.ReleaseFailed(ctx, &VideoTaskSettlementReleaseCommand{PublicTaskID: publicTaskID})
-	case VideoTaskSettlementCharged:
-		reason := strings.TrimSpace(task.ErrorMessage)
-		if reason == "" {
-			reason = "video task provider failed"
-		}
-		result, err = s.repo.RefundFailed(ctx, &VideoTaskSettlementRefundCommand{PublicTaskID: publicTaskID, Reason: reason})
-	}
-	if err != nil {
+	if settlement.State == VideoTaskSettlementReserved {
+		_, err := s.Reconcile(ctx, task)
 		return err
 	}
-	s.afterCommit(ctx, result)
 	return nil
 }

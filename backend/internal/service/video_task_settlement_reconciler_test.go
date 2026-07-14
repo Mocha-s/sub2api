@@ -23,7 +23,7 @@ func TestVideoTaskSettlementServiceReconcilePersistedTaskUsesPersistedState(t *t
 		wantRepair  int
 	}{
 		{name: "failed reserved releases", taskStatus: VideoTaskStatusFailed, settlement: VideoTaskSettlementReserved, wantRelease: 1},
-		{name: "failed charged repairs then refunds", taskStatus: VideoTaskStatusFailed, settlement: VideoTaskSettlementCharged, wantRefund: 1, wantRepair: 1},
+		{name: "failed charged refunds before usage repair", taskStatus: VideoTaskStatusFailed, settlement: VideoTaskSettlementCharged, wantRefund: 1},
 		{name: "completed charged repairs usage", taskStatus: VideoTaskStatusCompleted, settlement: VideoTaskSettlementCharged, wantRepair: 1},
 		{name: "cancelled charged repairs usage", taskStatus: VideoTaskStatusCancelled, settlement: VideoTaskSettlementCharged, wantRepair: 1},
 		{name: "expired charged repairs usage", taskStatus: VideoTaskStatusExpired, settlement: VideoTaskSettlementCharged, wantRepair: 1},
@@ -46,6 +46,27 @@ func TestVideoTaskSettlementServiceReconcilePersistedTaskUsesPersistedState(t *t
 				t.Fatalf("repair calls = %d, want %d", repo.repairCalls, tt.wantRepair)
 			}
 		})
+	}
+}
+
+func TestVideoTaskSettlementServiceReconcilePersistedTaskRefundsFailedChargeBeforeUsageRepair(t *testing.T) {
+	tasks := newFakeVideoTaskRepository(nil)
+	tasks.seedTask(&VideoTask{PublicTaskID: "task_failed_charge", Status: VideoTaskStatusFailed, ErrorMessage: "provider failed"})
+	repairErr := errors.New("usage integrity drift")
+	repo := &reconcileSettlementRepositoryFake{
+		snapshot:  &VideoTaskSettlementSnapshot{PublicTaskID: "task_failed_charge", State: VideoTaskSettlementCharged},
+		repairErr: repairErr,
+	}
+	svc := NewVideoTaskSettlementService(repo, tasks, nil, nil, nil, nil, nil)
+
+	if err := svc.ReconcilePersistedTask(context.Background(), "task_failed_charge"); err != nil {
+		t.Fatalf("ReconcilePersistedTask returned error: %v", err)
+	}
+	if repo.refundCalls != 1 {
+		t.Fatalf("refund calls = %d, want 1", repo.refundCalls)
+	}
+	if repo.repairCalls != 0 {
+		t.Fatalf("repair calls = %d, want 0", repo.repairCalls)
 	}
 }
 
@@ -568,13 +589,14 @@ type reconcileSettlementRepositoryFake struct {
 	refundCalls    int
 	appliedRefunds int
 	repairCalls    int
+	repairErr      error
 }
 
 func (r *reconcileSettlementRepositoryFake) RepairChargedUsage(context.Context, string) (*VideoTaskSettlementResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.repairCalls++
-	return &VideoTaskSettlementResult{Settlement: r.snapshot}, nil
+	return &VideoTaskSettlementResult{Settlement: r.snapshot}, r.repairErr
 }
 
 func (r *reconcileSettlementRepositoryFake) GetByPublicTaskID(context.Context, string) (*VideoTaskSettlementSnapshot, error) {
