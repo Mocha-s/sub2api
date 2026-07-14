@@ -44,7 +44,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
-  'admin.usage.billingModeVideo': 'Video',
+  'admin.usage.billingModeVideo': 'Per-second video',
   'admin.usage.allGroups': 'All groups',
   'admin.usage.allModels': 'All models',
   'usage.allApiKeys': 'All API Keys',
@@ -240,7 +240,7 @@ describe('user UsageView', () => {
     const wrapper = mountUsageView()
     await flushPromises()
 
-    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Video' })
+    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Per-second video' })
     ;(wrapper.vm as any).filters.billing_mode = 'video'
     ;(wrapper.vm as any).applyFilters()
     await flushPromises()

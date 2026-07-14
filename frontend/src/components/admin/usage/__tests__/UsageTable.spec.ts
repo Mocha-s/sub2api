@@ -72,10 +72,15 @@ const messages: Record<string, string> = {
   'usage.imageSizeUnknown': 'unknown',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageTotalPrice': 'Image total price',
+  'usage.videoResolution': 'Resolution',
+  'usage.videoDuration': 'Duration',
+  'usage.videoOutputCount': 'Output count',
+  'usage.videoUnitPrice': 'Per-second price',
+  'usage.videoPriceCalculation': 'Calculation',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
-  'admin.usage.billingModeVideo': 'Video',
+  'admin.usage.billingModeVideo': 'Per-second video',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -725,6 +730,140 @@ describe('admin UsageTable tooltip', () => {
     expect(wrapper.text()).toContain('10s · 1080p · 2 videos')
     expect(wrapper.text()).toContain('$0.400000')
     expect(wrapper.text()).not.toContain('Refunded')
+  })
+
+  it('shows per-second video pricing and customer and account settlement details', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-video-per-second',
+          billing_mode: 'video',
+          image_count: 0,
+          video_count: 2,
+          video_resolution: '1080p',
+          video_duration_seconds: 5,
+          total_cost: 1.2,
+          actual_cost: 0.3,
+          rate_multiplier: 1.5,
+          refunded_cost: 0.1,
+          net_actual_cost: 0.2,
+          refunded_at: '2026-07-12T00:00:00Z',
+          account_rate_multiplier: 0.75,
+          account_stats_cost: 0.9,
+          refunded_account_cost: 0.2,
+          net_account_cost: 0.7,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Resolution')
+    expect(text).toContain('1080p')
+    expect(text).toContain('Duration')
+    expect(text).toContain('5s')
+    expect(text).toContain('Output count')
+    expect(text).toContain('2 videos')
+    expect(text).toContain('Per-second price')
+    expect(text).toContain('$0.120000')
+    expect(text).toContain('Calculation')
+    expect(text).toContain('$0.120000 x 5 x 2 = $1.200000')
+    expect(text).toContain('Rate')
+    expect(text).toContain('1.50x')
+    expect(text).toContain('Gross')
+    expect(text).toContain('$0.300000')
+    expect(text).toContain('Refund')
+    expect(text).toContain('-$0.100000')
+    expect(text).toContain('Net')
+    expect(text).toContain('$0.200000')
+    expect(text).toContain('Account rate')
+    expect(text).toContain('0.75x')
+    expect(text).toContain('Account billed')
+    expect(text).toContain('$0.900000')
+    expect(text).toContain('-$0.200000')
+    expect(text).toContain('$0.700000')
+  })
+
+  it('hides account billing details in user mode for video usage', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-user-video-per-second',
+          billing_mode: 'video',
+          image_count: 0,
+          video_count: 2,
+          video_resolution: '1080p',
+          video_duration_seconds: 5,
+          total_cost: 1.2,
+          actual_cost: 0.3,
+          refunded_cost: 0.1,
+          net_actual_cost: 0.2,
+          refunded_at: '2026-07-12T00:00:00Z',
+          account_rate_multiplier: 0.75,
+          account_stats_cost: 0.9,
+          refunded_account_cost: 0.2,
+          net_account_cost: 0.7,
+        }],
+        loading: false,
+        columns: [],
+        showAccountBilling: false,
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('$0.120000 x 5 x 2 = $1.200000')
+    expect(text).not.toContain('Account rate')
+    expect(text).not.toContain('Account billed')
+    expect(text).not.toContain('$0.900000')
+    expect(text).not.toContain('-$0.200000')
+    expect(text).not.toContain('$0.700000')
+  })
+
+  it.each([
+    { name: 'zero duration', video_duration_seconds: 0, video_count: 2 },
+    { name: 'missing duration', video_duration_seconds: null, video_count: 2 },
+    { name: 'zero count', video_duration_seconds: 5, video_count: 0 },
+    { name: 'missing count', video_duration_seconds: 5, video_count: null },
+  ])('uses a zero video unit price without a calculation for $name', async ({ video_duration_seconds, video_count }) => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: `req-video-invalid-${video_duration_seconds}-${video_count}`,
+          billing_mode: 'video',
+          image_count: 0,
+          video_count,
+          video_resolution: '1080p',
+          video_duration_seconds,
+          total_cost: 1.2,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('Per-second price')
+    expect(text).toContain('$0.000000')
+    expect(text).toContain('Calculation-')
+    expect(text).not.toContain('Infinity')
+    expect(text).not.toContain('NaN')
+    expect(text).not.toContain('$0.120000 x')
   })
 })
 
