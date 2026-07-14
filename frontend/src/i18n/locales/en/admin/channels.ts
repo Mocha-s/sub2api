@@ -26,16 +26,22 @@ export default {
         billingModeToken: 'Per Token',
         billingModePerRequest: 'Per Request',
         billingModeImage: 'Per Image',
-        billingModeVideo: 'Per Video',
+        billingModeVideo: 'Per-second video',
         inputPrice: 'Input',
         outputPrice: 'Output',
         cacheWritePrice: 'Cache Write',
         cacheReadPrice: 'Cache Read',
         imageOutputPrice: 'Image Output',
         perRequestPrice: 'Per Request',
+        videoPricePerSecond: 'Price per second',
+        videoDefaultSeconds: 'Default duration',
+        videoAllowedSeconds: 'Duration policy',
+        anyDuration: 'Any duration',
         intervals: 'Tiered Pricing',
         unitPerMillion: '/ 1M tokens',
-        unitPerRequest: '/ request'
+        unitPerRequest: '/ request',
+        unitPerSecond: '/ second',
+        unitSeconds: 'seconds'
       }
     },
 
