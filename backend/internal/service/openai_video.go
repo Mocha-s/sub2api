@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
@@ -90,10 +91,13 @@ func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, inpu
 		}
 		groupMultiplier = resolver.Resolve(ctx, input.UserID, input.GroupID, input.APIKey.Group.RateMultiplier)
 	}
-	groupMultiplier = effectiveRequestRateMultiplier(input.Account, groupMultiplier)
-	selection.RateMultiplier = groupMultiplier
+	baseMultiplier := effectiveRequestRateMultiplier(input.Account, groupMultiplier)
+	selection.RateMultiplier = baseMultiplier
+	if selection.Pricing.BillingMode == BillingModePerRequest {
+		selection.RateMultiplier, _ = computePeakAwareMultipliers(input.APIKey, baseMultiplier, timezone.Now())
+	}
 	if selection.Pricing.BillingMode == BillingModeVideo {
-		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, groupMultiplier)
+		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, baseMultiplier)
 	}
 	return selection
 }

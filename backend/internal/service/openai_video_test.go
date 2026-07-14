@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
@@ -735,6 +736,105 @@ func TestResolveVideoTaskPricingFallsBackWithoutAPIKeyGroup(t *testing.T) {
 			require.InDelta(t, tt.wantAccountMultiplier, selection.AccountRateMultiplier, 1e-12)
 		})
 	}
+}
+
+func TestResolveVideoTaskPricingAppliesPeakOnlyToPerRequestPricing(t *testing.T) {
+	groupID := int64(42)
+	const (
+		userRate   = 0.1065
+		peakRate   = 1.5
+		videoRate  = 0.0817
+		price      = 65.0
+		peakActual = 10.38375
+	)
+	offPeakStart, offPeakEnd := videoResolverOffPeakWindow(timezone.Now())
+
+	for _, tt := range []struct {
+		name              string
+		billingMode       BillingMode
+		peakStart         string
+		peakEnd           string
+		wantRate          float64
+		wantQuoteActual   float64
+		verifyQuoteActual bool
+	}{
+		{
+			name: "peak per-request includes peak multiplier and quote actual cost", billingMode: BillingModePerRequest,
+			peakStart: "00:00", peakEnd: "23:59", wantRate: userRate * peakRate, wantQuoteActual: peakActual, verifyQuoteActual: true,
+		},
+		{
+			name: "outside peak per-request keeps user rate", billingMode: BillingModePerRequest,
+			peakStart: offPeakStart, peakEnd: offPeakEnd, wantRate: userRate,
+		},
+		{
+			name: "peak video keeps independent video rate", billingMode: BillingModeVideo,
+			peakStart: "00:00", peakEnd: "23:59", wantRate: videoRate,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			modelPrice := price
+			channel := &Channel{ID: 7, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+			cache := newEmptyChannelCache()
+			cache.loadedAt = time.Now()
+			cache.channelByGroupID[groupID] = channel
+			cache.groupPlatform[groupID] = PlatformOpenAI
+			cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: "sora-2"}] = &ChannelModelPricing{
+				BillingMode:     tt.billingMode,
+				PerRequestPrice: &modelPrice,
+			}
+			channelService := &ChannelService{}
+			channelService.cache.Store(cache)
+			rateRepo := &openAIVideoRateResolverRepoStub{rate: testPtrFloat64(userRate)}
+			service := &OpenAIGatewayService{
+				cfg:                   &config.Config{Default: config.DefaultConfig{RateMultiplier: 0.25}},
+				channelService:        channelService,
+				userGroupRateResolver: newUserGroupRateResolver(rateRepo, nil, time.Minute, nil, "service.openai_video.test"),
+			}
+
+			selection := service.ResolveVideoTaskPricing(context.Background(), VideoTaskPricingResolveInput{
+				GroupID: groupID,
+				UserID:  99,
+				APIKey: &APIKey{
+					GroupID: &groupID,
+					Group: &Group{
+						ID:                   groupID,
+						RateMultiplier:       0.5,
+						SubscriptionType:     SubscriptionTypeSubscription,
+						PeakRateEnabled:      true,
+						PeakStart:            tt.peakStart,
+						PeakEnd:              tt.peakEnd,
+						PeakRateMultiplier:   peakRate,
+						VideoRateIndependent: true,
+						VideoRateMultiplier:  videoRate,
+					},
+				},
+				Account:        &Account{},
+				RequestedModel: "sora-2",
+			})
+
+			require.NotNil(t, selection.Pricing)
+			require.Equal(t, tt.billingMode, selection.Pricing.BillingMode)
+			require.InDelta(t, tt.wantRate, selection.RateMultiplier, 1e-12)
+			require.Equal(t, groupID, rateRepo.groupID)
+			if !tt.verifyQuoteActual {
+				return
+			}
+
+			quote, err := ResolveVideoTaskQuote([]byte(`{}`), selection.BillingModel, selection.Pricing, selection.RateMultiplier, selection.AccountRateMultiplier)
+			require.NoError(t, err)
+			require.InDelta(t, tt.wantQuoteActual, quote.ActualCostUSD, 1e-12)
+		})
+	}
+}
+
+func videoResolverOffPeakWindow(now time.Time) (string, string) {
+	candidate := now.In(timezone.Location()).Truncate(time.Minute).Add(2 * time.Minute)
+	start := candidate.Format("15:04")
+	end := candidate.Add(time.Minute).Format("15:04")
+	if start >= end {
+		return "00:00", "00:01"
+	}
+	return start, end
 }
 
 type openAIVideoHTTPUpstreamRecorder struct {
