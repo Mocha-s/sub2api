@@ -22,6 +22,7 @@ export interface PricingFormEntry {
   output_price: number | string | null
   cache_write_price: number | string | null
   cache_read_price: number | string | null
+  image_input_price: number | string | null
   image_output_price: number | string | null
   per_request_price: number | string | null
   video_price_per_second: number | string | null
@@ -162,6 +163,7 @@ export function formPricingToAPI(entry: PricingFormEntry, platform: string): Cha
     output_price: tokenMode ? mTokToPerToken(entry.output_price) : null,
     cache_write_price: tokenMode ? mTokToPerToken(entry.cache_write_price) : null,
     cache_read_price: tokenMode ? mTokToPerToken(entry.cache_read_price) : null,
+    image_input_price: tokenMode ? mTokToPerToken(entry.image_input_price) : null,
     image_output_price: tokenMode ? mTokToPerToken(entry.image_output_price) : null,
     per_request_price: requestMode ? toNullableNumber(entry.per_request_price) : null,
     ...video,

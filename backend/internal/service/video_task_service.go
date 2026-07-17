@@ -106,7 +106,7 @@ func (s *OpenAIGatewayService) SelectVideoTaskAccount(ctx context.Context, group
 	if s == nil {
 		return nil, errors.New("openai gateway service is nil")
 	}
-	selection, _, err := s.SelectAccountWithSchedulerForCapability(ctx, groupID, "", sessionHash, requestedModel, nil, OpenAIUpstreamTransportHTTPSSE, "", false, false)
+	selection, _, err := s.SelectAccountWithSchedulerForCapability(ctx, groupID, "", sessionHash, requestedModel, nil, OpenAIUpstreamTransportHTTPSSE, "", false, false, false)
 	return selection, err
 }
 

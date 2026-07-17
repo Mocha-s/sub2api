@@ -16,6 +16,7 @@ const (
 
 type httpUpstreamProfileContextKey struct{}
 type httpRedirectValidatorContextKey struct{}
+type httpUpstreamDisableRedirectsContextKey struct{}
 
 type HTTPRedirectValidator func(*url.URL) error
 
@@ -66,4 +67,17 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 	default:
 		return HTTPUpstreamProfileDefault
 	}
+}
+
+// WithHTTPUpstreamRedirectsDisabled prevents credential-bearing probes from
+// following redirects through the shared upstream client.
+func WithHTTPUpstreamRedirectsDisabled(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, httpUpstreamDisableRedirectsContextKey{}, true)
+}
+
+func HTTPUpstreamRedirectsDisabled(ctx context.Context) bool {
+	return ctx != nil && ctx.Value(httpUpstreamDisableRedirectsContextKey{}) == true
 }

@@ -13,9 +13,11 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type videoTaskService interface {
@@ -32,7 +34,8 @@ type videoTaskService interface {
 
 // VideoTaskHandler handles OpenAI-compatible video task endpoints.
 type VideoTaskHandler struct {
-	videoTaskService videoTaskService
+	videoTaskService         videoTaskService
+	securityAuditCoordinator *securityaudit.Coordinator
 }
 
 func NewVideoTaskHandler(videoTaskService *service.VideoTaskService) *VideoTaskHandler {
@@ -40,6 +43,12 @@ func NewVideoTaskHandler(videoTaskService *service.VideoTaskService) *VideoTaskH
 	if videoTaskService != nil {
 		h.videoTaskService = videoTaskService
 	}
+	return h
+}
+
+func ProvideVideoTaskHandler(videoTaskService *service.VideoTaskService, coordinator *securityaudit.Coordinator) *VideoTaskHandler {
+	h := NewVideoTaskHandler(videoTaskService)
+	h.securityAuditCoordinator = coordinator
 	return h
 }
 
@@ -79,6 +88,9 @@ func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
 }
 
 func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, apiKey *service.APIKey, body []byte, endpoint string) {
+	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, body) {
+		return
+	}
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if idempotencyKey == "" {
@@ -104,6 +116,54 @@ func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, 
 		return
 	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
+}
+
+func (h *VideoTaskHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKey *service.APIKey, body []byte) bool {
+	if h == nil || h.securityAuditCoordinator == nil {
+		return true
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		videoTaskErrorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return false
+	}
+	if len(body) == 0 {
+		c.Set(securityAuditCompletedContextKey, true)
+		return true
+	}
+	model := videoTaskAuditModel(body)
+	reqLog := requestLogger(c, "handler.video_task.security_audit",
+		zap.Int64("user_id", subject.UserID), zap.String("model", model))
+	if apiKey != nil {
+		reqLog = reqLog.With(zap.Int64("api_key_id", apiKey.ID))
+	}
+	decision := runSecurityAudit(c, reqLog, h.securityAuditCoordinator, nil, apiKey, subject, service.ContentModerationProtocolOpenAIImages, model, body, "http")
+	if decision != nil && !decision.AllowNextStage {
+		videoTaskSecurityAuditError(c, decision)
+		return false
+	}
+	return true
+}
+
+func videoTaskAuditModel(body []byte) string {
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Model)
+}
+
+func videoTaskSecurityAuditError(c *gin.Context, decision *securityaudit.Decision) {
+	if decision == nil {
+		return
+	}
+	errType := "api_error"
+	if decision.Kind == securityaudit.DecisionBlock {
+		errType = "permission_error"
+	}
+	videoTaskErrorResponse(c, securityAuditStatus(decision), errType, securityAuditMessage(decision))
 }
 
 func (h *VideoTaskHandler) Fetch(c *gin.Context) {

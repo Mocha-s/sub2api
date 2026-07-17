@@ -57,11 +57,11 @@ func TestUsageLogRefundFields_InsertAndSelectPositionParity(t *testing.T) {
 	})
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
-	require.Equal(t, 4.0, prepared.args[23])
-	require.Equal(t, 5.0, prepared.args[24])
-	require.Equal(t, 3.0, prepared.args[25])
-	require.Equal(t, sql.NullString{String: reason, Valid: true}, prepared.args[26])
-	require.Equal(t, sql.NullTime{Time: refundedAt, Valid: true}, prepared.args[27])
+	require.Equal(t, 4.0, prepared.args[25])
+	require.Equal(t, 5.0, prepared.args[26])
+	require.Equal(t, 3.0, prepared.args[27])
+	require.Equal(t, sql.NullString{String: reason, Valid: true}, prepared.args[28])
+	require.Equal(t, sql.NullTime{Time: refundedAt, Valid: true}, prepared.args[29])
 	for _, column := range []string{"refunded_cost", "refunded_total_cost", "refunded_account_cost", "refund_reason", "refunded_at"} {
 		require.Contains(t, usageLogSelectColumns, column)
 	}
@@ -77,10 +77,10 @@ func TestUsageLogRefundFields_RowRoundTripPreservesGrossAndRefund(t *testing.T) 
 	columns := strings.Split(usageLogSelectColumns, ", ")
 	values := []driver.Value{
 		int64(9), int64(1), int64(2), int64(3), "req", "video-model", "video-model", nil, nil, nil,
-		0, 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.0, 10.0,
+		0, 0, 0, 0, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.0, 10.0,
 		4.0, 5.0, 3.0, reason, refundedAt,
 		1.0, nil, int16(0), int16(1), false, false, nil, nil, nil, nil, 0, nil, nil, nil, nil, nil,
-		1, "720p", 5, "video", nil, nil, nil, false, nil, nil, nil, "video", nil, createdAt,
+		1, "720p", 5, nil, nil, nil, nil, false, false, nil, nil, nil, "video", nil, createdAt,
 	}
 	require.Len(t, values, len(columns))
 	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE id = \\$1").WithArgs(int64(9)).
