@@ -682,11 +682,11 @@ func (r *videoTaskSettlementRepository) ClaimDueReconciliation(ctx context.Conte
 		LEFT JOIN video_task_settlement_events reserve_event ON reserve_event.settlement_id=s.id AND reserve_event.event_type='reserve'
 		WHERE s.state IN ('reserved','charged') AND (s.next_reconcile_at IS NULL OR s.next_reconcile_at <= $1)
 		AND (s.locked_until IS NULL OR s.locked_until <= $1)
-		AND (s.state='reserved' OR t.status='failed' OR s.usage_log_id IS NULL OR l.id IS NULL OR t.usage_log_id IS DISTINCT FROM s.usage_log_id OR t.subscription_id IS DISTINCT FROM s.subscription_id OR t.billed_usd IS DISTINCT FROM s.actual_cost_usd OR COALESCE(t.usage_metadata->>'request_id','') IS DISTINCT FROM s.charge_request_id
+		AND (s.state='reserved' OR NULLIF(BTRIM(COALESCE(s.last_error,'')),'') IS NOT NULL OR t.status='failed' OR s.usage_log_id IS NULL OR l.id IS NULL OR t.usage_log_id IS DISTINCT FROM s.usage_log_id OR t.subscription_id IS DISTINCT FROM s.subscription_id OR t.billed_usd IS DISTINCT FROM s.actual_cost_usd OR COALESCE(t.usage_metadata->>'request_id','') IS DISTINCT FROM s.charge_request_id
 			OR l.user_id IS DISTINCT FROM s.user_id OR l.api_key_id IS DISTINCT FROM s.api_key_id OR l.account_id IS DISTINCT FROM s.account_id OR l.group_id IS DISTINCT FROM s.group_id OR l.subscription_id IS DISTINCT FROM s.subscription_id OR l.channel_id IS DISTINCT FROM s.channel_id OR l.request_id IS DISTINCT FROM s.charge_request_id
 			OR l.model IS DISTINCT FROM reserve_event.metadata->'admission'->'UsageLog'->>'Model' OR l.requested_model IS DISTINCT FROM reserve_event.metadata->'admission'->'UsageLog'->>'RequestedModel' OR l.upstream_model IS DISTINCT FROM NULLIF(reserve_event.metadata->'admission'->'UsageLog'->>'UpstreamModel','')
 			OR l.total_cost IS DISTINCT FROM s.gross_cost_usd OR l.actual_cost IS DISTINCT FROM s.actual_cost_usd OR l.account_stats_cost IS DISTINCT FROM (s.effect_snapshot->>'account_stats_cost')::numeric OR l.billing_type IS DISTINCT FROM s.billing_type OR l.billing_mode IS DISTINCT FROM COALESCE(NULLIF(regexp_replace(s.pricing_snapshot->>'billing_mode','^[[:space:]]+$',''),''),'video')
-			OR l.request_type IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'RequestType')::smallint OR l.rate_multiplier IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'RateMultiplier')::numeric OR l.account_rate_multiplier IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'AccountRateMultiplier')::numeric
+			OR l.request_type IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'RequestType')::smallint OR ROUND(l.rate_multiplier::numeric,4) IS DISTINCT FROM ROUND((reserve_event.metadata->'admission'->'UsageLog'->>'RateMultiplier')::numeric,4) OR ROUND(l.account_rate_multiplier::numeric,4) IS DISTINCT FROM ROUND((reserve_event.metadata->'admission'->'UsageLog'->>'AccountRateMultiplier')::numeric,4)
 			OR l.inbound_endpoint IS DISTINCT FROM reserve_event.metadata->'admission'->'UsageLog'->>'InboundEndpoint' OR l.upstream_endpoint IS DISTINCT FROM reserve_event.metadata->'admission'->'UsageLog'->>'UpstreamEndpoint' OR l.video_count IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'VideoCount')::int OR l.video_resolution IS DISTINCT FROM NULLIF(reserve_event.metadata->'admission'->'UsageLog'->>'VideoResolution','') OR l.video_duration_seconds IS DISTINCT FROM (reserve_event.metadata->'admission'->'UsageLog'->>'VideoDurationSeconds')::int
 			OR l.refunded_cost<>0 OR l.refunded_total_cost<>0 OR l.refunded_account_cost<>0 OR NULLIF(BTRIM(COALESCE(l.refund_reason,'')),'') IS NOT NULL OR l.refunded_at IS NOT NULL)
 		ORDER BY COALESCE(s.next_reconcile_at,s.created_at),s.id FOR UPDATE OF s SKIP LOCKED LIMIT $2
@@ -1034,7 +1034,7 @@ func validateAdoptedAdmissionUsage(ctx context.Context, tx *sql.Tx, expected *se
 	}
 	if userID != expected.UserID || apiKeyID != expected.APIKeyID || accountID != expected.AccountID || requestID != strings.TrimSpace(expected.RequestID) || model != expected.Model || requestedModel != expected.RequestedModel ||
 		upstreamModel.String != stringPtrValue(expected.UpstreamModel) || groupID.Int64 != intPtrValue(expected.GroupID) || groupID.Valid != (expected.GroupID != nil) || subscriptionID.Int64 != intPtrValue(expected.SubscriptionID) || subscriptionID.Valid != (expected.SubscriptionID != nil) || channelID.Int64 != intPtrValue(expected.ChannelID) || channelID.Valid != (expected.ChannelID != nil) ||
-		!sameDecimal(totalCost, expected.TotalCost) || !sameDecimal(actualCost, expected.ActualCost) || !sameDecimal(rateMultiplier, expected.RateMultiplier) || accountRateMultiplier.Valid != (expected.AccountRateMultiplier != nil) || (accountRateMultiplier.Valid && !sameDecimal(accountRateMultiplier.Float64, *expected.AccountRateMultiplier)) ||
+		!sameDecimal(totalCost, expected.TotalCost) || !sameDecimal(actualCost, expected.ActualCost) || !sameDecimalAtScale(rateMultiplier, expected.RateMultiplier, usageLogMultiplierSchemaScale) || accountRateMultiplier.Valid != (expected.AccountRateMultiplier != nil) || (accountRateMultiplier.Valid && !sameDecimalAtScale(accountRateMultiplier.Float64, *expected.AccountRateMultiplier, usageLogMultiplierSchemaScale)) ||
 		billingType != expected.BillingType || requestType != int16(expected.RequestType.Normalize()) || videoCount != expected.VideoCount || resolution.String != stringPtrValue(expected.VideoResolution) || duration.Int64 != int64PtrValue(expected.VideoDurationSeconds) || duration.Valid != (expected.VideoDurationSeconds != nil) || billingMode.String != stringPtrValue(expected.BillingMode) ||
 		accountStatsCost.Valid != (expected.AccountStatsCost != nil) || (accountStatsCost.Valid && !sameDecimal(accountStatsCost.Float64, *expected.AccountStatsCost)) || inboundEndpoint.String != stringPtrValue(expected.InboundEndpoint) || upstreamEndpoint.String != stringPtrValue(expected.UpstreamEndpoint) {
 		return service.ErrVideoTaskSettlementIntegrity
@@ -1588,6 +1588,8 @@ func validateReserveLedger(ctx context.Context, tx *sql.Tx, task *settlementTask
 	}
 	return nil
 }
+
+const usageLogMultiplierSchemaScale int32 = 4
 
 func sameDecimal(a, b float64) bool {
 	return decimal.NewFromFloat(a).Equal(decimal.NewFromFloat(b))

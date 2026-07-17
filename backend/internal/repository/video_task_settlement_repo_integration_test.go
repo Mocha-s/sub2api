@@ -1200,18 +1200,31 @@ type chargedUsageRepairFixture struct {
 	usageID int64
 }
 
-func newChargedUsageRepairFixture(t *testing.T) chargedUsageRepairFixture {
-	return newChargedUsageRepairFixtureWithPricing(t, nil)
+func newChargedUsageRepairFixture(t *testing.T, multipliers ...float64) chargedUsageRepairFixture {
+	t.Helper()
+	rateMultiplier, accountRateMultiplier := 1.0, 1.0
+	if len(multipliers) != 0 {
+		if len(multipliers) != 2 {
+			t.Fatalf("newChargedUsageRepairFixture requires both rate multipliers")
+		}
+		rateMultiplier, accountRateMultiplier = multipliers[0], multipliers[1]
+	}
+	return newChargedUsageRepairFixtureWithRatesAndPricing(t, rateMultiplier, accountRateMultiplier, nil)
 }
 
 func newChargedUsageRepairFixtureWithPricing(t *testing.T, pricing map[string]any) chargedUsageRepairFixture {
+	t.Helper()
+	return newChargedUsageRepairFixtureWithRatesAndPricing(t, 1, 1, pricing)
+}
+
+func newChargedUsageRepairFixtureWithRatesAndPricing(t *testing.T, rateMultiplier, accountRateMultiplier float64, pricing map[string]any) chargedUsageRepairFixture {
 	t.Helper()
 	ctx := context.Background()
 	f := newVideoSettlementFixture(t, false, false)
 	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
 	mode, inbound, upstream := string(service.BillingModeVideo), "/v1/videos", "/v1/videos"
-	resolution, duration, multiplier := "720p", 8, 1.0
-	usage := &service.UsageLog{UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID, RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "video", RequestedModel: "video", GroupID: &f.groupID, BillingMode: &mode, BillingType: service.BillingTypeBalance, RequestType: service.RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration, TotalCost: 3, RateMultiplier: 1, AccountRateMultiplier: &multiplier, AccountStatsCost: testFloat64Ptr(2), CreatedAt: time.Now().UTC()}
+	resolution, duration := "720p", 8
+	usage := &service.UsageLog{UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID, RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "video", RequestedModel: "video", GroupID: &f.groupID, BillingMode: &mode, BillingType: service.BillingTypeBalance, RequestType: service.RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration, TotalCost: 3, RateMultiplier: rateMultiplier, AccountRateMultiplier: &accountRateMultiplier, AccountStatsCost: testFloat64Ptr(2), CreatedAt: time.Now().UTC()}
 	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, ActualCostUSD: 3, AccountCostUSD: 2, PricingSnapshot: pricing, Effects: service.VideoTaskBillingEffects{BalanceCost: 3, AccountStatsCost: 2}, Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage, UsageMetadata: map[string]any{"request_id": usage.RequestID}}})
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET status='queued' WHERE public_task_id=$1`, f.publicID)
@@ -1241,6 +1254,15 @@ func assertChargedUsageLinks(t *testing.T, publicID string, wantID int64) {
 	require.Equal(t, wantID, settlementID)
 	require.Equal(t, wantID, taskID)
 	require.InDelta(t, 3, billed, 1e-9)
+}
+
+func setOnlyVideoTaskSettlementDue(t *testing.T, publicID string, now time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET next_reconcile_at=$1`, now.Add(24*time.Hour))
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET next_reconcile_at=$1 WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$2)`, now.Add(-time.Minute), publicID)
+	require.NoError(t, err)
 }
 
 func TestVideoTaskSettlementRepository_RepairChargedUsageAdoptsValidDeterministicRow(t *testing.T) {
@@ -1355,6 +1377,66 @@ func TestVideoTaskSettlementRepository_ClaimDueReconciliationSkipsCanonicalCharg
 	_, err = integrationDB.ExecContext(context.Background(), `UPDATE video_task_settlements SET next_reconcile_at=$1 WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$2)`, now.Add(-time.Minute), f.publicID)
 	require.NoError(t, err)
 	claims, err := f.repo.ClaimDueReconciliation(context.Background(), now, 1, "canonical-token", time.Minute)
+	require.NoError(t, err)
+	require.Empty(t, claims)
+}
+
+func TestVideoTaskSettlementRepository_ClaimDueReconciliationSkipsStorageRoundedMultipliers(t *testing.T) {
+	f := newChargedUsageRepairFixture(t, 0.15150000000000002, 0.10100000000000001)
+	ctx := context.Background()
+	var rateMultiplier, accountRateMultiplier float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT rate_multiplier,account_rate_multiplier FROM usage_logs WHERE id=$1`, f.usageID).Scan(&rateMultiplier, &accountRateMultiplier))
+	require.Equal(t, 0.1515, rateMultiplier)
+	require.Equal(t, 0.101, accountRateMultiplier)
+
+	now := time.Now().UTC()
+	setOnlyVideoTaskSettlementDue(t, f.publicID, now)
+	claims, err := f.repo.ClaimDueReconciliation(ctx, now, 1, "rounded-multiplier", time.Minute)
+	require.NoError(t, err)
+	require.Empty(t, claims)
+}
+
+func TestVideoTaskSettlementRepository_RepairChargedUsageAcceptsStorageRoundedMultipliers(t *testing.T) {
+	f := newChargedUsageRepairFixture(t, 0.15150000000000002, 0.10100000000000001)
+	f.clearTaskLink(t)
+	f.clearSettlementLink(t)
+
+	result, err := f.repo.RepairChargedUsage(context.Background(), f.publicID)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	assertChargedUsageLinks(t, f.publicID, f.usageID)
+}
+
+func TestVideoTaskSettlementRepository_ClaimDueReconciliationClearsHistoricalErrorOnce(t *testing.T) {
+	f := newChargedUsageRepairFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	setOnlyVideoTaskSettlementDue(t, f.publicID, now)
+	_, err := integrationDB.ExecContext(ctx, `UPDATE video_task_settlements SET last_error='historical repair failure',reconcile_attempts=3 WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$1)`, f.publicID)
+	require.NoError(t, err)
+
+	claims, err := f.repo.ClaimDueReconciliation(ctx, now, 1, "historical-error", time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+	require.Equal(t, f.publicID, claims[0].PublicTaskID)
+	repaired, err := f.repo.RepairChargedUsage(ctx, f.publicID)
+	require.NoError(t, err)
+	require.False(t, repaired.Applied)
+	completed, err := f.repo.CompleteReconciliation(ctx, f.publicID, "historical-error")
+	require.NoError(t, err)
+	require.True(t, completed)
+
+	var lastError, lockedBy sql.NullString
+	var nextReconcileAt, lockedUntil sql.NullTime
+	var attempts int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT last_error,next_reconcile_at,reconcile_attempts,locked_by,locked_until FROM video_task_settlements WHERE video_task_id=(SELECT id FROM video_tasks WHERE public_task_id=$1)`, f.publicID).Scan(&lastError, &nextReconcileAt, &attempts, &lockedBy, &lockedUntil))
+	require.False(t, lastError.Valid)
+	require.False(t, nextReconcileAt.Valid)
+	require.Zero(t, attempts)
+	require.False(t, lockedBy.Valid)
+	require.False(t, lockedUntil.Valid)
+
+	claims, err = f.repo.ClaimDueReconciliation(ctx, now.Add(time.Second), 1, "historical-error-second", time.Minute)
 	require.NoError(t, err)
 	require.Empty(t, claims)
 }
