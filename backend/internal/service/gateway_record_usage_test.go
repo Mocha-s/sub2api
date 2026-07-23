@@ -336,6 +336,49 @@ func TestGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputTokens(t *
 	require.InDelta(t, expectedActual, userRepo.lastAmount, 1e-12)
 }
 
+func TestGatewayServiceRecordUsage_ChannelImageAliasWithoutDetectedImageCountBillsOneImageRequest(t *testing.T) {
+	groupID := int64(903)
+	imagePrice := 0.59
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.resolver = newOpenAIImageChannelPricingResolverForTest(t, groupID, "[yu]gemini-3.1-flash-image-preview", imagePrice)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_channel_image_alias",
+			Model:     "[yu]gemini-3.1-flash-image-preview",
+			ImageSize: ImageBillingSize1K,
+			Usage:     ClaudeUsage{InputTokens: 15, OutputTokens: 1276},
+			Duration:  time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      803,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:                   groupID,
+				RateMultiplier:       0.1365,
+				ImageRateIndependent: true,
+				ImageRateMultiplier:  1.0,
+			},
+		},
+		User:    &User{ID: 603},
+		Account: &Account{ID: 703},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, 1, billingRepo.lastCmd.ImageCount)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeImage), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, imagePrice, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, imagePrice, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.InDelta(t, imagePrice, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
 func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: MarkUsageLogCreateNotPersisted(context.Canceled)}
 	userRepo := &openAIRecordUsageUserRepoStub{}
