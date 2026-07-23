@@ -379,6 +379,61 @@ func TestGatewayServiceRecordUsage_ChannelImageAliasWithoutDetectedImageCountBil
 	require.InDelta(t, imagePrice, billingRepo.lastCmd.BalanceCost, 1e-12)
 }
 
+func TestGatewayServiceCalculateRecordUsageCost_UsesResolvedChannelPricingForCostHelpers(t *testing.T) {
+	const model = "gemini-image"
+	groupID := int64(904)
+	apiKey := &APIKey{GroupID: i64p(groupID), Group: &Group{ID: groupID}}
+
+	newGatewayWithoutChannelPricing := func() *GatewayService {
+		cache := newEmptyChannelCache()
+		cache.loadedAt = time.Now()
+		channelService := &ChannelService{}
+		channelService.cache.Store(cache)
+		billingService := NewBillingService(&config.Config{}, nil)
+		return &GatewayService{
+			billingService: billingService,
+			resolver:       NewModelPricingResolver(channelService, billingService),
+		}
+	}
+
+	t.Run("image", func(t *testing.T) {
+		channelResolver := newOpenAIImageChannelPricingResolverForTest(t, groupID, model, 0.59)
+		resolved := channelResolver.Resolve(context.Background(), PricingInput{Model: model, GroupID: &groupID})
+		require.Equal(t, PricingSourceChannel, resolved.Source)
+
+		cost := newGatewayWithoutChannelPricing().calculateImageCost(
+			context.Background(),
+			&ForwardResult{Model: model, ImageCount: 2, ImageSize: ImageBillingSize1K},
+			apiKey,
+			model,
+			1.0,
+			resolved,
+		)
+
+		require.Equal(t, string(BillingModeImage), cost.BillingMode)
+		require.InDelta(t, 1.18, cost.TotalCost, 1e-12)
+	})
+
+	t.Run("token", func(t *testing.T) {
+		channelResolver := newOpenAITokenImageChannelPricingResolverForTest(t, groupID, model)
+		resolved := channelResolver.Resolve(context.Background(), PricingInput{Model: model, GroupID: &groupID})
+		require.Equal(t, PricingSourceChannel, resolved.Source)
+
+		cost := newGatewayWithoutChannelPricing().calculateTokenCost(
+			context.Background(),
+			&ForwardResult{Model: model, Usage: ClaudeUsage{InputTokens: 100, OutputTokens: 50}},
+			apiKey,
+			model,
+			1.0,
+			&recordUsageOpts{},
+			resolved,
+		)
+
+		require.Equal(t, string(BillingModeToken), cost.BillingMode)
+		require.InDelta(t, 0.00105, cost.TotalCost, 1e-12)
+	})
+}
+
 func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: MarkUsageLogCreateNotPersisted(context.Canceled)}
 	userRepo := &openAIRecordUsageUserRepoStub{}
