@@ -220,6 +220,26 @@ func testEntTx(t *testing.T) *dbent.Tx {
 	return tx
 }
 
+func resetIntegrationCoreTables(t *testing.T) {
+	t.Helper()
+
+	_, err := integrationDB.ExecContext(context.Background(), `
+TRUNCATE TABLE
+	usage_dashboard_hourly_users,
+	usage_dashboard_daily_users,
+	usage_dashboard_hourly,
+	usage_dashboard_daily,
+	usage_dashboard_aggregation_watermark,
+	usage_logs,
+	api_keys,
+	accounts,
+	groups,
+	users
+RESTART IDENTITY CASCADE;
+`)
+	require.NoError(t, err, "reset integration core tables")
+}
+
 // testEntSQLTx 已弃用：不要在新测试中使用此函数。
 // 基于 *sql.Tx 创建的 ent client 在调用 client.Tx() 时会 panic。
 // 对于需要测试内部使用事务的代码，请使用 testEntClient。
