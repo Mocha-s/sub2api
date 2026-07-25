@@ -50,6 +50,7 @@ type VideoTaskSettlementCreateInput struct {
 	Quote          VideoTaskQuote
 	Params         VideoTaskCreateParams
 	Account        *Account
+	RequestedModel string
 	UpstreamModel  string
 	ChannelID      int64
 	SubscriptionID int64
@@ -307,6 +308,10 @@ func (s *VideoTaskSettlementService) videoTaskBillingEffects(ctx context.Context
 func buildVideoTaskSettlementUsage(input VideoTaskSettlementCreateInput, billingType int8, subscriptionID *int64) *UsageLog {
 	mode, inbound, upstream := string(input.Quote.BillingMode), videoTaskInboundEndpoint(input.Params.Endpoint), "/v1/videos"
 	groupID := input.Params.APIKey.GroupID
+	requestedModel := strings.TrimSpace(input.RequestedModel)
+	if requestedModel == "" {
+		requestedModel = input.Quote.BillingModel
+	}
 	if input.Account == nil {
 		input.Account = &Account{}
 	}
@@ -314,7 +319,7 @@ func buildVideoTaskSettlementUsage(input VideoTaskSettlementCreateInput, billing
 	if input.ChannelID > 0 {
 		channelID = &input.ChannelID
 	}
-	usage := &UsageLog{UserID: input.Params.User.ID, APIKeyID: input.Params.APIKey.ID, AccountID: input.Account.ID, RequestID: VideoTaskChargeRequestID(input.PublicTaskID), Model: input.Quote.BillingModel, RequestedModel: input.Quote.BillingModel, UpstreamModel: optionalTrimmedStringPtr(input.UpstreamModel), ChannelID: channelID, GroupID: groupID, SubscriptionID: subscriptionID, BillingMode: &mode, BillingType: billingType, RequestType: RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: input.Quote.GrossCostUSD, ActualCost: 0, RateMultiplier: input.Quote.RateMultiplier, AccountRateMultiplier: &input.Quote.AccountRateMultiplier, AccountStatsCost: &input.Quote.AccountCostUSD, CreatedAt: time.Now()}
+	usage := &UsageLog{UserID: input.Params.User.ID, APIKeyID: input.Params.APIKey.ID, AccountID: input.Account.ID, RequestID: VideoTaskChargeRequestID(input.PublicTaskID), Model: input.Quote.BillingModel, RequestedModel: requestedModel, UpstreamModel: optionalTrimmedStringPtr(input.UpstreamModel), ChannelID: channelID, GroupID: groupID, SubscriptionID: subscriptionID, BillingMode: &mode, BillingType: billingType, RequestType: RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: input.Quote.GrossCostUSD, ActualCost: 0, RateMultiplier: input.Quote.RateMultiplier, AccountRateMultiplier: &input.Quote.AccountRateMultiplier, AccountStatsCost: &input.Quote.AccountCostUSD, CreatedAt: time.Now()}
 	if input.Quote.BillingMode == BillingModeVideo {
 		usage.VideoCount = input.Quote.Effective.VideoCount
 		usage.VideoResolution = optionalTrimmedStringPtr(input.Quote.Effective.Resolution)

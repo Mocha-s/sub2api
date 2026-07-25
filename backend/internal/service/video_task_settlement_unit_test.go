@@ -172,6 +172,34 @@ func TestVideoTaskSettlementPreparePerRequestUsageOmitsVideoFields(t *testing.T)
 	require.Nil(t, usage.VideoDurationSeconds)
 }
 
+func TestVideoTaskSettlementPrepareUsagePreservesRequestedModelAlias(t *testing.T) {
+	apiKey := videoTaskTestAPIKey()
+	quote := VideoTaskQuote{
+		BillingMode: BillingModeVideo, BillingModel: "provider-sora",
+		Effective:    VideoTaskEffectiveParams{Seconds: 5, Resolution: "720p", VideoCount: 1},
+		UnitPriceUSD: 0.08, GrossCostUSD: 0.4, ActualCostUSD: 0.4,
+		AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 0.4, AccountCostUSD: 0.4,
+		RateMultiplier: 1, AccountRateMultiplier: 1,
+	}
+	svc := &VideoTaskSettlementService{repo: &videoTaskSettlementRepoStub{}, tasks: newFakeVideoTaskRepository(nil)}
+
+	command, err := svc.Prepare(t.Context(), VideoTaskSettlementCreateInput{
+		PublicTaskID:   "task_alias",
+		Quote:          quote,
+		Params:         VideoTaskCreateParams{APIKey: apiKey, User: &User{ID: 7}},
+		Account:        &Account{ID: 99},
+		RequestedModel: "video-alias",
+		UpstreamModel:  "provider-sora",
+	})
+
+	require.NoError(t, err)
+	usage := command.Admission.UsageLog
+	require.Equal(t, "provider-sora", usage.Model)
+	require.Equal(t, "video-alias", usage.RequestedModel)
+	require.NotNil(t, usage.UpstreamModel)
+	require.Equal(t, "provider-sora", *usage.UpstreamModel)
+}
+
 func TestVideoTaskSettlementAfterCommitInvalidatesRefundCachesFromCommittedResult(t *testing.T) {
 	cache := &settlementInvalidationCacheStub{}
 	svc := &VideoTaskSettlementService{cache: cache}

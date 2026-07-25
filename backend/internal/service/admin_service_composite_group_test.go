@@ -56,6 +56,23 @@ func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 	require.ElementsMatch(t, []int64{101, 202}, boundAccountIDs)
 }
 
+func TestAdminService_CreateCompositeGroupAllowsVideoGeneration(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{createID: 99}
+	svc := &adminServiceImpl{groupRepo: groupRepo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:                 "Composite Video",
+		Platform:             PlatformComposite,
+		RateMultiplier:       1,
+		AllowVideoGeneration: true,
+	})
+
+	require.NoError(t, err)
+	require.True(t, group.AllowVideoGeneration)
+	require.NotNil(t, groupRepo.created)
+	require.True(t, groupRepo.created.AllowVideoGeneration)
+}
+
 func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *testing.T) {
 	var clearedGroupID int64
 	var copiedFrom []int64
@@ -93,6 +110,25 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 	require.ElementsMatch(t, []int64{10, 20}, copiedFrom)
 	require.Equal(t, int64(99), boundGroupID)
 	require.ElementsMatch(t, []int64{301, 302}, boundAccountIDs)
+}
+
+func TestAdminService_UpdateCompositeGroupAllowsVideoGeneration(t *testing.T) {
+	allowVideo := true
+	groupRepo := &groupRepoStubForAdmin{
+		getByIDByID: map[int64]*Group{
+			99: {ID: 99, Platform: PlatformComposite, RateMultiplier: 1, SubscriptionType: SubscriptionTypeStandard},
+		},
+	}
+	svc := &adminServiceImpl{groupRepo: groupRepo}
+
+	group, err := svc.UpdateGroup(context.Background(), 99, &UpdateGroupInput{
+		AllowVideoGeneration: &allowVideo,
+	})
+
+	require.NoError(t, err)
+	require.True(t, group.AllowVideoGeneration)
+	require.NotNil(t, groupRepo.updated)
+	require.True(t, groupRepo.updated.AllowVideoGeneration)
 }
 
 func TestAdminService_CreateAccountAllowsCompositeGroupAssignment(t *testing.T) {

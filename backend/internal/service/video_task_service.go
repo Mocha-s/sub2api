@@ -200,6 +200,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	if err != nil {
 		return nil, err
 	}
+	requestedModel := videoTaskRequestedModel(ctx, req.Model)
 	idempotencyKey := strings.TrimSpace(params.IdempotencyKey)
 	if idempotencyKey != "" {
 		existing, err := s.repo.GetByIdempotencyKey(ctx, params.APIKey.ID, idempotencyKey)
@@ -244,7 +245,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	if s.pricingResolver != nil {
 		pricingSelection = s.pricingResolver.ResolveVideoTaskPricing(ctx, VideoTaskPricingResolveInput{
 			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
-			RequestedModel: req.Model, UpstreamModel: upstreamModel,
+			RequestedModel: requestedModel, UpstreamModel: upstreamModel,
 		})
 		if pricingSelection.Pricing != nil && (pricingSelection.Pricing.BillingMode == BillingModeVideo || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
 			resolved, err := ResolveVideoTaskQuote(req.RawBody, pricingSelection.BillingModel, pricingSelection.Pricing, pricingSelection.RateMultiplier, pricingSelection.AccountRateMultiplier)
@@ -279,7 +280,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	if err != nil {
 		return nil, err
 	}
-	metadata := videoTaskCreateMetadata(req, account, upstreamModel, idempotencyKey, adapterName, endpoint)
+	metadata := videoTaskCreateMetadata(req, account, requestedModel, upstreamModel, idempotencyKey, adapterName, endpoint)
 	metadata[VideoAdapterMetadataKey] = adapterName
 	channelID := pricingSelection.ChannelID
 	var reserveCommand *VideoTaskSettlementReserveCommand
@@ -287,7 +288,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 		if s.settlement == nil {
 			return nil, errors.New("video task settlement service is required for video pricing")
 		}
-		reserveCommand, err = s.settlement.Prepare(ctx, VideoTaskSettlementCreateInput{PublicTaskID: publicTaskID, RequestID: VideoTaskChargeRequestID(publicTaskID), Quote: *quote, Params: params, Account: account, UpstreamModel: upstreamModel, ChannelID: channelID})
+		reserveCommand, err = s.settlement.Prepare(ctx, VideoTaskSettlementCreateInput{PublicTaskID: publicTaskID, RequestID: VideoTaskChargeRequestID(publicTaskID), Quote: *quote, Params: params, Account: account, RequestedModel: requestedModel, UpstreamModel: upstreamModel, ChannelID: channelID})
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +311,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 		GroupID:      groupID,
 		AccountID:    account.ID,
 		ChannelID:    channelID,
-		Model:        req.Model,
+		Model:        requestedModel,
 		Prompt:       req.Prompt,
 		RequestHash:  req.RequestHash,
 		PromptHash:   req.PromptHash,
@@ -659,6 +660,7 @@ func (s *VideoTaskService) Estimate(ctx context.Context, params VideoTaskEstimat
 	if err != nil {
 		return nil, err
 	}
+	requestedModel := videoTaskRequestedModel(ctx, req.Model)
 	account, upstreamModel, release, err := s.selectVideoTaskActionAccount(ctx, params.APIKey, params.User, params.Body)
 	if err != nil {
 		return nil, err
@@ -679,7 +681,7 @@ func (s *VideoTaskService) Estimate(ctx context.Context, params VideoTaskEstimat
 		}
 		pricing := s.pricingResolver.ResolveVideoTaskPricing(ctx, VideoTaskPricingResolveInput{
 			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
-			RequestedModel: req.Model, UpstreamModel: upstreamModel,
+			RequestedModel: requestedModel, UpstreamModel: upstreamModel,
 		})
 		if pricing.Pricing != nil && (pricing.Pricing.BillingMode == BillingModeVideo || pricing.Pricing.BillingMode == BillingModePerRequest) {
 			resolved, err := ResolveVideoTaskQuote(params.Body, pricing.BillingModel, pricing.Pricing, pricing.RateMultiplier, pricing.AccountRateMultiplier)
@@ -1171,9 +1173,20 @@ func videoTaskGroupID(apiKey *APIKey) (int64, error) {
 	return 0, errors.New("api key group id is required")
 }
 
-func videoTaskCreateMetadata(req *VideoTaskCreateEnvelope, account *Account, upstreamModel string, idempotencyKey string, adapterName string, endpoint string) map[string]any {
+func videoTaskRequestedModel(ctx context.Context, fallback string) string {
+	if model, ok := RequestedPublicModelFromContext(ctx); ok {
+		return model
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func videoTaskCreateMetadata(req *VideoTaskCreateEnvelope, account *Account, requestedModel string, upstreamModel string, idempotencyKey string, adapterName string, endpoint string) map[string]any {
 	metadata := map[string]any{}
 	if req != nil {
+		model := strings.TrimSpace(requestedModel)
+		if model == "" {
+			model = req.Model
+		}
 		requestMetadata := make(map[string]any, len(req.Metadata))
 		if existing, ok := videoTaskMetadataMap(req.Metadata["request_metadata"]); ok {
 			for key, value := range existing {
@@ -1188,8 +1201,8 @@ func videoTaskCreateMetadata(req *VideoTaskCreateEnvelope, account *Account, ups
 			requestMetadata[key] = value
 		}
 		metadata["request_metadata"] = requestMetadata
-		metadata["requested_model"] = req.Model
-		metadata["billing_model"] = req.Model
+		metadata["requested_model"] = model
+		metadata["billing_model"] = model
 	}
 	metadata["upstream_model"] = upstreamModel
 	metadata["upstream_base_url"] = videoTaskUpstreamBaseURL(account, adapterName)

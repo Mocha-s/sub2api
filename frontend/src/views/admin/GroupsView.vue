@@ -1014,7 +1014,7 @@
         </div>
 
         <div
-          v-if="createForm.platform === 'openai'"
+          v-if="supportsVideoGenerationPermissionPlatform(createForm.platform)"
           class="border-t pt-4"
         >
           <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -2550,7 +2550,7 @@
         </div>
 
         <div
-          v-if="editForm.platform === 'openai'"
+          v-if="supportsVideoGenerationPermissionPlatform(editForm.platform)"
           class="border-t pt-4"
         >
           <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -4306,6 +4306,9 @@ const subscriptionTypeOptions = computed(() => [
   { value: "standard", label: t("admin.groups.subscription.standard") },
   { value: "subscription", label: t("admin.groups.subscription.subscription") },
 ]);
+
+const supportsVideoGenerationPermissionPlatform = (platform: GroupPlatform) =>
+  platform === "openai" || platform === "composite";
 
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
 const fallbackGroupOptions = computed(() => {

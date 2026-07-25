@@ -100,7 +100,7 @@ func TestVideoTaskCreateMetadataPreservesExistingRequestMetadataKeys(t *testing.
 		"request_metadata": map[string]any{"trace_id": "trace-123", "client_tag": "batch"},
 	}}
 
-	metadata := videoTaskCreateMetadata(req, nil, "seedance-upstream", "idem", VideoAdapterSeedanceAPIV1, VideoTaskEndpointVideos)
+	metadata := videoTaskCreateMetadata(req, nil, "seedance", "seedance-upstream", "idem", VideoAdapterSeedanceAPIV1, VideoTaskEndpointVideos)
 	requestMetadata, ok := videoTaskMetadataMap(metadata["request_metadata"])
 	require.True(t, ok)
 	require.Equal(t, "60", requestMetadata["duration"])
@@ -1036,6 +1036,66 @@ func TestVideoTaskServiceCreateAllowsResolvedCompositeOpenAI(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, 1, selector.selectCalls)
 	require.Equal(t, 1, provider.createCalls)
+}
+
+func TestVideoTaskServiceCreateCompositePreservesPublicAliasAndForwardsConcreteVideoModel(t *testing.T) {
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched:        true,
+		Source:         CompositeRouteSourceExplicit,
+		PublicModel:    "video-alias",
+		TargetPlatform: PlatformOpenAI,
+		UpstreamModel:  "sora-upstream",
+		Endpoint:       CompositeRouteEndpointVideo,
+	})
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{
+		ProviderTaskID: "upstream_composite_alias",
+		Status:         VideoTaskStatusQueued,
+		ProviderStatus: "queued",
+		RawBody:        []byte(`{"id":"upstream_composite_alias","status":"queued"}`),
+	}}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{
+		ID:       99,
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"sora-upstream": "provider-sora"},
+		},
+	}}}
+	price, seconds := 0.08, 5
+	pricing := &fakeVideoTaskPricingResolver{events: events, selection: VideoTaskPricingSelection{
+		Pricing:               &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price, VideoDefaultSeconds: &seconds},
+		BillingModel:          "provider-sora",
+		BillingModelSource:    BillingModelSourceUpstream,
+		RateMultiplier:        1,
+		AccountRateMultiplier: 1,
+	}}
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events, state: VideoTaskSettlementCharged}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+	svc.pricingResolver = pricing
+	svc.settlement = settlement
+
+	result, err := svc.Create(ctx, VideoTaskCreateParams{
+		APIKey:      videoTaskCompositeTestAPIKey(true),
+		User:        &User{ID: 7},
+		Body:        []byte(`{"model":"sora-upstream","prompt":"waves","seconds":5}`),
+		ContentType: "application/json",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "sora-upstream", selector.lastModel)
+	require.Equal(t, "provider-sora", provider.createUpstreamModel)
+	require.Equal(t, "video-alias", pricing.lastInput.RequestedModel)
+	require.Equal(t, "provider-sora", pricing.lastInput.UpstreamModel)
+	require.Equal(t, "video-alias", repo.lastCreate.Model)
+	require.Equal(t, "video-alias", repo.lastCreate.Metadata["requested_model"])
+	require.Equal(t, "provider-sora", repo.lastCreate.Metadata["upstream_model"])
+	require.Equal(t, "provider-sora", repo.lastCreate.Metadata["billing_model"])
+	require.Equal(t, "video-alias", settlement.reserveInput.RequestedModel)
+	require.Equal(t, "video-alias", settlement.reserveUsage.RequestedModel)
+	require.Equal(t, "provider-sora", settlement.reserveUsage.Model)
+	require.Equal(t, "provider-sora", settlement.reserveInput.Quote.BillingModel)
 }
 
 func TestVideoTaskServiceEstimateAllowsResolvedCompositeOpenAI(t *testing.T) {
@@ -2216,10 +2276,12 @@ type fakeVideoTaskSelector struct {
 	selection   *AccountSelectionResult
 	err         error
 	selectCalls int
+	lastModel   string
 }
 
 func (s *fakeVideoTaskSelector) SelectVideoTaskAccount(ctx context.Context, groupID *int64, sessionHash string, model string) (*AccountSelectionResult, error) {
 	s.selectCalls++
+	s.lastModel = model
 	s.events.add("selector_select")
 	return s.selection, s.err
 }
@@ -2399,11 +2461,13 @@ type fakeVideoTaskPricingResolver struct {
 	events    *videoTaskServiceTestEvents
 	selection VideoTaskPricingSelection
 	calls     int
+	lastInput VideoTaskPricingResolveInput
 }
 
 type fakeVideoTaskSettlementOrchestrator struct {
 	events                  *videoTaskServiceTestEvents
 	reserveInput            VideoTaskSettlementCreateInput
+	reserveUsage            *UsageLog
 	reserveErr              error
 	reserveNotApplied       bool
 	captureErr              error
@@ -2431,6 +2495,7 @@ func (s *fakeVideoTaskSettlementOrchestrator) Reserve(_ context.Context, input V
 
 func (s *fakeVideoTaskSettlementOrchestrator) Prepare(_ context.Context, input VideoTaskSettlementCreateInput) (*VideoTaskSettlementReserveCommand, error) {
 	s.reserveInput = input
+	s.reserveUsage = buildVideoTaskSettlementUsage(input, BillingTypeBalance, nil)
 	return &VideoTaskSettlementReserveCommand{PublicTaskID: input.PublicTaskID, GrossCostUSD: input.Quote.GrossCostUSD, ActualCostUSD: input.Quote.ActualCostUSD}, nil
 }
 
@@ -2469,8 +2534,9 @@ func (s *fakeVideoTaskSettlementOrchestrator) Reconcile(ctx context.Context, tas
 	return s.Capture(ctx, task.PublicTaskID)
 }
 
-func (r *fakeVideoTaskPricingResolver) ResolveVideoTaskPricing(context.Context, VideoTaskPricingResolveInput) VideoTaskPricingSelection {
+func (r *fakeVideoTaskPricingResolver) ResolveVideoTaskPricing(_ context.Context, input VideoTaskPricingResolveInput) VideoTaskPricingSelection {
 	r.calls++
+	r.lastInput = input
 	r.events.add("pricing_resolve")
 	return r.selection
 }
