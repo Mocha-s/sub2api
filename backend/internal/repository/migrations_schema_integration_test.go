@@ -4,11 +4,15 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,14 +113,18 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	)
 
 	// Channel video pricing is mirrored for customer billing and account statistics.
+	requireColumn(t, tx, "channel_model_pricing", "description", "character varying", 500, false)
+	requireColumnDefaultContains(t, tx, "channel_model_pricing", "description", "''")
 	requireNumericColumn(t, tx, "channel_model_pricing", "video_price_per_second", true)
 	requireColumn(t, tx, "channel_model_pricing", "video_default_seconds", "integer", 0, true)
 	requireColumn(t, tx, "channel_model_pricing", "video_allowed_seconds", "jsonb", 0, true)
 	requireNumericColumn(t, tx, "channel_pricing_intervals", "video_price_per_second", true)
+	requireColumnCount(t, tx, "channel_account_stats_model_pricing", "description", 0)
 	requireNumericColumn(t, tx, "channel_account_stats_model_pricing", "video_price_per_second", true)
 	requireColumn(t, tx, "channel_account_stats_model_pricing", "video_default_seconds", "integer", 0, true)
 	requireColumn(t, tx, "channel_account_stats_model_pricing", "video_allowed_seconds", "jsonb", 0, true)
 	requireNumericColumn(t, tx, "channel_account_stats_pricing_intervals", "video_price_per_second", true)
+	requireStoredMigrationChecksum(t, tx, "187_add_channel_model_pricing_description.sql")
 
 	// Dashboard costs remain gross; refund totals are tracked separately.
 	requireNumericColumn(t, tx, "usage_dashboard_hourly", "refunded_total_cost", false)
@@ -457,6 +465,40 @@ WHERE table_schema = 'public'
 	for _, fragment := range fragments {
 		require.Contains(t, columnDefault.String, fragment, "expected default for %s.%s to contain %q", table, column, fragment)
 	}
+}
+
+func requireColumnCount(t *testing.T, tx *sql.Tx, table, column string, expected int) {
+	t.Helper()
+
+	var count int
+	err := tx.QueryRowContext(context.Background(), `
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name = $2
+`, table, column).Scan(&count)
+	require.NoError(t, err, "query column count for %s.%s", table, column)
+	require.Equal(t, expected, count, "column count mismatch for %s.%s", table, column)
+}
+
+func requireStoredMigrationChecksum(t *testing.T, tx *sql.Tx, filename string) {
+	t.Helper()
+
+	content, err := migrations.FS.ReadFile(filename)
+	require.NoError(t, err, "read migration %s", filename)
+
+	sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+	expected := hex.EncodeToString(sum[:])
+
+	var actual string
+	err = tx.QueryRowContext(context.Background(), `
+SELECT checksum
+FROM schema_migrations
+WHERE filename = $1
+`, filename).Scan(&actual)
+	require.NoError(t, err, "query schema_migrations checksum for %s", filename)
+	require.Equal(t, expected, actual, "checksum mismatch for %s", filename)
 }
 
 func requireNumericColumn(t *testing.T, tx *sql.Tx, table, column string, nullable bool) {
