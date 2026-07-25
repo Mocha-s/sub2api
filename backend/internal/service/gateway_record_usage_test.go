@@ -44,6 +44,7 @@ func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo 
 		nil,
 		nil,
 		nil,
+		nil,
 		nil, // userPlatformQuotaRepo
 	)
 }
@@ -379,9 +380,83 @@ func TestGatewayServiceRecordUsage_ChannelImageAliasWithoutDetectedImageCountBil
 	require.InDelta(t, imagePrice, billingRepo.lastCmd.BalanceCost, 1e-12)
 }
 
+func TestGatewayServiceRecordUsage_CompositeImageAliasWithoutDetectedImageCountBillsConcreteModelOnce(t *testing.T) {
+	groupID := int64(904)
+	publicAlias := "team/best-image"
+	expectedConcreteModel := "grok-imagine-image-quality"
+	expectedAmount := 0.59
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, &openAIRecordUsageSubRepoStub{})
+
+	cache := newEmptyChannelCache()
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformGrok, model: normalizeChannelPricingModelName(expectedConcreteModel)}] = &ChannelModelPricing{
+		BillingMode:     BillingModeImage,
+		PerRequestPrice: &expectedAmount,
+	}
+	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}
+	cache.groupPlatform[groupID] = PlatformComposite
+	cache.loadedAt = time.Now()
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	svc.resolver = NewModelPricingResolver(channelService, NewBillingService(&config.Config{}, nil))
+
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched:        true,
+		Source:         CompositeRouteSourceExplicit,
+		GroupID:        groupID,
+		PublicModel:    publicAlias,
+		TargetPlatform: PlatformGrok,
+		UpstreamModel:  expectedConcreteModel,
+		Endpoint:       CompositeRouteEndpointImages,
+	})
+	err := svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "gateway_composite_image_alias",
+			Model:         expectedConcreteModel,
+			UpstreamModel: expectedConcreteModel,
+			ImageSize:     ImageBillingSize1K,
+			Usage:         ClaudeUsage{InputTokens: 15, OutputTokens: 1276},
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      804,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:                   groupID,
+				Platform:             PlatformComposite,
+				RateMultiplier:       0.1365,
+				ImageRateIndependent: true,
+				ImageRateMultiplier:  1.0,
+			},
+		},
+		User:    &User{ID: 604},
+		Account: &Account{ID: 704, Platform: PlatformGrok},
+		ChannelUsageFields: ChannelUsageFields{
+			OriginalModel:      publicAlias,
+			ChannelMappedModel: publicAlias,
+			BillingModelSource: BillingModelSourceRequested,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
+	require.Equal(t, publicAlias, usageRepo.lastLog.RequestedModel)
+	require.Equal(t, expectedConcreteModel, usageRepo.lastLog.Model)
+	require.Equal(t, expectedConcreteModel, billingRepo.lastCmd.Model)
+	require.InDelta(t, expectedAmount, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedAmount, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expectedAmount, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
 func TestGatewayServiceCalculateRecordUsageCost_UsesResolvedChannelPricingForCostHelpers(t *testing.T) {
 	const model = "gemini-image"
-	groupID := int64(904)
+	groupID := int64(905)
 	apiKey := &APIKey{GroupID: i64p(groupID), Group: &Group{ID: groupID}}
 
 	newGatewayWithoutChannelPricing := func() *GatewayService {

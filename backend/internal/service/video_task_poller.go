@@ -114,19 +114,16 @@ func (p *VideoTaskPoller) Stop() {
 
 	timer := time.NewTimer(videoTaskPollerStopMaxWait)
 	defer timer.Stop()
+	if cancel != nil {
+		cancel()
+	}
 	if persistenceDone != nil {
+		p.cancelActivePersistence()
 		select {
 		case <-persistenceDone:
 		case <-timer.C:
-			p.cancelActivePersistence()
-			if cancel != nil {
-				cancel()
-			}
 			return
 		}
-	}
-	if cancel != nil {
-		cancel()
 	}
 	for done != nil || claimsDone != nil {
 		select {
