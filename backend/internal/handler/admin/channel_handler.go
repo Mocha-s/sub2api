@@ -38,7 +38,7 @@ type createChannelRequest struct {
 	Features                   string                           `json:"features"`
 	FeaturesConfig             map[string]any                   `json:"features_config"`
 	ApplyPricingToAccountStats bool                             `json:"apply_pricing_to_account_stats"`
-	AccountStatsPricingRules   []accountStatsPricingRuleRequest `json:"account_stats_pricing_rules"`
+	AccountStatsPricingRules   []accountStatsPricingRuleRequest `json:"account_stats_pricing_rules" binding:"dive"`
 }
 
 type updateChannelRequest struct {
@@ -53,13 +53,30 @@ type updateChannelRequest struct {
 	Features                   *string                           `json:"features"`
 	FeaturesConfig             map[string]any                    `json:"features_config"`
 	ApplyPricingToAccountStats *bool                             `json:"apply_pricing_to_account_stats"`
-	AccountStatsPricingRules   *[]accountStatsPricingRuleRequest `json:"account_stats_pricing_rules"`
+	AccountStatsPricingRules   *[]accountStatsPricingRuleRequest `json:"account_stats_pricing_rules" binding:"omitempty,dive"`
 }
 
 type channelModelPricingRequest struct {
 	Platform            string                   `json:"platform" binding:"omitempty,max=50"`
 	Models              []string                 `json:"models" binding:"required,min=1,max=100"`
 	Description         string                   `json:"description" binding:"max=500"`
+	BillingMode         string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
+	InputPrice          *float64                 `json:"input_price" binding:"omitempty,min=0"`
+	OutputPrice         *float64                 `json:"output_price" binding:"omitempty,min=0"`
+	CacheWritePrice     *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
+	CacheReadPrice      *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
+	ImageInputPrice     *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
+	ImageOutputPrice    *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
+	PerRequestPrice     *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
+	VideoPricePerSecond *float64                 `json:"video_price_per_second" binding:"omitempty,min=0"`
+	VideoDefaultSeconds *int                     `json:"video_default_seconds" binding:"omitempty,min=1,max=3600"`
+	VideoAllowedSeconds []int                    `json:"video_allowed_seconds" binding:"omitempty,dive,min=1,max=3600"`
+	Intervals           []pricingIntervalRequest `json:"intervals"`
+}
+
+type accountStatsModelPricingRequest struct {
+	Platform            string                   `json:"platform" binding:"omitempty,max=50"`
+	Models              []string                 `json:"models" binding:"required,min=1,max=100"`
 	BillingMode         string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
 	InputPrice          *float64                 `json:"input_price" binding:"omitempty,min=0"`
 	OutputPrice         *float64                 `json:"output_price" binding:"omitempty,min=0"`
@@ -88,10 +105,10 @@ type pricingIntervalRequest struct {
 }
 
 type accountStatsPricingRuleRequest struct {
-	Name       string                       `json:"name"`
-	GroupIDs   []int64                      `json:"group_ids"`
-	AccountIDs []int64                      `json:"account_ids"`
-	Pricing    []channelModelPricingRequest `json:"pricing"`
+	Name       string                            `json:"name"`
+	GroupIDs   []int64                           `json:"group_ids"`
+	AccountIDs []int64                           `json:"account_ids"`
+	Pricing    []accountStatsModelPricingRequest `json:"pricing" binding:"dive"`
 }
 
 type channelResponse struct {
@@ -325,12 +342,59 @@ func pricingRequestToService(reqs []channelModelPricingRequest, scope pricingSco
 	return result
 }
 
+func accountStatsPricingRequestToService(reqs []accountStatsModelPricingRequest) []service.ChannelModelPricing {
+	result := make([]service.ChannelModelPricing, 0, len(reqs))
+	for _, r := range reqs {
+		billingMode := service.BillingMode(r.BillingMode)
+		if billingMode == "" {
+			billingMode = service.BillingModeToken
+		}
+		platform := r.Platform
+		intervals := make([]service.PricingInterval, 0, len(r.Intervals))
+		for _, iv := range r.Intervals {
+			tierLabel := iv.TierLabel
+			if billingMode == service.BillingModeVideo {
+				tierLabel = service.NormalizeVideoResolutionTier(tierLabel)
+			}
+			intervals = append(intervals, service.PricingInterval{
+				MinTokens:           iv.MinTokens,
+				MaxTokens:           iv.MaxTokens,
+				TierLabel:           tierLabel,
+				InputPrice:          iv.InputPrice,
+				OutputPrice:         iv.OutputPrice,
+				CacheWritePrice:     iv.CacheWritePrice,
+				CacheReadPrice:      iv.CacheReadPrice,
+				PerRequestPrice:     iv.PerRequestPrice,
+				VideoPricePerSecond: iv.VideoPricePerSecond,
+				SortOrder:           iv.SortOrder,
+			})
+		}
+		result = append(result, service.ChannelModelPricing{
+			Platform:            platform,
+			Models:              r.Models,
+			BillingMode:         billingMode,
+			InputPrice:          r.InputPrice,
+			OutputPrice:         r.OutputPrice,
+			CacheWritePrice:     r.CacheWritePrice,
+			CacheReadPrice:      r.CacheReadPrice,
+			ImageInputPrice:     r.ImageInputPrice,
+			ImageOutputPrice:    r.ImageOutputPrice,
+			PerRequestPrice:     r.PerRequestPrice,
+			VideoPricePerSecond: r.VideoPricePerSecond,
+			VideoDefaultSeconds: r.VideoDefaultSeconds,
+			VideoAllowedSeconds: r.VideoAllowedSeconds,
+			Intervals:           intervals,
+		})
+	}
+	return result
+}
+
 func accountStatsPricingRuleRequestToService(r accountStatsPricingRuleRequest) service.AccountStatsPricingRule {
 	return service.AccountStatsPricingRule{
 		Name:       r.Name,
 		GroupIDs:   r.GroupIDs,
 		AccountIDs: r.AccountIDs,
-		Pricing:    pricingRequestToService(r.Pricing, pricingScopeAccountStats),
+		Pricing:    accountStatsPricingRequestToService(r.Pricing),
 	}
 }
 

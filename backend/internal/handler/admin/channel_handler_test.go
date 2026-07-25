@@ -327,6 +327,105 @@ func TestChannelModelPricingRequestDescriptionValidation(t *testing.T) {
 	}
 }
 
+func TestAccountStatsPricingNestedModelsValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		payload      map[string]any
+		bindAndCheck func(t *testing.T, payload map[string]any)
+	}{
+		{
+			name: "create rejects missing models",
+			payload: map[string]any{
+				"name": "ch",
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req createChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPost, payload, &req))
+			},
+		},
+		{
+			name: "create rejects empty models",
+			payload: map[string]any{
+				"name": "ch",
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"models":       []string{},
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req createChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPost, payload, &req))
+			},
+		},
+		{
+			name: "update rejects missing models",
+			payload: map[string]any{
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req updateChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPut, payload, &req))
+			},
+		},
+		{
+			name: "update rejects empty models",
+			payload: map[string]any{
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"models":       []string{},
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req updateChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPut, payload, &req))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.bindAndCheck(t, tt.payload)
+		})
+	}
+}
+
+func bindAdminJSON(t *testing.T, method string, payload map[string]any, out any) error {
+	t.Helper()
+
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, "/channels", strings.NewReader(string(raw)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	return c.ShouldBindJSON(out)
+}
+
 func TestPricingRequestToService_DescriptionScope(t *testing.T) {
 	reqs := []channelModelPricingRequest{
 		{
