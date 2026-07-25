@@ -35,14 +35,14 @@ func TestVideoPricingDTOConversions(t *testing.T) {
 		}},
 	}
 
-	pricing := pricingRequestToService([]channelModelPricingRequest{req})[0]
+	pricing := pricingRequestToService([]channelModelPricingRequest{req}, pricingScopePrimary)[0]
 	require.Equal(t, service.BillingModeVideo, pricing.BillingMode)
 	require.Equal(t, float64Ptr(0.03), pricing.VideoPricePerSecond)
 	require.Equal(t, intPtr(10), pricing.VideoDefaultSeconds)
 	require.Equal(t, []int{5, 10}, pricing.VideoAllowedSeconds)
 	require.Equal(t, float64Ptr(0.05), pricing.Intervals[0].VideoPricePerSecond)
 
-	resp := pricingToResponse(&pricing)
+	resp := pricingToResponse(&pricing, pricingScopePrimary)
 	raw, err := json.Marshal(resp)
 	require.NoError(t, err)
 	var decoded map[string]any
@@ -67,7 +67,7 @@ func TestVideoPricingAPIRequestCanonicalizesTierLabelsAndPreservesZeroPrice(t *t
 		},
 	}
 
-	pricing := pricingRequestToService([]channelModelPricingRequest{req})[0]
+	pricing := pricingRequestToService([]channelModelPricingRequest{req}, pricingScopePrimary)[0]
 	require.Equal(t, "720p", pricing.Intervals[0].TierLabel)
 	require.Equal(t, float64(0), *pricing.Intervals[0].VideoPricePerSecond)
 	require.Equal(t, "cinema", pricing.Intervals[1].TierLabel)
@@ -100,7 +100,7 @@ func TestVideoPricingAPIRequestRejectsNormalizedBlankAndDuplicateTierLabels(t *t
 				BillingMode:         "video",
 				VideoDefaultSeconds: intPtr(10),
 				Intervals:           tt.intervals,
-			}})[0]
+			}}, pricingScopePrimary)[0]
 
 			require.Error(t, service.ValidateIntervals(pricing.Intervals, pricing.BillingMode))
 		})

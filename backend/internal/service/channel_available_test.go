@@ -184,6 +184,7 @@ func TestPricingNeedsFallback(t *testing.T) {
 	}{
 		{"nil", nil, true},
 		{"empty struct", &ChannelModelPricing{BillingMode: BillingModeToken}, true},
+		{"description only", &ChannelModelPricing{BillingMode: BillingModeToken, Description: "authored note"}, true},
 		{"all-empty intervals", &ChannelModelPricing{
 			BillingMode: BillingModeImage,
 			Intervals:   []PricingInterval{{TierLabel: "1K"}, {TierLabel: "2K"}},
@@ -259,6 +260,26 @@ func TestSynthesizePricingFromLiteLLM_RespectsExistingChannelMode(t *testing.T) 
 	require.Equal(t, BillingModePerRequest, got.BillingMode)
 	require.NotNil(t, got.PerRequestPrice)
 	require.InDelta(t, 0.04, *got.PerRequestPrice, 1e-12)
+}
+
+func TestSynthesizePricingFromLiteLLM_PreservesDescription(t *testing.T) {
+	lp := &LiteLLMModelPricing{
+		Mode:              "chat",
+		InputCostPerToken: 5e-6,
+	}
+	existing := &ChannelModelPricing{
+		BillingMode: BillingModeToken,
+		Description: "Authored display copy",
+		OutputPrice: nil,
+		InputPrice:  nil,
+		Intervals:   []PricingInterval{{TierLabel: "empty"}},
+	}
+
+	require.True(t, pricingNeedsFallback(existing))
+	got := synthesizePricingFromLiteLLM(lp, existing)
+	require.NotNil(t, got)
+	require.Equal(t, "Authored display copy", got.Description)
+	require.NotNil(t, got.InputPrice)
 }
 
 func TestFillGlobalPricingFallback_NilPricing(t *testing.T) {

@@ -63,6 +63,16 @@ func TestToUserSupportedModels_NilAllowedPlatformsKeepsAll(t *testing.T) {
 	require.Len(t, toUserSupportedModels(src, nil), 2)
 }
 
+func TestToUserPricingExposesDescription(t *testing.T) {
+	pricing := toUserPricing(&service.ChannelModelPricing{
+		Description: "Primary model note",
+		BillingMode: service.BillingModeToken,
+	})
+
+	require.NotNil(t, pricing)
+	require.Equal(t, "Primary model note", pricing.Description)
+}
+
 func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 	// 通过序列化 userAvailableChannel 结构体验证响应形状：
 	// 只有 name / description / platforms；不含管理端字段。

@@ -31,7 +31,7 @@ type createChannelRequest struct {
 	Name                       string                           `json:"name" binding:"required,max=100"`
 	Description                string                           `json:"description"`
 	GroupIDs                   []int64                          `json:"group_ids"`
-	ModelPricing               []channelModelPricingRequest     `json:"model_pricing"`
+	ModelPricing               []channelModelPricingRequest     `json:"model_pricing" binding:"dive"`
 	ModelMapping               map[string]map[string]string     `json:"model_mapping"`
 	BillingModelSource         string                           `json:"billing_model_source" binding:"omitempty,oneof=requested upstream channel_mapped"`
 	RestrictModels             bool                             `json:"restrict_models"`
@@ -46,7 +46,7 @@ type updateChannelRequest struct {
 	Description                *string                           `json:"description"`
 	Status                     string                            `json:"status" binding:"omitempty,oneof=active disabled"`
 	GroupIDs                   *[]int64                          `json:"group_ids"`
-	ModelPricing               *[]channelModelPricingRequest     `json:"model_pricing"`
+	ModelPricing               *[]channelModelPricingRequest     `json:"model_pricing" binding:"omitempty,dive"`
 	ModelMapping               map[string]map[string]string      `json:"model_mapping"`
 	BillingModelSource         string                            `json:"billing_model_source" binding:"omitempty,oneof=requested upstream channel_mapped"`
 	RestrictModels             *bool                             `json:"restrict_models"`
@@ -59,6 +59,7 @@ type updateChannelRequest struct {
 type channelModelPricingRequest struct {
 	Platform            string                   `json:"platform" binding:"omitempty,max=50"`
 	Models              []string                 `json:"models" binding:"required,min=1,max=100"`
+	Description         string                   `json:"description" binding:"max=500"`
 	BillingMode         string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
 	InputPrice          *float64                 `json:"input_price" binding:"omitempty,min=0"`
 	OutputPrice         *float64                 `json:"output_price" binding:"omitempty,min=0"`
@@ -115,6 +116,7 @@ type channelModelPricingResponse struct {
 	ID                  int64                     `json:"id"`
 	Platform            string                    `json:"platform"`
 	Models              []string                  `json:"models"`
+	Description         *string                   `json:"description,omitempty"`
 	BillingMode         string                    `json:"billing_mode"`
 	InputPrice          *float64                  `json:"input_price"`
 	OutputPrice         *float64                  `json:"output_price"`
@@ -151,6 +153,13 @@ type accountStatsPricingRuleResponse struct {
 	Pricing    []channelModelPricingResponse `json:"pricing"`
 }
 
+type pricingScope uint8
+
+const (
+	pricingScopePrimary pricingScope = iota
+	pricingScopeAccountStats
+)
+
 func channelToResponse(ch *service.Channel) *channelResponse {
 	if ch == nil {
 		return nil
@@ -178,7 +187,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 
 	resp.ModelPricing = make([]channelModelPricingResponse, 0, len(ch.ModelPricing))
 	for _, p := range ch.ModelPricing {
-		resp.ModelPricing = append(resp.ModelPricing, pricingToResponse(&p))
+		resp.ModelPricing = append(resp.ModelPricing, pricingToResponse(&p, pricingScopePrimary))
 	}
 
 	resp.ApplyPricingToAccountStats = ch.ApplyPricingToAccountStats
@@ -198,7 +207,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 			ruleResp.AccountIDs = []int64{}
 		}
 		for i := range rule.Pricing {
-			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i]))
+			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i], pricingScopeAccountStats))
 		}
 		resp.AccountStatsPricingRules = append(resp.AccountStatsPricingRules, ruleResp)
 	}
@@ -206,7 +215,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 	return resp
 }
 
-func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingResponse {
+func pricingToResponse(p *service.ChannelModelPricing, scope pricingScope) channelModelPricingResponse {
 	models := p.Models
 	if models == nil {
 		models = []string{}
@@ -223,10 +232,16 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 	for _, iv := range p.Intervals {
 		intervals = append(intervals, intervalToResponse(iv))
 	}
+	var description *string
+	if scope == pricingScopePrimary {
+		desc := p.Description
+		description = &desc
+	}
 	return channelModelPricingResponse{
 		ID:                  p.ID,
 		Platform:            platform,
 		Models:              models,
+		Description:         description,
 		BillingMode:         billingMode,
 		InputPrice:          p.InputPrice,
 		OutputPrice:         p.OutputPrice,
@@ -258,7 +273,7 @@ func intervalToResponse(iv service.PricingInterval) pricingIntervalResponse {
 	}
 }
 
-func pricingRequestToService(reqs []channelModelPricingRequest) []service.ChannelModelPricing {
+func pricingRequestToService(reqs []channelModelPricingRequest, scope pricingScope) []service.ChannelModelPricing {
 	result := make([]service.ChannelModelPricing, 0, len(reqs))
 	for _, r := range reqs {
 		billingMode := service.BillingMode(r.BillingMode)
@@ -285,9 +300,14 @@ func pricingRequestToService(reqs []channelModelPricingRequest) []service.Channe
 				SortOrder:           iv.SortOrder,
 			})
 		}
+		description := ""
+		if scope == pricingScopePrimary {
+			description = strings.TrimSpace(r.Description)
+		}
 		result = append(result, service.ChannelModelPricing{
 			Platform:            platform,
 			Models:              r.Models,
+			Description:         description,
 			BillingMode:         billingMode,
 			InputPrice:          r.InputPrice,
 			OutputPrice:         r.OutputPrice,
@@ -310,7 +330,7 @@ func accountStatsPricingRuleRequestToService(r accountStatsPricingRuleRequest) s
 		Name:       r.Name,
 		GroupIDs:   r.GroupIDs,
 		AccountIDs: r.AccountIDs,
-		Pricing:    pricingRequestToService(r.Pricing),
+		Pricing:    pricingRequestToService(r.Pricing, pricingScopeAccountStats),
 	}
 }
 
@@ -371,7 +391,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		return
 	}
 
-	pricing := pricingRequestToService(req.ModelPricing)
+	pricing := pricingRequestToService(req.ModelPricing, pricingScopePrimary)
 	// Main model_pricing requires a platform; default to anthropic for backward compatibility.
 	for i := range pricing {
 		if pricing[i].Platform == "" {
@@ -445,7 +465,7 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		ApplyPricingToAccountStats: req.ApplyPricingToAccountStats,
 	}
 	if req.ModelPricing != nil {
-		pricing := pricingRequestToService(*req.ModelPricing)
+		pricing := pricingRequestToService(*req.ModelPricing, pricingScopePrimary)
 		for i := range pricing {
 			if pricing[i].Platform == "" {
 				pricing[i].Platform = service.PlatformAnthropic

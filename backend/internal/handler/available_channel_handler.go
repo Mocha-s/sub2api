@@ -67,6 +67,7 @@ type userAvailableGroup struct {
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
+	Description         string                   `json:"description"`
 	BillingMode         string                   `json:"billing_mode"`
 	InputPrice          *float64                 `json:"input_price"`
 	OutputPrice         *float64                 `json:"output_price"`
@@ -285,6 +286,7 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		billingMode = string(service.BillingModeToken)
 	}
 	return &userSupportedModelPricing{
+		Description:         p.Description,
 		BillingMode:         billingMode,
 		InputPrice:          p.InputPrice,
 		OutputPrice:         p.OutputPrice,
