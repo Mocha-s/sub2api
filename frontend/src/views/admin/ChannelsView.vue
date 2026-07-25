@@ -448,6 +448,7 @@
                   :entry="entry"
                   :platform="section.platform"
                   :input-id-prefix="`${section.platform}-model-pricing-${idx}`"
+                  :show-description="true"
                   @update="updatePricingEntry(sIdx, idx, $event)"
                   @remove="removePricingEntry(sIdx, idx)"
                 />
@@ -579,6 +580,7 @@
                       :entry="entry"
                       :platform="section.platform"
                       :input-id-prefix="`${section.platform}-account-rule-${ruleIndex}-pricing-${pIdx}`"
+                      :show-description="false"
                       @update="rule.pricing.splice(pIdx, 1, $event)"
                       @remove="removeRulePricingEntry(sIdx, ruleIndex, pIdx)"
                     />
@@ -634,7 +636,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
-import { apiIntervalsToForm, apiVideoPricingToForm, findModelConflict, formPricingToAPI, perTokenToMTok, validatePricingEntry } from '@/components/admin/channel/types'
+import { apiIntervalsToForm, apiVideoPricingToForm, findModelConflict, formAccountStatsPricingToAPI, formPricingToAPI, perTokenToMTok, validatePricingEntry } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -852,6 +854,7 @@ function toggleGroupInSection(sectionIdx: number, groupId: number) {
 function createPricingEntry(models: string[] = []): PricingFormEntry {
   return {
     models,
+    description: '',
     billing_mode: 'token',
     input_price: null,
     output_price: null,
@@ -1048,7 +1051,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
         account_ids: rule.account_ids,
         pricing: rule.pricing
           .filter(p => p.models.length > 0)
-          .map(p => formPricingToAPI(p, section.platform))
+          .map(p => formAccountStatsPricingToAPI(p, section.platform))
       })
     }
   }
@@ -1165,6 +1168,7 @@ function apiToForm(channel: Channel): PlatformSection[] {
       .filter(p => (p.platform || 'anthropic') === platform)
       .map(p => ({
         models: p.models || [],
+        description: p.description || '',
         billing_mode: p.billing_mode,
         input_price: perTokenToMTok(p.input_price),
         output_price: perTokenToMTok(p.output_price),
@@ -1355,6 +1359,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
       account_ids: [...(apiRule.account_ids || [])],
       pricing: (apiRule.pricing || []).map(p => ({
         models: [...(p.models || [])],
+        description: '',
         billing_mode: p.billing_mode,
         input_price: perTokenToMTok(p.input_price),
         output_price: perTokenToMTok(p.output_price),

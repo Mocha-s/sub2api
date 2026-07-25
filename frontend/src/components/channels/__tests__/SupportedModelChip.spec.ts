@@ -33,11 +33,13 @@ function makeModel(overrides: Partial<UserSupportedModel> = {}): UserSupportedMo
     name: 'sora-video',
     platform: 'openai',
     pricing: {
+      description: '',
       billing_mode: 'video',
       input_price: null,
       output_price: null,
       cache_write_price: null,
       cache_read_price: null,
+      image_input_price: null,
       image_output_price: null,
       per_request_price: null,
       video_price_per_second: 0.08,

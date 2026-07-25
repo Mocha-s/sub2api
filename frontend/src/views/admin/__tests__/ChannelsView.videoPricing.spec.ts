@@ -39,11 +39,13 @@ function makeChannel(): Channel {
   const videoPricing = {
     platform: 'openai',
     models: ['sora-2'],
+    description: '',
     billing_mode: 'video' as const,
     input_price: null,
     output_price: null,
     cache_write_price: null,
     cache_read_price: null,
+    image_input_price: null,
     image_output_price: null,
     per_request_price: null,
     video_price_per_second: 0,
@@ -62,6 +64,7 @@ function makeChannel(): Channel {
       sort_order: 0,
     }],
   }
+  const { description: _description, ...accountStatsVideoPricing } = videoPricing
   return {
     id: 7,
     name: 'Video',
@@ -77,7 +80,7 @@ function makeChannel(): Channel {
       name: 'Mirror',
       group_ids: [3],
       account_ids: [],
-      pricing: [{ ...videoPricing, models: ['sora-rule'] }],
+      pricing: [{ ...accountStatsVideoPricing, models: ['sora-rule'] }],
     }],
     created_at: '2026-07-01T00:00:00Z',
     updated_at: '2026-07-01T00:00:00Z',

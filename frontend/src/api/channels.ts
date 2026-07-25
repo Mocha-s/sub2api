@@ -35,6 +35,7 @@ export interface UserPricingInterval {
 }
 
 export interface UserSupportedModelPricing {
+  description: string
   billing_mode: BillingMode
   input_price: number | null
   output_price: number | null

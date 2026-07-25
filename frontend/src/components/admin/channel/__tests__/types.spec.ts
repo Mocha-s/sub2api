@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiIntervalsToForm, apiVideoPricingToForm, formIntervalsToAPI, formPricingToAPI, formVideoPricingToAPI, validateIntervals, validatePricingEntry, validateVideoPricing, type IntervalFormEntry, type PricingFormEntry } from '../types'
+import { apiIntervalsToForm, apiVideoPricingToForm, formAccountStatsPricingToAPI, formIntervalsToAPI, formPricingToAPI, formVideoPricingToAPI, validateIntervals, validatePricingEntry, validateVideoPricing, type IntervalFormEntry, type PricingFormEntry } from '../types'
 import type { BillingMode } from '@/api/admin/channels'
 
 function makeInterval(over: Partial<IntervalFormEntry>): IntervalFormEntry {
@@ -21,6 +21,7 @@ function makeInterval(over: Partial<IntervalFormEntry>): IntervalFormEntry {
 function makeVideoPricing(over: Partial<PricingFormEntry> = {}): PricingFormEntry {
   return {
     models: ['sora-2'],
+    description: '',
     billing_mode: 'video' as BillingMode,
     input_price: null,
     output_price: null,
@@ -132,6 +133,18 @@ describe('validateIntervals', () => {
 })
 
 describe('video pricing helpers', () => {
+  it('trims primary pricing descriptions', () => {
+    const entry = makeVideoPricing({ description: '  First line\nSecond line  ' })
+
+    expect(formPricingToAPI(entry, 'openai').description).toBe('First line\nSecond line')
+  })
+
+  it('does not serialize descriptions in account stats pricing rules', () => {
+    const injected = makeVideoPricing({ description: 'must not leave the form' })
+
+    expect(formAccountStatsPricingToAPI(injected, 'openai')).not.toHaveProperty('description')
+  })
+
   it('preserves duplicate server durations through hydration so validation rejects them', () => {
     const hydrated = apiVideoPricingToForm({
       video_price_per_second: 0.03,

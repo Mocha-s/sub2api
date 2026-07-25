@@ -1,4 +1,4 @@
-import type { BillingMode, ChannelModelPricing, PricingInterval } from '@/api/admin/channels'
+import type { AccountStatsModelPricing, BillingMode, ChannelModelPricing, PricingInterval } from '@/api/admin/channels'
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string
 
@@ -17,6 +17,7 @@ export interface IntervalFormEntry {
 
 export interface PricingFormEntry {
   models: string[]
+  description: string
   billing_mode: BillingMode
   input_price: number | string | null
   output_price: number | string | null
@@ -147,7 +148,7 @@ function formIntervalsForMode(intervals: IntervalFormEntry[], mode: BillingMode)
   }))
 }
 
-export function formPricingToAPI(entry: PricingFormEntry, platform: string): ChannelModelPricing {
+function formPricingFieldsToAPI(entry: PricingFormEntry, platform: string): AccountStatsModelPricing {
   const tokenMode = entry.billing_mode === 'token'
   const requestMode = entry.billing_mode === 'image' || entry.billing_mode === 'per_request'
   const videoMode = entry.billing_mode === 'video'
@@ -169,6 +170,17 @@ export function formPricingToAPI(entry: PricingFormEntry, platform: string): Cha
     ...video,
     intervals: formIntervalsForMode(entry.intervals || [], entry.billing_mode),
   }
+}
+
+export function formPricingToAPI(entry: PricingFormEntry, platform: string): ChannelModelPricing {
+  return {
+    ...formPricingFieldsToAPI(entry, platform),
+    description: entry.description.trim(),
+  }
+}
+
+export function formAccountStatsPricingToAPI(entry: PricingFormEntry, platform: string): AccountStatsModelPricing {
+  return formPricingFieldsToAPI(entry, platform)
 }
 
 // ── 模型模式冲突检测 ──────────────────────────────────────

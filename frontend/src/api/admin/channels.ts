@@ -26,6 +26,7 @@ export interface ChannelModelPricing {
   id?: number
   platform: string
   models: string[]
+  description: string
   billing_mode: BillingMode
   input_price: number | null
   output_price: number | null
@@ -40,12 +41,14 @@ export interface ChannelModelPricing {
   intervals: PricingInterval[]
 }
 
+export type AccountStatsModelPricing = Omit<ChannelModelPricing, 'description'>
+
 export interface AccountStatsPricingRule {
   id?: number
   name: string
   group_ids: number[]
   account_ids: number[]
-  pricing: ChannelModelPricing[]
+  pricing: AccountStatsModelPricing[]
 }
 
 export interface Channel {

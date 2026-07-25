@@ -127,6 +127,8 @@ export default {
         noGroupsAvailable: '暂无可用分组',
         inOtherChannel: '已属于「{name}」',
         modelPricing: '模型定价',
+        pricingDescription: '定价描述',
+        pricingDescriptionPlaceholder: '可选，展示在该模型定价中',
         models: '模型列表',
         modelsPlaceholder: '输入完整模型名后按回车添加',
         modelInputHint: '按回车添加，支持粘贴批量导入',

@@ -60,6 +60,12 @@
           </div>
 
           <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
+            <p
+              v-if="model.pricing.description"
+              data-test="model-pricing-description"
+              class="whitespace-pre-wrap break-words text-gray-500 dark:text-gray-400"
+            >{{ model.pricing.description }}</p>
+
             <div class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
               <span>{{ billingModeLabel }}</span>

@@ -94,6 +94,26 @@
           </div>
         </div>
 
+        <div v-if="props.showDescription" class="mt-3">
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.pricingDescription') }}
+            </label>
+            <span data-test="pricing-description-count" class="text-xs text-gray-400">
+              {{ descriptionLength }}/500
+            </span>
+          </div>
+          <textarea
+            :value="entry.description"
+            rows="3"
+            maxlength="500"
+            data-test="pricing-description"
+            class="input mt-1 text-sm"
+            :placeholder="t('admin.channels.form.pricingDescriptionPlaceholder')"
+            @input="emit('update', { ...entry, description: ($event.target as HTMLTextAreaElement).value })"
+          ></textarea>
+        </div>
+
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
           <!-- Default prices (fallback when no interval matches) -->
@@ -300,6 +320,7 @@ const props = defineProps<{
   entry: PricingFormEntry
   platform?: string
   inputIdPrefix: string
+  showDescription: boolean
 }>()
 
 const emit = defineEmits<{
@@ -322,6 +343,7 @@ watch(() => props.entry, entry => {
 const videoDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-default-price`)
 const videoDefaultSecondsId = computed(() => `${props.inputIdPrefix}-video-default-seconds`)
 const videoAllowedSecondsId = computed(() => `${props.inputIdPrefix}-video-allowed-seconds`)
+const descriptionLength = computed(() => Array.from(props.entry.description).length)
 
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },

@@ -127,6 +127,8 @@ export default {
         noGroupsAvailable: 'No groups available',
         inOtherChannel: 'In "{name}"',
         modelPricing: 'Model Pricing',
+        pricingDescription: 'Pricing Description',
+        pricingDescriptionPlaceholder: 'Optional notes shown with this model pricing',
         models: 'Models',
         modelsPlaceholder: 'Type full model name and press Enter',
         modelInputHint: 'Press Enter to add, supports paste for batch import.',

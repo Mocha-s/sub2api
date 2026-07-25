@@ -18,12 +18,14 @@ vi.mock('vue-i18n', async importOriginal => ({
 function makeEntry(over: Partial<PricingFormEntry> = {}): PricingFormEntry {
   return {
     models: [],
+    description: '',
     billing_mode: 'video',
     input_price: null,
     output_price: null,
     cache_write_price: null,
     cache_read_price: null,
     image_output_price: null,
+    image_input_price: null,
     per_request_price: null,
     video_price_per_second: null,
     video_default_seconds: null,
@@ -51,7 +53,7 @@ function makeInterval(over: Partial<IntervalFormEntry> = {}): IntervalFormEntry 
 
 function mountCard(entry = makeEntry()) {
   return mount(PricingEntryCard, {
-    props: { entry, inputIdPrefix: 'test-entry' },
+    props: { entry, inputIdPrefix: 'test-entry', showDescription: false },
     global: {
       stubs: {
         Icon: true,
@@ -70,7 +72,7 @@ describe('PricingEntryCard video billing', () => {
         const entry = ref(makeEntry())
         return { entry }
       },
-      template: '<PricingEntryCard :entry="entry" input-id-prefix="harness" @update="entry = $event" />',
+      template: '<PricingEntryCard :entry="entry" input-id-prefix="harness" :show-description="false" @update="entry = $event" />',
     })
     const wrapper = mount(Harness, {
       global: { stubs: { Icon: true, ModelTagInput: true, Select: true } },
