@@ -43,13 +43,13 @@ func TestChannelRepository_ModelPricingDescriptionRoundTrip(t *testing.T) {
 	require.Equal(t, []string{"sora-2", "sora-2-fast"}, listed[0].Models)
 	require.Equal(t, "First line\nSecond line", listed[0].Description)
 
-	pricing.Description = "Updated description"
+	pricing.Description = "Updated line one\nUpdated line two"
 	require.NoError(t, repo.UpdateModelPricing(ctx, &pricing))
 
 	listed, err = repo.ListModelPricing(ctx, channel.ID)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
-	require.Equal(t, "Updated description", listed[0].Description)
+	require.Equal(t, "Updated line one\nUpdated line two", listed[0].Description)
 
 	replacement := []service.ChannelModelPricing{{
 		Platform:    service.PlatformOpenAI,
