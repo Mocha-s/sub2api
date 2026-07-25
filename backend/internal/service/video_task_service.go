@@ -188,7 +188,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	if group == nil {
 		return nil, errors.New("api key group is required")
 	}
-	if group.Platform != PlatformOpenAI {
+	if !isOpenAIVideoTaskGroup(ctx, group) {
 		return nil, fmt.Errorf("video generation requires OpenAI group, got %s", group.Platform)
 	}
 	if !GroupAllowsVideoGeneration(group) {
@@ -890,7 +890,7 @@ func (s *VideoTaskService) selectVideoTaskAccountForAction(ctx context.Context, 
 	if group == nil {
 		return nil, "", nil, errors.New("api key group is required")
 	}
-	if group.Platform != PlatformOpenAI {
+	if !isOpenAIVideoTaskGroup(ctx, group) {
 		return nil, "", nil, fmt.Errorf("video generation requires OpenAI group, got %s", group.Platform)
 	}
 	if !GroupAllowsVideoGeneration(group) {
@@ -929,6 +929,20 @@ func (s *VideoTaskService) selectVideoTaskAccountForAction(ctx context.Context, 
 		upstreamModel = model
 	}
 	return account, upstreamModel, selection.ReleaseFunc, nil
+}
+
+func isOpenAIVideoTaskGroup(ctx context.Context, group *Group) bool {
+	if group == nil {
+		return false
+	}
+	if group.Platform == PlatformOpenAI {
+		return true
+	}
+	if group.Platform != PlatformComposite {
+		return false
+	}
+	platform, ok := ResolvedTargetPlatformFromContext(ctx)
+	return ok && platform == PlatformOpenAI
 }
 
 func (s *VideoTaskService) videoTaskIdempotencyResult(ctx context.Context, apiKeyID int64, idempotencyKey string, requestHash string, endpoint string, body []byte, params VideoTaskCreateParams) (*VideoTaskCreateResult, error) {

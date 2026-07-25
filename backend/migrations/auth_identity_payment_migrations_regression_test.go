@@ -180,6 +180,19 @@ func TestMigration158BackfillsGrokMediaGenerationGroups(t *testing.T) {
 	require.Contains(t, sql, "AND allow_image_generation = false")
 }
 
+func TestMigration172CompositeRoutesAcceptsVideoEndpoint(t *testing.T) {
+	content, err := FS.ReadFile("172_composite_model_routes.sql")
+	require.NoError(t, err)
+
+	sql := strings.ToLower(string(content))
+	constraintStart := strings.Index(sql, "composite_model_routes_endpoint_check")
+	require.NotEqual(t, -1, constraintStart)
+	constraintEnd := strings.Index(sql[constraintStart:], ");")
+	require.NotEqual(t, -1, constraintEnd)
+	constraint := sql[constraintStart : constraintStart+constraintEnd]
+	require.Contains(t, constraint, "'video'")
+}
+
 func TestMigration186GroupAuthCacheInvalidationCoversSnapshotFields(t *testing.T) {
 	content, err := FS.ReadFile("186_group_auth_cache_image_generation.sql")
 	require.NoError(t, err)

@@ -1012,6 +1012,107 @@ func TestVideoTaskServiceCreatePermissionDeniedUsesStableError(t *testing.T) {
 	require.ErrorContains(t, err, VideoGenerationPermissionMessage)
 }
 
+func TestVideoTaskServiceCreateAllowsResolvedCompositeOpenAI(t *testing.T) {
+	ctx := WithResolvedTargetPlatform(context.Background(), PlatformOpenAI)
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{
+		ProviderTaskID: "upstream_composite_video",
+		Status:         VideoTaskStatusQueued,
+		ProviderStatus: "queued",
+		RawBody:        []byte(`{"id":"upstream_composite_video","status":"queued"}`),
+	}}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+
+	result, err := svc.Create(ctx, VideoTaskCreateParams{
+		APIKey:      videoTaskCompositeTestAPIKey(true),
+		User:        &User{ID: 7},
+		Body:        []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+		ContentType: "application/json",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, selector.selectCalls)
+	require.Equal(t, 1, provider.createCalls)
+}
+
+func TestVideoTaskServiceEstimateAllowsResolvedCompositeOpenAI(t *testing.T) {
+	ctx := WithResolvedTargetPlatform(context.Background(), PlatformOpenAI)
+	events := &videoTaskServiceTestEvents{}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	provider := &fakeVideoTaskEstimator{fakeVideoTaskProvider: &fakeVideoTaskProvider{events: events}}
+	svc := newVideoTaskServiceForTest(newFakeVideoTaskRepository(events), nil, selector, provider, nil)
+
+	result, err := svc.Estimate(ctx, VideoTaskEstimateParams{
+		APIKey:      videoTaskCompositeTestAPIKey(true),
+		User:        &User{ID: 7},
+		Body:        []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+		ContentType: "application/json",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, selector.selectCalls)
+	require.JSONEq(t, `{"model":"sora-upstream","prompt":"waves"}`, string(provider.estimateBody))
+}
+
+func TestVideoTaskServiceCreateRejectsUnresolvedCompositeBeforeAccountSelection(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	provider := &fakeVideoTaskProvider{events: events}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{
+		APIKey: videoTaskCompositeTestAPIKey(true),
+		User:   &User{ID: 7},
+		Body:   []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "video generation requires OpenAI group, got composite")
+	require.Zero(t, selector.selectCalls)
+	require.Zero(t, provider.createCalls)
+}
+
+func TestVideoTaskServiceEstimateRejectsUnresolvedCompositeBeforeAccountSelection(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	provider := &fakeVideoTaskEstimator{fakeVideoTaskProvider: &fakeVideoTaskProvider{events: events}}
+	svc := newVideoTaskServiceForTest(newFakeVideoTaskRepository(events), nil, selector, provider, nil)
+
+	result, err := svc.Estimate(context.Background(), VideoTaskEstimateParams{
+		APIKey: videoTaskCompositeTestAPIKey(true),
+		User:   &User{ID: 7},
+		Body:   []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "video generation requires OpenAI group, got composite")
+	require.Zero(t, selector.selectCalls)
+}
+
+func TestVideoTaskServiceCreateResolvedCompositeStillRequiresVideoPermission(t *testing.T) {
+	ctx := WithResolvedTargetPlatform(context.Background(), PlatformOpenAI)
+	events := &videoTaskServiceTestEvents{}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	provider := &fakeVideoTaskProvider{events: events}
+	svc := newVideoTaskServiceForTest(newFakeVideoTaskRepository(events), nil, selector, provider, nil)
+
+	result, err := svc.Create(ctx, VideoTaskCreateParams{
+		APIKey: videoTaskCompositeTestAPIKey(false),
+		User:   &User{ID: 7},
+		Body:   []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+	})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrVideoGenerationPermissionDenied)
+	require.Zero(t, selector.selectCalls)
+	require.Zero(t, provider.createCalls)
+}
+
 func TestVideoTaskServiceCreateNoAvailableAccountsUsesStableAccountUnavailableError(t *testing.T) {
 	ctx := context.Background()
 	events := &videoTaskServiceTestEvents{}
@@ -1779,6 +1880,20 @@ func videoTaskTestAPIKey() *APIKey {
 			ID:                   groupID,
 			Platform:             PlatformOpenAI,
 			AllowVideoGeneration: true,
+		},
+	}
+}
+
+func videoTaskCompositeTestAPIKey(allowVideo bool) *APIKey {
+	groupID := int64(5)
+	return &APIKey{
+		ID:      42,
+		UserID:  7,
+		GroupID: &groupID,
+		Group: &Group{
+			ID:                   groupID,
+			Platform:             PlatformComposite,
+			AllowVideoGeneration: allowVideo,
 		},
 	}
 }

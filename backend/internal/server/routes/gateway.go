@@ -76,6 +76,13 @@ func RegisterGatewayRoutes(
 	isOpenAIOnlyEndpointGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
+	isOpenAIVideoTaskGatewayPlatform := func(c *gin.Context) bool {
+		if getGroupPlatform(c) == service.PlatformOpenAI {
+			return true
+		}
+		apiKey, ok := middleware.GetAPIKeyFromContext(c)
+		return ok && apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite
+	}
 	imagesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
@@ -107,7 +114,13 @@ func RegisterGatewayRoutes(
 	}
 	videoStatusHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformGrok, service.PlatformComposite:
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokVideoStatus(c)
+		case service.PlatformComposite:
+			if isLocalDurableVideoTaskID(c.Param("request_id")) {
+				h.VideoTask.Fetch(c)
+				return
+			}
 			h.OpenAIGateway.GrokVideoStatus(c)
 		case service.PlatformOpenAI:
 			h.VideoTask.Fetch(c)
@@ -123,7 +136,7 @@ func RegisterGatewayRoutes(
 	}
 	openAIVideoTaskHandler := func(next gin.HandlerFunc) gin.HandlerFunc {
 		return func(c *gin.Context) {
-			if getGroupPlatform(c) != service.PlatformOpenAI {
+			if !isOpenAIVideoTaskGatewayPlatform(c) {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
 					"error": gin.H{
@@ -138,7 +151,13 @@ func RegisterGatewayRoutes(
 	}
 	videoContentHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformGrok, service.PlatformComposite:
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokVideoContent(c)
+		case service.PlatformComposite:
+			if isLocalDurableVideoTaskID(c.Param("request_id")) {
+				h.VideoTask.Content(c)
+				return
+			}
 			h.OpenAIGateway.GrokVideoContent(c)
 		case service.PlatformOpenAI:
 			h.VideoTask.Content(c)
@@ -554,8 +573,14 @@ func resetRequestBody(c *gin.Context, body []byte) {
 	c.Request.Header.Set("Content-Length", strconv.Itoa(len(body)))
 }
 
+func isLocalDurableVideoTaskID(requestID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(requestID), "task_")
+}
+
 func compositeRouteEndpointForPath(path string) string {
 	switch {
+	case isDurableVideoRoutePath(path):
+		return service.CompositeRouteEndpointVideo
 	case strings.Contains(path, "/messages/count_tokens"):
 		return service.CompositeRouteEndpointCountTokens
 	case strings.Contains(path, "/messages"):
@@ -572,5 +597,39 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointGemini
 	default:
 		return service.CompositeRouteEndpointAny
+	}
+}
+
+func isDurableVideoRoutePath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	path = strings.TrimPrefix(path, "/v1")
+	if path == "" {
+		path = "/"
+	}
+	switch {
+	case path == "/videos",
+		path == "/videos/estimate",
+		path == "/videos/references",
+		path == "/videos/material-assets",
+		path == "/video/generations",
+		path == "/video/generations/estimate",
+		path == "/video/generations/references",
+		path == "/video/generations/material-assets":
+		return true
+	case strings.HasPrefix(path, "/video/generations/"):
+		return true
+	case strings.HasPrefix(path, "/videos/generations/"):
+		return true
+	case strings.HasPrefix(path, "/videos/"):
+		requestID := strings.TrimPrefix(path, "/videos/")
+		requestID = strings.TrimSuffix(requestID, "/content")
+		requestID = strings.TrimSuffix(requestID, "/refresh")
+		requestID = strings.TrimSuffix(requestID, "/cancel")
+		return isLocalDurableVideoTaskID(requestID)
+	default:
+		return false
 	}
 }

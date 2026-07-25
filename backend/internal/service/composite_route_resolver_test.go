@@ -69,6 +69,10 @@ func TestCompositeRouteResolverExplicitExactRouteRewritesModel(t *testing.T) {
 	require.Equal(t, int64(10), decision.Route.ID)
 }
 
+func TestCompositeRouteEndpointNormalizationAcceptsVideo(t *testing.T) {
+	require.Equal(t, "video", normalizeCompositeRouteEndpoint("video"))
+}
+
 func TestCompositeRouteResolverPrefersEndpointSpecificLongestPrefix(t *testing.T) {
 	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []CompositeModelRoute{

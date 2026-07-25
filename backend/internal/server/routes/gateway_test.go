@@ -44,8 +44,11 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
 				GroupID: &groupID,
+				User:    &service.User{ID: 7, Role: service.RoleUser},
 				Group:   &service.Group{Platform: groupPlatform},
 			})
+			c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 7, Concurrency: 1})
+			c.Set(string(servermiddleware.ContextKeyUserRole), service.RoleUser)
 			c.Next()
 		}),
 		nil,
@@ -257,7 +260,59 @@ func TestGatewayRoutesCompositeVideoLookupsUseGrokHandler(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit Grok video lookup handler", path)
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
+		require.NotContains(t, w.Body.String(), "Video task service is not configured")
 	}
+}
+
+func TestGatewayRoutesCompositeLocalDurableVideoTaskPathsUseLocalHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformComposite)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/v1/videos"},
+		{http.MethodGet, "/videos"},
+		{http.MethodGet, "/v1/video/generations"},
+		{http.MethodGet, "/video/generations"},
+		{http.MethodPost, "/v1/videos/task_123/refresh"},
+		{http.MethodPost, "/videos/task_123/refresh"},
+		{http.MethodPost, "/v1/videos/task_123/cancel"},
+		{http.MethodPost, "/videos/task_123/cancel"},
+		{http.MethodPost, "/v1/video/generations/task_123/refresh"},
+		{http.MethodPost, "/video/generations/task_123/refresh"},
+		{http.MethodPost, "/v1/video/generations/task_123/cancel"},
+		{http.MethodPost, "/video/generations/task_123/cancel"},
+		{http.MethodGet, "/v1/video/generations/task_123"},
+		{http.MethodGet, "/video/generations/task_123"},
+		{http.MethodGet, "/v1/video/generations/task_123/content"},
+		{http.MethodGet, "/video/generations/task_123/content"},
+		{http.MethodGet, "/v1/videos/generations/task_123"},
+		{http.MethodGet, "/videos/generations/task_123"},
+		{http.MethodGet, "/v1/videos/generations/task_123/content"},
+		{http.MethodGet, "/videos/generations/task_123/content"},
+		{http.MethodGet, "/v1/videos/task_123"},
+		{http.MethodGet, "/videos/task_123"},
+		{http.MethodGet, "/v1/videos/task_123/content"},
+		{http.MethodGet, "/videos/task_123/content"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
+		require.Contains(t, w.Body.String(), "Video task service is not configured", "method=%s path=%s", tc.method, tc.path)
+		require.NotContains(t, w.Body.String(), "Videos API is not supported for this platform", "method=%s path=%s", tc.method, tc.path)
+	}
+}
+
+func TestLocalDurableVideoTaskIDUsesTaskPrefixOnly(t *testing.T) {
+	require.True(t, isLocalDurableVideoTaskID("task_123"))
+	require.True(t, isLocalDurableVideoTaskID(" task_123 "))
+	require.False(t, isLocalDurableVideoTaskID("request-123"))
+	require.False(t, isLocalDurableVideoTaskID("task-123"))
+	require.False(t, isLocalDurableVideoTaskID(""))
 }
 
 func TestGatewayRoutesCompositeMessagesWithGrokModelUsesOpenAIGateway(t *testing.T) {
