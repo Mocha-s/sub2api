@@ -1,6 +1,6 @@
 SELECT 'setting', key, value
 FROM settings
-WHERE key IN ('allow_user_view_error_requests', 'alipay_mobile_precreate_deep_link', 'ollama_cloud_usage_settings')
+WHERE key IN ('allow_user_view_error_requests', 'ALIPAY_MOBILE_PRECREATE_DEEP_LINK', 'ollama_cloud_usage_settings')
 ORDER BY key;
 
 SELECT 'pricing', p.channel_id, p.platform, p.models::text, p.billing_mode,
