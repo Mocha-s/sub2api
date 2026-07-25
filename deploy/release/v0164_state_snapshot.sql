@@ -9,7 +9,7 @@ SELECT 'pricing', p.channel_id, p.platform, p.models::text, p.billing_mode,
        p.video_price_per_second, p.video_default_seconds, p.video_allowed_seconds::text,
        COALESCE(to_jsonb(p)->>'description', '')
 FROM channel_model_pricing p
-ORDER BY p.channel_id, p.platform, p.models::text, p.billing_mode;
+ORDER BY p.channel_id, p.platform, p.models::text, p.billing_mode, p.id;
 
 SELECT 'group', g.id, g.name, g.platform, g.status, g.rate_multiplier,
        g.allow_image_generation, g.allow_video_generation,
@@ -27,14 +27,19 @@ ORDER BY r.group_id, r.priority, r.id;
 \endif
 
 SELECT 'channel', id, name, description, status, billing_model_source,
-       restrict_models, features, features_config::text,
+       restrict_models, features,
+       jsonb_build_object(
+           'bedrock_cc_compat', features_config->'bedrock_cc_compat',
+           'codex_image_generation_bridge', features_config->'codex_image_generation_bridge',
+           'web_search_emulation', features_config->'web_search_emulation'
+       )::text,
        apply_pricing_to_account_stats, model_mapping::text
 FROM channels
 ORDER BY id;
 
 SELECT 'stats_rule', channel_id, name, group_ids::text, account_ids::text, sort_order
 FROM channel_account_stats_pricing_rules
-ORDER BY channel_id, sort_order, name;
+ORDER BY channel_id, sort_order, name, id;
 
 SELECT 'stats_pricing', r.channel_id, r.name, p.platform, p.models::text,
        p.billing_mode, p.input_price, p.output_price, p.cache_write_price,
@@ -43,7 +48,7 @@ SELECT 'stats_pricing', r.channel_id, r.name, p.platform, p.models::text,
        p.video_default_seconds, p.video_allowed_seconds::text
 FROM channel_account_stats_model_pricing p
 JOIN channel_account_stats_pricing_rules r ON r.id = p.rule_id
-ORDER BY r.channel_id, r.sort_order, r.name, p.platform, p.models::text, p.billing_mode;
+ORDER BY r.channel_id, r.sort_order, r.name, r.id, p.platform, p.models::text, p.billing_mode, p.id;
 
 SELECT 'proxy', id, name, protocol, host, port, status, expires_at,
        fallback_mode, backup_proxy_id
