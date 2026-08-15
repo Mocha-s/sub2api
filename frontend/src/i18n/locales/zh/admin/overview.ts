@@ -983,6 +983,7 @@ export default {
         finalPricePreview: '最终单张价格预览',
         notConfigured: '未配置'
       },
+      allowVideoGeneration: '允许当前分组生成视频',
       videoPricing: {
         title: '视频生成计费',
         description:
@@ -1091,6 +1092,7 @@ export default {
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',
           images: 'Images',
+          video: '视频',
           gemini: 'Gemini 原生'
         },
         match: {

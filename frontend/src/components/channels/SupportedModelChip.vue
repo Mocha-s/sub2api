@@ -60,6 +60,12 @@
           </div>
 
           <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
+            <p
+              v-if="model.pricing.description"
+              data-test="model-pricing-description"
+              class="whitespace-pre-wrap break-words text-gray-500 dark:text-gray-400"
+            >{{ model.pricing.description }}</p>
+
             <div class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
               <span>{{ billingModeLabel }}</span>
@@ -128,6 +134,24 @@
               :scale="1"
             />
 
+            <template v-if="model.pricing.billing_mode === BILLING_MODE_VIDEO">
+              <PricingRow
+                v-if="model.pricing.video_price_per_second != null"
+                :label="t(prefixKey('videoPricePerSecond'))"
+                :value="model.pricing.video_price_per_second"
+                :unit="t(prefixKey('unitPerSecond'))"
+                :scale="1"
+              />
+              <div v-if="model.pricing.video_default_seconds != null" class="flex justify-between gap-2">
+                <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('videoDefaultSeconds')) }}</span>
+                <span>{{ formatSeconds(model.pricing.video_default_seconds) }}</span>
+              </div>
+              <div class="flex justify-between gap-2">
+                <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('videoAllowedSeconds')) }}</span>
+                <span>{{ formatAllowedSeconds(model.pricing.video_allowed_seconds) }}</span>
+              </div>
+            </template>
+
             <div
               v-if="model.pricing.intervals && model.pricing.intervals.length > 0"
               class="mt-2 border-t pt-2"
@@ -166,6 +190,7 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
+  BILLING_MODE_VIDEO,
   type BillingMode
 } from '@/constants/channel'
 // 复用 api/channels.ts 的用户侧最小形态 DTO。
@@ -229,6 +254,8 @@ const billingModeLabel = computed(() => {
       return t(prefixKey('billingModePerRequest'))
     case BILLING_MODE_IMAGE:
       return t(prefixKey('billingModeImage'))
+    case BILLING_MODE_VIDEO:
+      return t(prefixKey('billingModeVideo'))
     default:
       return '-'
   }
@@ -239,7 +266,22 @@ function formatRange(min: number, max: number | null): string {
   return `(${min}, ${maxLabel}]`
 }
 
+function formatSeconds(seconds: number): string {
+  return `${seconds} ${t(prefixKey('unitSeconds'))}`
+}
+
+function formatAllowedSeconds(allowedSeconds: number[] | null | undefined): string {
+  if (!allowedSeconds?.length) return t(prefixKey('anyDuration'))
+  return [...new Set(allowedSeconds)]
+    .sort((a, b) => a - b)
+    .map(formatSeconds)
+    .join(', ')
+}
+
 function formatInterval(iv: UserPricingInterval, mode: BillingMode): string {
+  if (mode === BILLING_MODE_VIDEO) {
+    return `${formatScaled(iv.video_price_per_second, 1)} ${t(prefixKey('unitPerSecond'))}`
+  }
   if (mode === BILLING_MODE_PER_REQUEST || mode === BILLING_MODE_IMAGE) {
     return formatScaled(iv.per_request_price, 1)
   }

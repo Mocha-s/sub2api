@@ -142,13 +142,14 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 	}
 	if p.InputPrice != nil || p.OutputPrice != nil ||
 		p.CacheWritePrice != nil || p.CacheReadPrice != nil ||
-		p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
+		p.ImageOutputPrice != nil || p.PerRequestPrice != nil ||
+		p.VideoPricePerSecond != nil {
 		return false
 	}
 	for _, iv := range p.Intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
 			iv.CacheWritePrice != nil || iv.CacheReadPrice != nil ||
-			iv.PerRequestPrice != nil {
+			iv.PerRequestPrice != nil || iv.VideoPricePerSecond != nil {
 			return false
 		}
 	}
@@ -178,8 +179,19 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		mode = BillingModeImage
 	}
 
+	// LiteLLM has no per-second video price to synthesize. Preserve the
+	// incomplete channel entry instead of attaching misleading token prices.
+	if mode == BillingModeVideo {
+		return existing
+	}
+	description := ""
+	if existing != nil {
+		description = existing.Description
+	}
+
 	if mode == BillingModeImage || mode == BillingModePerRequest {
 		return &ChannelModelPricing{
+			Description:      description,
 			BillingMode:      mode,
 			PerRequestPrice:  nonZeroPtr(lp.OutputCostPerImage),
 			ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
@@ -188,6 +200,7 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		}
 	}
 	return &ChannelModelPricing{
+		Description:      description,
 		BillingMode:      mode,
 		InputPrice:       nonZeroPtr(lp.InputCostPerToken),
 		OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),

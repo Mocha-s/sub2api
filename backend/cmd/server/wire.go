@@ -105,6 +105,8 @@ func provideCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
+	videoTaskPoller *service.VideoTaskPoller,
+	videoTaskSettlementReconciler *service.VideoTaskSettlementReconciler,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
@@ -293,6 +295,18 @@ func provideCleanup(
 			{"GrokOAuthService", func() error {
 				if grokOAuth != nil {
 					grokOAuth.Stop()
+				}
+				return nil
+			}},
+			{"VideoTaskPoller", func() error {
+				if videoTaskPoller != nil {
+					videoTaskPoller.Stop()
+				}
+				return nil
+			}},
+			{"VideoTaskSettlementReconciler", func() error {
+				if videoTaskSettlementReconciler != nil {
+					videoTaskSettlementReconciler.Stop()
 				}
 				return nil
 			}},

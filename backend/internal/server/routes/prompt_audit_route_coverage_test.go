@@ -41,7 +41,8 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/images/generations/async": {"image_task_handler.go"},
 		"/images/edits/async":       {"image_task_handler.go"},
 		"/images/batches":           {"batch_image_handler.go"},
-		"/videos":                   {"grok_media.go"},
+		"/videos":                   {"grok_media.go", "openai_video.go"},
+		"/video/generations":        {"openai_video.go"},
 		"/videos/generations":       {"grok_media.go"},
 		"/videos/edits":             {"grok_media.go"},
 		"/videos/extensions":        {"grok_media.go"},
@@ -55,6 +56,16 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/images/batches/:id/cancel": "control-plane cancellation with no user prompt",
 		"/stt":                       "speech transcription is not a text-generation prompt",
 		"/custom-voices":             "voice profile management has no model prompt",
+		"/video/generations/:request_id/cancel":  "video task control-plane cancellation with no new user prompt",
+		"/video/generations/:request_id/refresh": "video task control-plane refresh with no new user prompt",
+		"/video/generations/estimate":            "video cost estimation only; it does not execute a model request",
+		"/video/generations/material-assets":     "video asset helper; it does not execute a model request",
+		"/video/generations/references":          "video asset helper; it does not execute a model request",
+		"/videos/:request_id/cancel":             "video task control-plane cancellation with no new user prompt",
+		"/videos/:request_id/refresh":            "video task control-plane refresh with no new user prompt",
+		"/videos/estimate":                       "video cost estimation only; it does not execute a model request",
+		"/videos/material-assets":                "video asset helper; it does not execute a model request",
+		"/videos/references":                     "video asset helper; it does not execute a model request",
 	}
 
 	unclassified := make([]string, 0)

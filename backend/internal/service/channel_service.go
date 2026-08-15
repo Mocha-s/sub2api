@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -666,12 +667,51 @@ func validatePricingBillingMode(pricing []ChannelModelPricing) error {
 }
 
 func checkBillingModeRequirements(p ChannelModelPricing) error {
-	if p.BillingMode == BillingModePerRequest || p.BillingMode == BillingModeImage || p.BillingMode == BillingModeVideo {
+	if !p.BillingMode.IsValid() {
+		return infraerrors.BadRequest("INVALID_BILLING_MODE", "billing_mode must be token, per_request, image, or video")
+	}
+	if p.BillingMode == BillingModePerRequest || p.BillingMode == BillingModeImage {
 		if p.PerRequestPrice == nil && len(p.Intervals) == 0 {
 			return infraerrors.BadRequest(
 				"BILLING_MODE_MISSING_PRICE",
 				"per-request price or intervals required for per_request/image billing mode",
 			)
+		}
+	}
+	if p.BillingMode == BillingModeVideo {
+		if p.VideoDefaultSeconds == nil || *p.VideoDefaultSeconds < 1 || *p.VideoDefaultSeconds > 3600 {
+			return infraerrors.BadRequest(
+				"INVALID_VIDEO_DEFAULT_SECONDS",
+				"video_default_seconds must be between 1 and 3600 for video billing mode",
+			)
+		}
+		hasIntervalPrice := false
+		for _, iv := range p.Intervals {
+			if iv.VideoPricePerSecond != nil {
+				hasIntervalPrice = true
+				break
+			}
+		}
+		if p.VideoPricePerSecond == nil && !hasIntervalPrice {
+			return infraerrors.BadRequest(
+				"BILLING_MODE_MISSING_PRICE",
+				"default video price or at least one interval video price required for video billing mode",
+			)
+		}
+		seen := make(map[int]struct{}, len(p.VideoAllowedSeconds))
+		for _, seconds := range p.VideoAllowedSeconds {
+			if seconds < 1 || seconds > 3600 {
+				return infraerrors.BadRequest("INVALID_VIDEO_ALLOWED_SECONDS", "video_allowed_seconds values must be between 1 and 3600")
+			}
+			if _, ok := seen[seconds]; ok {
+				return infraerrors.BadRequest("INVALID_VIDEO_ALLOWED_SECONDS", "video_allowed_seconds values must be unique")
+			}
+			seen[seconds] = struct{}{}
+		}
+		if len(seen) > 0 {
+			if _, ok := seen[*p.VideoDefaultSeconds]; !ok {
+				return infraerrors.BadRequest("INVALID_VIDEO_DEFAULT_SECONDS", "video_default_seconds must belong to video_allowed_seconds")
+			}
 		}
 	}
 	return nil
@@ -689,10 +729,16 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"image_input_price", p.ImageInputPrice},
 		{"image_output_price", p.ImageOutputPrice},
 		{"per_request_price", p.PerRequestPrice},
+		{"video_price_per_second", p.VideoPricePerSecond},
 	}
 	for _, c := range checks {
-		if c.val != nil && *c.val < 0 {
-			return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
+		if c.val != nil {
+			if math.IsNaN(*c.val) || math.IsInf(*c.val, 0) {
+				return infraerrors.BadRequest("NONFINITE_PRICE", fmt.Sprintf("%s must be finite", c.field))
+			}
+			if *c.val < 0 {
+				return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
+			}
 		}
 	}
 	return nil
@@ -702,7 +748,7 @@ func checkIntervalsHavePrices(p ChannelModelPricing) error {
 	for _, iv := range p.Intervals {
 		if iv.InputPrice == nil && iv.OutputPrice == nil &&
 			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil &&
-			iv.PerRequestPrice == nil {
+			iv.PerRequestPrice == nil && iv.VideoPricePerSecond == nil {
 			return infraerrors.BadRequest(
 				"INTERVAL_MISSING_PRICE",
 				fmt.Sprintf("interval [%d, %s] has no price fields set for model %v",

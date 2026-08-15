@@ -19,7 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, upstream_response_model, upstream_model_mismatch, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, image_input_tokens, image_input_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, video_count, video_resolution, video_duration_seconds, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, long_context_billing_applied, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, session_id, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, upstream_response_model, upstream_model_mismatch, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, image_input_tokens, image_input_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, refunded_cost, refunded_total_cost, refunded_account_cost, refund_reason, refunded_at, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, video_count, video_resolution, video_duration_seconds, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, long_context_billing_applied, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, session_id, created_at"
 
 func (r *usageLogRepository) GetByID(ctx context.Context, id int64) (log *service.UsageLog, err error) {
 	query := "SELECT " + usageLogSelectColumns + " FROM usage_logs WHERE id = $1"
@@ -88,7 +88,17 @@ func (r *usageLogRepository) ListByModelAndTimeRange(ctx context.Context, modelN
 }
 
 func (r *usageLogRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.sql.ExecContext(ctx, "DELETE FROM usage_logs WHERE id = $1", id)
+	_, err := r.sql.ExecContext(ctx, `WITH target AS (
+		SELECT ul.id FROM usage_logs ul
+		WHERE ul.id=$1 AND NOT EXISTS (
+			SELECT 1 FROM video_task_refund_reporting_jobs j
+			WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+		) FOR UPDATE OF ul
+	), deleted_jobs AS (
+		DELETE FROM video_task_refund_reporting_jobs j USING target
+		WHERE j.usage_log_id=target.id AND j.completed_at IS NOT NULL
+	)
+	DELETE FROM usage_logs ul USING target WHERE ul.id=target.id`, id)
 	return err
 }
 
@@ -499,6 +509,11 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		accountStatsCost          sql.NullFloat64
 		sessionID                 sql.NullString
 		createdAt                 time.Time
+		refundedCost              float64
+		refundedTotalCost         float64
+		refundedAccountCost       float64
+		refundReason              sql.NullString
+		refundedAt                sql.NullTime
 	)
 
 	if err := scanner.Scan(
@@ -530,6 +545,11 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&cacheReadCost,
 		&totalCost,
 		&actualCost,
+		&refundedCost,
+		&refundedTotalCost,
+		&refundedAccountCost,
+		&refundReason,
+		&refundedAt,
 		&rateMultiplier,
 		&accountRateMultiplier,
 		&billingType,
@@ -589,6 +609,9 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		CacheReadCost:             cacheReadCost,
 		TotalCost:                 totalCost,
 		ActualCost:                actualCost,
+		RefundedCost:              refundedCost,
+		RefundedTotalCost:         refundedTotalCost,
+		RefundedAccountCost:       refundedAccountCost,
 		RateMultiplier:            rateMultiplier,
 		AccountRateMultiplier:     nullFloat64Ptr(accountRateMultiplier),
 		BillingType:               int8(billingType),
@@ -607,6 +630,12 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 
 	if requestID.Valid {
 		log.RequestID = requestID.String
+	}
+	if refundReason.Valid {
+		log.RefundReason = &refundReason.String
+	}
+	if refundedAt.Valid {
+		log.RefundedAt = &refundedAt.Time
 	}
 	if groupID.Valid {
 		value := groupID.Int64
@@ -715,6 +744,13 @@ func nullFloat64Ptr(v sql.NullFloat64) *float64 {
 	}
 	out := v.Float64
 	return &out
+}
+
+func nullTime(v *time.Time) sql.NullTime {
+	if v == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *v, Valid: true}
 }
 
 func nullString(v *string) sql.NullString {

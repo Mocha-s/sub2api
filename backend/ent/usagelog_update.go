@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -558,6 +559,109 @@ func (_u *UsageLogUpdate) SetNillableActualCost(v *float64) *UsageLogUpdate {
 // AddActualCost adds value to the "actual_cost" field.
 func (_u *UsageLogUpdate) AddActualCost(v float64) *UsageLogUpdate {
 	_u.mutation.AddActualCost(v)
+	return _u
+}
+
+// SetRefundedCost sets the "refunded_cost" field.
+func (_u *UsageLogUpdate) SetRefundedCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedCost()
+	_u.mutation.SetRefundedCost(v)
+	return _u
+}
+
+// SetNillableRefundedCost sets the "refunded_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedCost adds value to the "refunded_cost" field.
+func (_u *UsageLogUpdate) AddRefundedCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedCost(v)
+	return _u
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (_u *UsageLogUpdate) SetRefundedTotalCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedTotalCost()
+	_u.mutation.SetRefundedTotalCost(v)
+	return _u
+}
+
+// SetNillableRefundedTotalCost sets the "refunded_total_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedTotalCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedTotalCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedTotalCost adds value to the "refunded_total_cost" field.
+func (_u *UsageLogUpdate) AddRefundedTotalCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedTotalCost(v)
+	return _u
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (_u *UsageLogUpdate) SetRefundedAccountCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetRefundedAccountCost()
+	_u.mutation.SetRefundedAccountCost(v)
+	return _u
+}
+
+// SetNillableRefundedAccountCost sets the "refunded_account_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedAccountCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedAccountCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedAccountCost adds value to the "refunded_account_cost" field.
+func (_u *UsageLogUpdate) AddRefundedAccountCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddRefundedAccountCost(v)
+	return _u
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (_u *UsageLogUpdate) SetRefundReason(v string) *UsageLogUpdate {
+	_u.mutation.SetRefundReason(v)
+	return _u
+}
+
+// SetNillableRefundReason sets the "refund_reason" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundReason(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundReason(*v)
+	}
+	return _u
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (_u *UsageLogUpdate) ClearRefundReason() *UsageLogUpdate {
+	_u.mutation.ClearRefundReason()
+	return _u
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (_u *UsageLogUpdate) SetRefundedAt(v time.Time) *UsageLogUpdate {
+	_u.mutation.SetRefundedAt(v)
+	return _u
+}
+
+// SetNillableRefundedAt sets the "refunded_at" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundedAt(v *time.Time) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundedAt(*v)
+	}
+	return _u
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (_u *UsageLogUpdate) ClearRefundedAt() *UsageLogUpdate {
+	_u.mutation.ClearRefundedAt()
 	return _u
 }
 
@@ -1263,6 +1367,36 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedActualCost(); ok {
 		_spec.AddField(usagelog.FieldActualCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedTotalCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedTotalCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedAccountCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundReason(); ok {
+		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
+	}
+	if _u.mutation.RefundReasonCleared() {
+		_spec.ClearField(usagelog.FieldRefundReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.RefundedAt(); ok {
+		_spec.SetField(usagelog.FieldRefundedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RefundedAtCleared() {
+		_spec.ClearField(usagelog.FieldRefundedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldRateMultiplier, field.TypeFloat64, value)
@@ -2075,6 +2209,109 @@ func (_u *UsageLogUpdateOne) AddActualCost(v float64) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedCost()
+	_u.mutation.SetRefundedCost(v)
+	return _u
+}
+
+// SetNillableRefundedCost sets the "refunded_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedCost adds value to the "refunded_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedCost(v)
+	return _u
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedTotalCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedTotalCost()
+	_u.mutation.SetRefundedTotalCost(v)
+	return _u
+}
+
+// SetNillableRefundedTotalCost sets the "refunded_total_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedTotalCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedTotalCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedTotalCost adds value to the "refunded_total_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedTotalCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedTotalCost(v)
+	return _u
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (_u *UsageLogUpdateOne) SetRefundedAccountCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetRefundedAccountCost()
+	_u.mutation.SetRefundedAccountCost(v)
+	return _u
+}
+
+// SetNillableRefundedAccountCost sets the "refunded_account_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedAccountCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedAccountCost(*v)
+	}
+	return _u
+}
+
+// AddRefundedAccountCost adds value to the "refunded_account_cost" field.
+func (_u *UsageLogUpdateOne) AddRefundedAccountCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddRefundedAccountCost(v)
+	return _u
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (_u *UsageLogUpdateOne) SetRefundReason(v string) *UsageLogUpdateOne {
+	_u.mutation.SetRefundReason(v)
+	return _u
+}
+
+// SetNillableRefundReason sets the "refund_reason" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundReason(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundReason(*v)
+	}
+	return _u
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (_u *UsageLogUpdateOne) ClearRefundReason() *UsageLogUpdateOne {
+	_u.mutation.ClearRefundReason()
+	return _u
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (_u *UsageLogUpdateOne) SetRefundedAt(v time.Time) *UsageLogUpdateOne {
+	_u.mutation.SetRefundedAt(v)
+	return _u
+}
+
+// SetNillableRefundedAt sets the "refunded_at" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundedAt(v *time.Time) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundedAt(*v)
+	}
+	return _u
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (_u *UsageLogUpdateOne) ClearRefundedAt() *UsageLogUpdateOne {
+	_u.mutation.ClearRefundedAt()
+	return _u
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (_u *UsageLogUpdateOne) SetRateMultiplier(v float64) *UsageLogUpdateOne {
 	_u.mutation.ResetRateMultiplier()
@@ -2807,6 +3044,36 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedActualCost(); ok {
 		_spec.AddField(usagelog.FieldActualCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedTotalCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedTotalCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedTotalCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundedAccountCost(); ok {
+		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
+		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundReason(); ok {
+		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
+	}
+	if _u.mutation.RefundReasonCleared() {
+		_spec.ClearField(usagelog.FieldRefundReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.RefundedAt(); ok {
+		_spec.SetField(usagelog.FieldRefundedAt, field.TypeTime, value)
+	}
+	if _u.mutation.RefundedAtCleared() {
+		_spec.ClearField(usagelog.FieldRefundedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RateMultiplier(); ok {
 		_spec.SetField(usagelog.FieldRateMultiplier, field.TypeFloat64, value)

@@ -69,6 +69,10 @@ func TestCompositeRouteResolverExplicitExactRouteRewritesModel(t *testing.T) {
 	require.Equal(t, int64(10), decision.Route.ID)
 }
 
+func TestCompositeRouteEndpointNormalizationAcceptsVideo(t *testing.T) {
+	require.Equal(t, "video", normalizeCompositeRouteEndpoint("video"))
+}
+
 func TestCompositeRouteResolverPrefersEndpointSpecificLongestPrefix(t *testing.T) {
 	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
 		routes: []CompositeModelRoute{
@@ -262,6 +266,172 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 			require.Equal(t, CompositeRouteSourceExplicit, decision.Source)
 			require.Equal(t, tt.wantPlatform, decision.TargetPlatform)
 			require.Equal(t, tt.wantUpstream, decision.UpstreamModel)
+		})
+	}
+}
+
+func TestCompositeRouteResolverPrecedenceAndDetectorFallback(t *testing.T) {
+	const groupID int64 = 7
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []CompositeModelRoute{
+			{
+				ID:             1,
+				GroupID:        groupID,
+				PublicModel:    "gpt-",
+				MatchType:      CompositeRouteMatchPrefix,
+				TargetPlatform: PlatformAnthropic,
+				UpstreamModel:  "claude-should-not-win",
+				Endpoint:       CompositeRouteEndpointResponses,
+				Priority:       0,
+				Enabled:        true,
+			},
+			{
+				ID:             2,
+				GroupID:        groupID,
+				PublicModel:    "gpt-public",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformOpenAI,
+				UpstreamModel:  "gpt-4.1",
+				Endpoint:       CompositeRouteEndpointResponses,
+				Priority:       100,
+				Enabled:        true,
+			},
+			{
+				ID:             3,
+				GroupID:        groupID,
+				PublicModel:    "alias/gemini",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformAnthropic,
+				UpstreamModel:  "claude-any",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       0,
+				Enabled:        true,
+			},
+			{
+				ID:             4,
+				GroupID:        groupID,
+				PublicModel:    "alias/gemini",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformGemini,
+				UpstreamModel:  "gemini-2.5-pro",
+				Endpoint:       CompositeRouteEndpointGemini,
+				Priority:       100,
+				Enabled:        true,
+			},
+			{
+				ID:             5,
+				GroupID:        groupID,
+				PublicModel:    "family/",
+				MatchType:      CompositeRouteMatchPrefix,
+				TargetPlatform: PlatformAnthropic,
+				UpstreamModel:  "claude-prefix",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       0,
+				Enabled:        true,
+			},
+			{
+				ID:             6,
+				GroupID:        groupID,
+				PublicModel:    "family/gpt-",
+				MatchType:      CompositeRouteMatchPrefix,
+				TargetPlatform: PlatformOpenAI,
+				UpstreamModel:  "gpt-family",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       100,
+				Enabled:        true,
+			},
+			{
+				ID:             7,
+				GroupID:        groupID,
+				PublicModel:    "priority-model",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformOpenAI,
+				UpstreamModel:  "gpt-low-priority-number",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       5,
+				Enabled:        true,
+			},
+			{
+				ID:             8,
+				GroupID:        groupID,
+				PublicModel:    "priority-model",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformAnthropic,
+				UpstreamModel:  "claude-higher-priority-number",
+				Endpoint:       CompositeRouteEndpointAny,
+				Priority:       50,
+				Enabled:        true,
+			},
+		},
+	})
+
+	decision, err := resolver.Resolve(context.Background(), groupID, "gpt-public", "responses")
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, CompositeRouteSourceExplicit, decision.Source)
+	require.Equal(t, PlatformOpenAI, decision.TargetPlatform)
+	require.Equal(t, "gpt-4.1", decision.UpstreamModel)
+
+	tests := []struct {
+		name         string
+		model        string
+		endpoint     string
+		wantSource   string
+		wantPlatform string
+		wantUpstream string
+		wantRouteID  int64
+	}{
+		{
+			name:         "endpoint-specific entries beat any",
+			model:        "alias/gemini",
+			endpoint:     CompositeRouteEndpointGemini,
+			wantSource:   CompositeRouteSourceExplicit,
+			wantPlatform: PlatformGemini,
+			wantUpstream: "gemini-2.5-pro",
+			wantRouteID:  4,
+		},
+		{
+			name:         "longer prefixes beat shorter prefixes",
+			model:        "family/gpt-5",
+			endpoint:     CompositeRouteEndpointAny,
+			wantSource:   CompositeRouteSourceExplicit,
+			wantPlatform: PlatformOpenAI,
+			wantUpstream: "gpt-family",
+			wantRouteID:  6,
+		},
+		{
+			name:         "lower priority wins",
+			model:        "priority-model",
+			endpoint:     CompositeRouteEndpointMessages,
+			wantSource:   CompositeRouteSourceExplicit,
+			wantPlatform: PlatformOpenAI,
+			wantUpstream: "gpt-low-priority-number",
+			wantRouteID:  7,
+		},
+		{
+			name:         "detector fallback occurs only when no explicit route matches",
+			model:        "grok-4.3",
+			endpoint:     CompositeRouteEndpointResponses,
+			wantSource:   CompositeRouteSourceDetector,
+			wantPlatform: PlatformGrok,
+			wantUpstream: "grok-4.3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decision, err := resolver.Resolve(context.Background(), groupID, tt.model, tt.endpoint)
+			require.NoError(t, err)
+			require.True(t, decision.Matched)
+			require.Equal(t, tt.wantSource, decision.Source)
+			require.Equal(t, tt.wantPlatform, decision.TargetPlatform)
+			require.Equal(t, tt.wantUpstream, decision.UpstreamModel)
+			if tt.wantRouteID == 0 {
+				require.Nil(t, decision.Route)
+			} else {
+				require.NotNil(t, decision.Route)
+				require.Equal(t, tt.wantRouteID, decision.Route.ID)
+			}
 		})
 	}
 }

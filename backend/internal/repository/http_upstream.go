@@ -607,6 +607,11 @@ func (s *httpUpstreamService) redirectChecker(req *http.Request, via []*http.Req
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")
 	}
+	if req != nil {
+		if err := service.ValidateHTTPRedirect(req.Context(), req.URL); err != nil {
+			return err
+		}
+	}
 	return s.validateRequestHost(req)
 }
 

@@ -32,6 +32,7 @@ const messages: Record<string, string> = {
 	'admin.usage.allUpstreamModelAudit': 'All response model states',
 	'admin.usage.upstreamModelMismatchOnly': 'Mismatched only',
 	'admin.usage.upstreamModelMatchedOnly': 'Matched only',
+  'admin.usage.billingModeVideo': 'Per-second video',
   'admin.usage.group': 'Group',
   'admin.usage.allGroups': 'All Groups',
   'common.refresh': 'Refresh',
@@ -257,5 +258,12 @@ describe('UsageFilters — model options come from prop (no dup request)', () =>
 
     const opts = (wrapper.vm as any).modelOptions as Array<{ value: string | null; label: string }>
     expect(opts.map((o) => o.value)).toEqual([null, 'claude-3', 'gpt-4o'])
+  })
+})
+
+describe('UsageFilters — video billing mode', () => {
+  it('offers the video value with its localized label', () => {
+    const wrapper = mountFilters()
+    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Per-second video' })
   })
 })

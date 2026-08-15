@@ -1013,6 +1013,20 @@
           </p>
         </div>
 
+        <div
+          v-if="supportsVideoGenerationPermissionPlatform(createForm.platform)"
+          class="border-t pt-4"
+        >
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="createForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.allowVideoGeneration") }}
+          </label>
+        </div>
+
         <!-- 视频生成计费配置（仅 Grok 平台） -->
         <div
           v-if="supportsVideoPricingPlatform(createForm.platform)"
@@ -2737,6 +2751,20 @@
           >
             {{ t("admin.groups.imagePricing.batchGeminiOnlyHint") }}
           </p>
+        </div>
+
+        <div
+          v-if="supportsVideoGenerationPermissionPlatform(editForm.platform)"
+          class="border-t pt-4"
+        >
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="editForm.allow_video_generation"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            {{ t("admin.groups.allowVideoGeneration") }}
+          </label>
         </div>
 
         <!-- 视频生成计费配置（仅 Grok 平台） -->
@@ -4761,6 +4789,7 @@ const compositeRouteEndpointOptions = computed(() => [
     label: t("admin.groups.compositeRoutes.endpoints.embeddings"),
   },
   { value: "images", label: t("admin.groups.compositeRoutes.endpoints.images") },
+  { value: "video", label: t("admin.groups.compositeRoutes.endpoints.video") },
   { value: "gemini", label: t("admin.groups.compositeRoutes.endpoints.gemini") },
 ]);
 
@@ -4778,6 +4807,9 @@ const subscriptionTypeOptions = computed(() => [
   { value: "standard", label: t("admin.groups.subscription.standard") },
   { value: "subscription", label: t("admin.groups.subscription.subscription") },
 ]);
+
+const supportsVideoGenerationPermissionPlatform = (platform: GroupPlatform) =>
+  platform === "openai" || platform === "composite";
 
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
 const fallbackGroupOptions = computed(() => {
@@ -5020,6 +5052,7 @@ const createForm = reactive({
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -5381,6 +5414,7 @@ const editForm = reactive({
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   allow_batch_image_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -5837,6 +5871,7 @@ const closeCreateModal = () => {
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
+  createForm.allow_video_generation = false;
   createForm.allow_batch_image_generation = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
@@ -6082,6 +6117,7 @@ const handleEdit = async (group: AdminGroup) => {
     group.long_context_pricing_enabled ?? true;
   editForm.model_pricing = groupPricingFromAPI(group.model_pricing);
   editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.allow_video_generation = group.allow_video_generation ?? false;
   editForm.allow_batch_image_generation =
     group.allow_batch_image_generation ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;

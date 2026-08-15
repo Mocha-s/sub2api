@@ -367,6 +367,20 @@ func (_u *GroupUpdate) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdat
 	return _u
 }
 
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (_u *GroupUpdate) SetAllowVideoGeneration(v bool) *GroupUpdate {
+	_u.mutation.SetAllowVideoGeneration(v)
+	return _u
+}
+
+// SetNillableAllowVideoGeneration sets the "allow_video_generation" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableAllowVideoGeneration(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetAllowVideoGeneration(*v)
+	}
+	return _u
+}
+
 // SetImageRateIndependent sets the "image_rate_independent" field.
 func (_u *GroupUpdate) SetImageRateIndependent(v bool) *GroupUpdate {
 	_u.mutation.SetImageRateIndependent(v)
@@ -1595,6 +1609,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
 	}
+	if value, ok := _u.mutation.AllowVideoGeneration(); ok {
+		_spec.SetField(group.FieldAllowVideoGeneration, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
 	}
@@ -2484,6 +2501,20 @@ func (_u *GroupUpdateOne) SetAllowBatchImageGeneration(v bool) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableAllowBatchImageGeneration(v *bool) *GroupUpdateOne {
 	if v != nil {
 		_u.SetAllowBatchImageGeneration(*v)
+	}
+	return _u
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (_u *GroupUpdateOne) SetAllowVideoGeneration(v bool) *GroupUpdateOne {
+	_u.mutation.SetAllowVideoGeneration(v)
+	return _u
+}
+
+// SetNillableAllowVideoGeneration sets the "allow_video_generation" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableAllowVideoGeneration(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetAllowVideoGeneration(*v)
 	}
 	return _u
 }
@@ -3745,6 +3776,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.AllowVideoGeneration(); ok {
+		_spec.SetField(group.FieldAllowVideoGeneration, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)

@@ -12,6 +12,8 @@ const {
   getCapacitySummary,
   getLiveCapability,
   listAccounts,
+  createGroupRequest,
+  updateGroupRequest,
   showError,
   showSuccess,
   isCurrentStep,
@@ -24,6 +26,8 @@ const {
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
   listAccounts: vi.fn(),
+  createGroupRequest: vi.fn(),
+  updateGroupRequest: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
@@ -43,6 +47,7 @@ const messages: Record<string, string> = {
   'admin.groups.columns.usage': 'Usage',
   'admin.groups.columns.status': 'Status',
   'admin.groups.columns.actions': 'Actions',
+  'admin.groups.allowVideoGeneration': 'Allow video generation for this group',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -54,8 +59,8 @@ vi.mock('@/api/admin', () => ({
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
-      create: vi.fn(),
-      update: vi.fn(),
+      create: createGroupRequest,
+      update: updateGroupRequest,
       delete: vi.fn(),
       updateSortOrder: vi.fn(),
     },
@@ -103,6 +108,7 @@ const createGroup = (overrides: Partial<AdminGroup> = {}): AdminGroup => ({
   weekly_limit_usd: null,
   monthly_limit_usd: null,
   allow_image_generation: false,
+  allow_video_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null,
@@ -151,6 +157,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-for="row in data" :key="row.id">
+        <slot name="cell-actions" :row="row" />
+      </div>
     </div>
   `,
 }
@@ -231,6 +240,8 @@ describe('admin GroupsView column settings', () => {
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
     listAccounts.mockReset()
+    createGroupRequest.mockReset()
+    updateGroupRequest.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     isCurrentStep.mockReset()
@@ -249,7 +260,68 @@ describe('admin GroupsView column settings', () => {
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
+    createGroupRequest.mockResolvedValue(createGroup())
+    updateGroupRequest.mockResolvedValue(createGroup())
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('submits video generation permission when creating an OpenAI group', async () => {
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
+    expect(wrapper.text()).not.toContain('Allow video generation for this group')
+
+    await wrapper.get('[data-tour="group-form-platform"]').setValue('openai')
+    await wrapper.get('[data-tour="group-form-name"]').setValue('OpenAI Video')
+
+    const label = wrapper
+      .findAll('label')
+      .find((item) => item.text().includes('Allow video generation for this group'))
+    expect(label).toBeTruthy()
+    await label!.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('#create-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(createGroupRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: 'openai',
+        allow_video_generation: true,
+      }),
+    )
+  })
+
+  it('loads and submits video generation permission when editing an OpenAI group', async () => {
+    listGroups.mockResolvedValue({
+      items: [createGroup({ platform: 'openai', allow_video_generation: true })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    const wrapper = await mountView()
+
+    const editButton = wrapper
+      .findAll('button')
+      .find((item) => item.text().includes('common.edit'))
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    const label = wrapper
+      .findAll('label')
+      .find((item) => item.text().includes('Allow video generation for this group'))
+    expect(label).toBeTruthy()
+    const checkbox = label!.get('input[type="checkbox"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+
+    await checkbox.setValue(false)
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroupRequest).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ allow_video_generation: false }),
+    )
   })
 
   afterEach(() => {

@@ -809,6 +809,8 @@ func TestOllamaCloudUsageRefreshSingleflightAndRunnerDeduplicateSharedGroup(t *t
 		<-release
 	}}
 	svc := newOllamaUsageTestService(t, repo, upstream, settingsRepo, true)
+	registered := make(chan struct{}, 2)
+	svc.afterRefreshGroupRegister = func(string) { registered <- struct{}{} }
 
 	errs := make(chan error, 2)
 	go func() { _, err := svc.Refresh(context.Background(), first.ID); errs <- err }()
@@ -826,6 +828,13 @@ func TestOllamaCloudUsageRefreshSingleflightAndRunnerDeduplicateSharedGroup(t *t
 	require.Eventually(t, func() bool {
 		return repo.getByIDCalls.Load() > loadsBeforeSecond
 	}, 5*time.Second, time.Millisecond, "the second caller must reach the singleflight group before the first is released")
+	for i := 0; i < 2; i++ {
+		select {
+		case <-registered:
+		case <-time.After(time.Second):
+			t.Fatal("refresh caller did not register with singleflight")
+		}
+	}
 	close(release)
 	require.NoError(t, <-errs)
 	require.NoError(t, <-errs)

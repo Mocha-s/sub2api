@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -252,7 +255,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		googleError(c, status, message)
 		return
 	}
-
+	if action == "generateContent" && service.IsGeminiBananaBridgeModel(modelName) {
+		h.handleGeminiBananaBridge(c, apiKey, authSubject, subscription, reqLog, reqModel, modelName, body, channelMapping, pricingAt)
+		return
+	}
 	// 3) select account (sticky session based on request body)
 	// 优先使用 Gemini CLI 的会话标识（privileged-user-id + tmp 目录哈希）
 	sessionHash := extractGeminiCLISessionHash(c, body)
@@ -698,6 +704,167 @@ func googleError(c *gin.Context, status int, message string) {
 			"status":  googleapi.HTTPStatusToGoogleStatus(status),
 		},
 	})
+}
+
+func (h *GatewayHandler) handleGeminiBananaBridge(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	authSubject middleware.AuthSubject,
+	subscription *service.UserSubscription,
+	reqLog *zap.Logger,
+	requestModel string,
+	modelName string,
+	body []byte,
+	channelMapping service.ChannelMappingResult,
+	pricingAt time.Time,
+) {
+	if h.openAIGatewayService == nil {
+		googleError(c, http.StatusServiceUnavailable, "OpenAI image gateway is not configured")
+		return
+	}
+	if !service.GroupAllowsImageGeneration(apiKey.Group) {
+		googleError(c, http.StatusForbidden, service.ImageGenerationPermissionMessage())
+		return
+	}
+	openAIBody, err := service.BuildOpenAIImagesBodyFromGeminiBanana(modelName, body)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	openAIReq := c.Request.Clone(c.Request.Context())
+	openAIReq.URL.Path = "/v1/images/generations"
+	openAIReq.Body = io.NopCloser(bytes.NewReader(openAIBody))
+	openAIReq.ContentLength = int64(len(openAIBody))
+	openAIReq.Header = openAIReq.Header.Clone()
+	openAIReq.Header.Set("Content-Type", "application/json")
+	openAICtx := *c
+	openAICtx.Request = openAIReq
+
+	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(&openAICtx, openAIBody)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	sessionHash := h.openAIGatewayService.GenerateExplicitSessionHash(c, openAIBody)
+	requestCtx := service.WithOpenAIImageGenerationIntent(c.Request.Context())
+	selection, _, err := h.openAIGatewayService.SelectAccountWithSchedulerForImages(
+		requestCtx,
+		apiKey.GroupID,
+		sessionHash,
+		modelName,
+		nil,
+		parsed.RequiredCapability,
+	)
+	if err != nil || selection == nil || selection.Account == nil {
+		if err == nil {
+			err = service.ErrNoAvailableAccounts
+		}
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		googleError(c, http.StatusServiceUnavailable, "No available OpenAI image accounts: "+err.Error())
+		return
+	}
+	account := selection.Account
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if selection.ReleaseFunc != nil {
+		defer selection.ReleaseFunc()
+	}
+
+	forwardRecorder := httptest.NewRecorder()
+	forwardCtx, _ := gin.CreateTestContext(forwardRecorder)
+	forwardCtx.Request = openAIReq
+	forwardCtx.Params = c.Params
+	forwardCtx.Keys = c.Keys
+	openAIResult, err := h.openAIGatewayService.ForwardImages(requestCtx, forwardCtx, account, openAIBody, parsed, channelMapping.MappedModel)
+	if forwardCtx.Keys != nil {
+		if c.Keys == nil {
+			c.Keys = make(map[string]any, len(forwardCtx.Keys))
+		}
+		for k, v := range forwardCtx.Keys {
+			c.Keys[k] = v
+		}
+	}
+	if err != nil {
+		reqLog.Error("gemini.banana_bridge_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if !c.Writer.Written() {
+			googleError(c, http.StatusBadGateway, err.Error())
+		}
+		return
+	}
+	geminiBody, usage, imageCount, err := service.BuildGeminiBananaResponseFromOpenAIImages(modelName, forwardRecorder.Body.Bytes())
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", geminiBody)
+
+	result := geminiBananaForwardResult(modelName, openAIResult, usage, imageCount)
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	requestPayloadHash := service.HashUsageRequestPayload(body)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	sessionID := service.ExtractClientSessionID(c)
+	h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
+			Result:                result,
+			QuotaPlatform:         quotaPlatform,
+			APIKey:                apiKey,
+			User:                  apiKey.User,
+			Account:               account,
+			Subscription:          subscription,
+			PricingAt:             pricingAt,
+			InboundEndpoint:       inboundEndpoint,
+			UpstreamEndpoint:      upstreamEndpoint,
+			UserAgent:             userAgent,
+			IPAddress:             clientIP,
+			RequestPayloadHash:    requestPayloadHash,
+			LongContextThreshold:  200000,
+			LongContextMultiplier: 2.0,
+			APIKeyService:         h.apiKeyService,
+			SessionID:             sessionID,
+			ChannelUsageFields:    clientRequestedUsageFields(c, channelMapping, requestModel, result.UpstreamModel),
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", "handler.gemini_v1beta.models"),
+				zap.Int64("user_id", authSubject.UserID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Any("group_id", apiKey.GroupID),
+				zap.String("model", modelName),
+				zap.Int64("account_id", account.ID),
+			).Error("gemini.banana_bridge_record_usage_failed", zap.Error(err))
+		}
+	})
+}
+
+func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, imageCount int) *service.ForwardResult {
+	result := &service.ForwardResult{
+		Usage:      usage,
+		Model:      strings.TrimSpace(modelName),
+		Stream:     false,
+		ImageCount: imageCount,
+	}
+	if raw == nil {
+		return result
+	}
+	result.RequestID = raw.RequestID
+	result.UpstreamModel = raw.UpstreamModel
+	result.Duration = raw.Duration
+	result.FirstTokenMs = raw.FirstTokenMs
+	result.ImageSize = raw.ImageSize
+	result.ImageInputSize = raw.ImageInputSize
+	result.ImageOutputSize = raw.ImageOutputSize
+	result.ImageOutputSizes = raw.ImageOutputSizes
+	result.ImageSizeSource = raw.ImageSizeSource
+	result.ImageSizeBreakdown = raw.ImageSizeBreakdown
+	if result.ImageCount <= 0 {
+		result.ImageCount = raw.ImageCount
+	}
+	if result.UpstreamModel == "" {
+		result.UpstreamModel = raw.Model
+	}
+	return result
 }
 
 func writeUpstreamResponse(c *gin.Context, res *service.UpstreamHTTPResult) {

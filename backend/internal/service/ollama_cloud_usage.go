@@ -393,6 +393,9 @@ type OllamaCloudUsageService struct {
 	lockCache    LeaderLockCache
 	db           *sql.DB
 	instanceID   string
+
+	// afterRefreshGroupRegister is a deterministic unit-test hook.
+	afterRefreshGroupRegister func(string)
 }
 
 func NewOllamaCloudUsageService(
@@ -784,7 +787,7 @@ func (s *OllamaCloudUsageService) refreshAccount(ctx context.Context, accountID 
 	if !valid {
 		return nil, ErrOllamaCloudUsageAccountInvalid
 	}
-	value, err, _ := s.refreshGroup.Do(key, func() (any, error) {
+	resultCh := s.refreshGroup.DoChan(key, func() (any, error) {
 		select {
 		case s.refreshSlots <- struct{}{}:
 			defer func() { <-s.refreshSlots }()
@@ -844,6 +847,11 @@ func (s *OllamaCloudUsageService) refreshAccount(ctx context.Context, accountID 
 		}
 		return s.refreshLoadedAccount(ctx, account, intervalMinutes)
 	})
+	if s.afterRefreshGroupRegister != nil {
+		s.afterRefreshGroupRegister(key)
+	}
+	result := <-resultCh
+	value, err := result.Val, result.Err
 	if err != nil || value == nil {
 		return nil, err
 	}

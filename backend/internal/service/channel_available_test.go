@@ -184,15 +184,31 @@ func TestPricingNeedsFallback(t *testing.T) {
 	}{
 		{"nil", nil, true},
 		{"empty struct", &ChannelModelPricing{BillingMode: BillingModeToken}, true},
+		{"description only", &ChannelModelPricing{BillingMode: BillingModeToken, Description: "authored note"}, true},
 		{"all-empty intervals", &ChannelModelPricing{
 			BillingMode: BillingModeImage,
 			Intervals:   []PricingInterval{{TierLabel: "1K"}, {TierLabel: "2K"}},
 		}, true},
 		{"flat input set", &ChannelModelPricing{InputPrice: testPtrFloat64(3e-6)}, false},
 		{"flat per_request set", &ChannelModelPricing{PerRequestPrice: testPtrFloat64(0.04)}, false},
+		{"video default price set", &ChannelModelPricing{
+			BillingMode:         BillingModeVideo,
+			VideoPricePerSecond: testPtrFloat64(0.03),
+		}, false},
 		{"interval with price", &ChannelModelPricing{
 			Intervals: []PricingInterval{{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)}},
 		}, false},
+		{"video interval price set", &ChannelModelPricing{
+			BillingMode: BillingModeVideo,
+			Intervals: []PricingInterval{{
+				TierLabel:           "1080p",
+				VideoPricePerSecond: testPtrFloat64(0.05),
+			}},
+		}, false},
+		{"incomplete video pricing", &ChannelModelPricing{
+			BillingMode:         BillingModeVideo,
+			VideoDefaultSeconds: testPtrInt(10),
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -244,6 +260,26 @@ func TestSynthesizePricingFromLiteLLM_RespectsExistingChannelMode(t *testing.T) 
 	require.Equal(t, BillingModePerRequest, got.BillingMode)
 	require.NotNil(t, got.PerRequestPrice)
 	require.InDelta(t, 0.04, *got.PerRequestPrice, 1e-12)
+}
+
+func TestSynthesizePricingFromLiteLLM_PreservesDescription(t *testing.T) {
+	lp := &LiteLLMModelPricing{
+		Mode:              "chat",
+		InputCostPerToken: 5e-6,
+	}
+	existing := &ChannelModelPricing{
+		BillingMode: BillingModeToken,
+		Description: "Authored display copy",
+		OutputPrice: nil,
+		InputPrice:  nil,
+		Intervals:   []PricingInterval{{TierLabel: "empty"}},
+	}
+
+	require.True(t, pricingNeedsFallback(existing))
+	got := synthesizePricingFromLiteLLM(lp, existing)
+	require.NotNil(t, got)
+	require.Equal(t, "Authored display copy", got.Description)
+	require.NotNil(t, got.InputPrice)
 }
 
 func TestFillGlobalPricingFallback_NilPricing(t *testing.T) {
@@ -304,6 +340,29 @@ func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
 	}
 	svc.fillGlobalPricingFallback(models)
 	require.Same(t, existing, models[0].Pricing)
+}
+
+func TestFillGlobalPricingFallback_DoesNotSynthesizeTokenFieldsForIncompleteVideoPricing(t *testing.T) {
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"sora-2": {
+			Mode:               "chat",
+			InputCostPerToken:  1e-6,
+			OutputCostPerToken: 2e-6,
+		},
+	})
+	svc := &ChannelService{pricingService: pricingSvc}
+	existing := &ChannelModelPricing{
+		BillingMode:         BillingModeVideo,
+		VideoDefaultSeconds: testPtrInt(10),
+	}
+	models := []SupportedModel{{Name: "sora-2", Platform: "openai", Pricing: existing}}
+
+	svc.fillGlobalPricingFallback(models)
+
+	require.Same(t, existing, models[0].Pricing)
+	require.Equal(t, BillingModeVideo, models[0].Pricing.BillingMode)
+	require.Nil(t, models[0].Pricing.InputPrice)
+	require.Nil(t, models[0].Pricing.OutputPrice)
 }
 
 func newStubPricingServiceFromMap(data map[string]*LiteLLMModelPricing) *PricingService {

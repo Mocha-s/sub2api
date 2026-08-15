@@ -180,6 +180,46 @@ func TestMigration158BackfillsGrokMediaGenerationGroups(t *testing.T) {
 	require.Contains(t, sql, "AND allow_image_generation = false")
 }
 
+func TestMigration189CompositeRoutesAcceptsVideoEndpoint(t *testing.T) {
+	content, err := FS.ReadFile("189_preserved_v0176_schema_compat.sql")
+	require.NoError(t, err)
+
+	sql := strings.ToLower(string(content))
+	constraintStart := strings.Index(sql, "composite_model_routes_endpoint_check")
+	require.NotEqual(t, -1, constraintStart)
+	constraintEnd := strings.Index(sql[constraintStart:], ");")
+	require.NotEqual(t, -1, constraintEnd)
+	constraint := sql[constraintStart : constraintStart+constraintEnd]
+	require.Contains(t, constraint, "'video'")
+}
+
+func TestMigration189GroupAuthCacheInvalidationCoversSnapshotFields(t *testing.T) {
+	content, err := FS.ReadFile("189_preserved_v0176_schema_compat.sql")
+	require.NoError(t, err)
+
+	sql := strings.ToLower(string(content))
+	functionStart := strings.Index(sql, "create or replace function enqueue_group_auth_cache_invalidation()")
+	require.NotEqual(t, -1, functionStart)
+	conditionStart := strings.Index(sql[functionStart:], "if tg_op = 'update'")
+	require.NotEqual(t, -1, conditionStart)
+	conditionStart += functionStart
+	conditionEnd := strings.Index(sql[conditionStart:], "then")
+	require.NotEqual(t, -1, conditionEnd)
+	condition := sql[conditionStart : conditionStart+conditionEnd]
+
+	for _, field := range []string{
+		"status",
+		"is_exclusive",
+		"allow_image_generation",
+		"allow_video_generation",
+		"max_reasoning_effort",
+		"reasoning_effort_mappings",
+		"deleted_at",
+	} {
+		require.Contains(t, condition, "old."+field+" is not distinct from new."+field)
+	}
+}
+
 func TestMigration154AddsSparkShadowColumnsAndConstraintsWithoutHotIndexes(t *testing.T) {
 	content, err := FS.ReadFile("154_account_spark_shadow.sql")
 	require.NoError(t, err)

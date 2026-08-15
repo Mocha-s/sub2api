@@ -187,6 +187,32 @@ func (h *AsyncImageHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
+func (h *AsyncImageHandler) Content(c *gin.Context) {
+	if !h.pollable() {
+		imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "async image tasks are not enabled")
+		return
+	}
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || apiKey.UserID <= 0 || apiKey.ID <= 0 {
+		imageTaskError(c, service.ErrImageTaskForbidden)
+		return
+	}
+	task, err := h.tasks.Get(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}, c.Param("task_id"))
+	if err != nil {
+		imageTaskError(c, err)
+		return
+	}
+	if task.Status != service.ImageTaskStatusCompleted {
+		imageTaskJSONError(c, http.StatusConflict, "IMAGE_TASK_NOT_COMPLETED", "image task is not completed")
+		return
+	}
+	if strings.TrimSpace(task.ImageURL) == "" {
+		imageTaskJSONError(c, http.StatusBadGateway, "IMAGE_TASK_RESULT_UNAVAILABLE", "completed image task has no image URL")
+		return
+	}
+	c.Redirect(http.StatusFound, task.ImageURL)
+}
+
 func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, body []byte) error {
 	if h.openAI == nil || h.openAI.gatewayService == nil {
 		return nil

@@ -161,6 +161,11 @@ type UsageLog struct {
 	CacheReadCost             float64
 	TotalCost                 float64
 	ActualCost                float64
+	RefundedCost              float64
+	RefundedTotalCost         float64
+	RefundedAccountCost       float64
+	RefundReason              *string
+	RefundedAt                *time.Time
 	RateMultiplier            float64
 	LongContextBillingApplied bool
 	// AccountRateMultiplier 账号计费倍率快照（nil 表示历史数据，按 1.0 处理）

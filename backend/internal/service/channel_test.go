@@ -489,6 +489,26 @@ func TestSupportedModels_ExactKeysAndPricing(t *testing.T) {
 	require.Equal(t, int64(10), got[1].Pricing.ID)
 }
 
+func TestSupportedModels_SharedDescriptionForEveryBoundModel(t *testing.T) {
+	ch := &Channel{
+		ModelPricing: []ChannelModelPricing{
+			{
+				ID:          10,
+				Platform:    "anthropic",
+				Models:      []string{"claude-sonnet-4-6", "claude-sonnet-4-5"},
+				Description: "Shared primary description",
+			},
+		},
+	}
+
+	got := ch.SupportedModels()
+	require.Len(t, got, 2)
+	for _, model := range got {
+		require.NotNil(t, model.Pricing)
+		require.Equal(t, "Shared primary description", model.Pricing.Description)
+	}
+}
+
 func TestSupportedModels_WildcardExpandedFromPricing(t *testing.T) {
 	ch := &Channel{
 		ModelPricing: []ChannelModelPricing{
@@ -512,7 +532,6 @@ func TestSupportedModels_WildcardExpandedFromPricing(t *testing.T) {
 		require.NotContains(t, m.Name, "*")
 	}
 }
-
 
 func TestSupportedModels_MissingPricingKeepsNilPricing(t *testing.T) {
 	ch := &Channel{

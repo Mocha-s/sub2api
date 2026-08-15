@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -87,38 +88,43 @@ type AccountStatsPricingRule struct {
 
 // ChannelModelPricing 渠道模型定价条目
 type ChannelModelPricing struct {
-	ID               int64             `json:"id,omitempty"`
-	ChannelID        int64             `json:"channel_id,omitempty"`
-	Platform         string            `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
-	Models           []string          `json:"models"`
-	BillingMode      BillingMode       `json:"billing_mode"`
-	InputPrice       *float64          `json:"input_price"`
-	OutputPrice      *float64          `json:"output_price"`
-	CacheWritePrice  *float64          `json:"cache_write_price"`
-	CacheReadPrice   *float64          `json:"cache_read_price"`
-	ImageInputPrice  *float64          `json:"image_input_price"`
-	ImageOutputPrice *float64          `json:"image_output_price"`
-	PerRequestPrice  *float64          `json:"per_request_price"`
-	Intervals        []PricingInterval `json:"intervals"`
-	CreatedAt        time.Time         `json:"created_at,omitempty"`
-	UpdatedAt        time.Time         `json:"updated_at,omitempty"`
+	ID                  int64             `json:"id,omitempty"`
+	ChannelID           int64             `json:"channel_id,omitempty"`
+	Platform            string            `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
+	Models              []string          `json:"models"`
+	Description         string            `json:"description,omitempty"`
+	BillingMode         BillingMode       `json:"billing_mode"`
+	InputPrice          *float64          `json:"input_price"`
+	OutputPrice         *float64          `json:"output_price"`
+	CacheWritePrice     *float64          `json:"cache_write_price"`
+	CacheReadPrice      *float64          `json:"cache_read_price"`
+	ImageInputPrice     *float64          `json:"image_input_price"`
+	ImageOutputPrice    *float64          `json:"image_output_price"`
+	PerRequestPrice     *float64          `json:"per_request_price"`
+	VideoPricePerSecond *float64          `json:"video_price_per_second"`
+	VideoDefaultSeconds *int              `json:"video_default_seconds"`
+	VideoAllowedSeconds []int             `json:"video_allowed_seconds"`
+	Intervals           []PricingInterval `json:"intervals"`
+	CreatedAt           time.Time         `json:"created_at,omitempty"`
+	UpdatedAt           time.Time         `json:"updated_at,omitempty"`
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID              int64     `json:"id,omitempty"`
-	PricingID       int64     `json:"pricing_id,omitempty"`
-	MinTokens       int       `json:"min_tokens"`
-	MaxTokens       *int      `json:"max_tokens"`
-	TierLabel       string    `json:"tier_label"`
-	InputPrice      *float64  `json:"input_price"`
-	OutputPrice     *float64  `json:"output_price"`
-	CacheWritePrice *float64  `json:"cache_write_price"`
-	CacheReadPrice  *float64  `json:"cache_read_price"`
-	PerRequestPrice *float64  `json:"per_request_price"`
-	SortOrder       int       `json:"sort_order"`
-	CreatedAt       time.Time `json:"created_at,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+	ID                  int64     `json:"id,omitempty"`
+	PricingID           int64     `json:"pricing_id,omitempty"`
+	MinTokens           int       `json:"min_tokens"`
+	MaxTokens           *int      `json:"max_tokens"`
+	TierLabel           string    `json:"tier_label"`
+	InputPrice          *float64  `json:"input_price"`
+	OutputPrice         *float64  `json:"output_price"`
+	CacheWritePrice     *float64  `json:"cache_write_price"`
+	CacheReadPrice      *float64  `json:"cache_read_price"`
+	PerRequestPrice     *float64  `json:"per_request_price"`
+	VideoPricePerSecond *float64  `json:"video_price_per_second"`
+	SortOrder           int       `json:"sort_order"`
+	CreatedAt           time.Time `json:"created_at,omitempty"`
+	UpdatedAt           time.Time `json:"updated_at,omitempty"`
 }
 
 // IsActive 判断渠道是否启用
@@ -194,6 +200,10 @@ func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	if p.Intervals != nil {
 		cp.Intervals = make([]PricingInterval, len(p.Intervals))
 		copy(cp.Intervals, p.Intervals)
+	}
+	if p.VideoAllowedSeconds != nil {
+		cp.VideoAllowedSeconds = make([]int, len(p.VideoAllowedSeconds))
+		copy(cp.VideoAllowedSeconds, p.VideoAllowedSeconds)
 	}
 	return cp
 }
@@ -292,7 +302,7 @@ func deepCopyFeaturesConfig(src map[string]any) map[string]any {
 // mode 决定区间语义：
 //   - BillingModeToken（含空值）：区间是上下文 token 数分段 (min, max]，
 //     按 MinTokens 排序后无重叠，无界区间（MaxTokens=nil）必须是最后一个。
-//   - BillingModePerRequest / BillingModeImage：区间是按 tier_label
+//   - BillingModePerRequest / BillingModeImage / BillingModeVideo：区间是按 tier_label
 //     (1K/2K/4K 等) 分层，匹配走 label 不依赖 min/max，因此跳过区间重叠
 //     与 last-unlimited 校验，仅做单条字段自洽（min/max/价格非负）检查。
 //
@@ -314,8 +324,25 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 		}
 	}
 
-	// per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
-	if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
+	// per_request / image / video 模式按 tier_label 匹配，不做 token 区间重叠校验
+	if mode == BillingModeVideo {
+		seen := make(map[string]struct{}, len(sorted))
+		for i := range sorted {
+			if sorted[i].VideoPricePerSecond == nil {
+				continue
+			}
+			label := NormalizeVideoResolutionTier(sorted[i].TierLabel)
+			if label == "" {
+				return fmt.Errorf("interval #%d: tier_label must not be blank for video pricing", i+1)
+			}
+			if _, exists := seen[label]; exists {
+				return fmt.Errorf("interval #%d: normalized video tier_label %q must be unique", i+1, label)
+			}
+			seen[label] = struct{}{}
+		}
+		return nil
+	}
+	if mode == BillingModePerRequest || mode == BillingModeImage {
 		return nil
 	}
 	return validateIntervalOverlap(sorted)
@@ -349,10 +376,16 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 		{"cache_write_price", iv.CacheWritePrice},
 		{"cache_read_price", iv.CacheReadPrice},
 		{"per_request_price", iv.PerRequestPrice},
+		{"video_price_per_second", iv.VideoPricePerSecond},
 	}
 	for _, p := range prices {
-		if p.val != nil && *p.val < 0 {
-			return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+		if p.val != nil {
+			if math.IsNaN(*p.val) || math.IsInf(*p.val, 0) {
+				return fmt.Errorf("interval #%d: %s must be finite", idx+1, p.name)
+			}
+			if *p.val < 0 {
+				return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+			}
 		}
 	}
 	return nil

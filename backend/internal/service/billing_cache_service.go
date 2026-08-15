@@ -564,6 +564,13 @@ func (s *BillingCacheService) InvalidateAPIKeyRateLimit(ctx context.Context, key
 	return nil
 }
 
+func (s *BillingCacheService) InvalidateUserPlatformQuota(ctx context.Context, userID int64, platform string) error {
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.DeleteUserPlatformQuotaCache(ctx, userID, platform)
+}
+
 // ============================================
 // API Key 限速缓存方法
 // ============================================
@@ -1150,6 +1157,7 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 				WeeklyUsageUSD:     weeklyUsage,
 				MonthlyUsageUSD:    monthlyUsage,
 				SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+				Revision:           entry.Revision,
 				DailyLimitUSD:      entry.DailyLimitUSD,
 				WeeklyLimitUSD:     entry.WeeklyLimitUSD,
 				MonthlyLimitUSD:    entry.MonthlyLimitUSD,
@@ -1271,6 +1279,7 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		WeeklyUsageUSD:     weeklyUsage,
 		MonthlyUsageUSD:    monthlyUsage,
 		SchemaVersion:      UserPlatformQuotaCacheSchemaV1,
+		Revision:           rec.Revision,
 		DailyLimitUSD:      rec.DailyLimitUSD,
 		WeeklyLimitUSD:     rec.WeeklyLimitUSD,
 		MonthlyLimitUSD:    rec.MonthlyLimitUSD,

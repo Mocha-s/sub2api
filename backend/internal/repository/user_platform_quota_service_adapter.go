@@ -117,6 +117,22 @@ func (a *userPlatformQuotaServiceAdapter) BatchSnapshotUsage(ctx context.Context
 	return err
 }
 
+func (a *userPlatformQuotaServiceAdapter) CompareAndSwapUsageSnapshots(ctx context.Context, snapshots []service.UserPlatformQuotaSnapshot) ([]service.UserPlatformQuotaSnapshotResult, error) {
+	repoSnaps := make([]UserPlatformQuotaSnapshot, len(snapshots))
+	for i, snapshot := range snapshots {
+		repoSnaps[i] = UserPlatformQuotaSnapshot{UserID: snapshot.UserID, Platform: snapshot.Platform, DailyUsageUSD: snapshot.DailyUsageUSD, WeeklyUsageUSD: snapshot.WeeklyUsageUSD, MonthlyUsageUSD: snapshot.MonthlyUsageUSD, DailyWindowStart: snapshot.DailyWindowStart, WeeklyWindowStart: snapshot.WeeklyWindowStart, MonthlyWindowStart: snapshot.MonthlyWindowStart, Revision: snapshot.Revision}
+	}
+	repoResults, err := a.inner.CompareAndSwapUsageSnapshots(ctx, repoSnaps)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]service.UserPlatformQuotaSnapshotResult, len(repoResults))
+	for i, result := range repoResults {
+		results[i] = service.UserPlatformQuotaSnapshotResult{UserID: result.UserID, Platform: result.Platform, Revision: result.Revision, Applied: result.Applied}
+	}
+	return results, nil
+}
+
 // genericUserPlatformQuotaAdapter 通过通用接口适配（用于测试 fake 或非标准实现）。
 type genericUserPlatformQuotaAdapter struct {
 	inner UserPlatformQuotaRepository
@@ -224,6 +240,7 @@ func toServiceRecord(rec *UserPlatformQuotaRecord) *service.UserPlatformQuotaRec
 		DailyUsageUSD:      rec.DailyUsageUSD,
 		WeeklyUsageUSD:     rec.WeeklyUsageUSD,
 		MonthlyUsageUSD:    rec.MonthlyUsageUSD,
+		Revision:           rec.Revision,
 		DailyWindowStart:   rec.DailyWindowStart,
 		WeeklyWindowStart:  rec.WeeklyWindowStart,
 		MonthlyWindowStart: rec.MonthlyWindowStart,

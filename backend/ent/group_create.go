@@ -316,6 +316,20 @@ func (_c *GroupCreate) SetNillableAllowBatchImageGeneration(v *bool) *GroupCreat
 	return _c
 }
 
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (_c *GroupCreate) SetAllowVideoGeneration(v bool) *GroupCreate {
+	_c.mutation.SetAllowVideoGeneration(v)
+	return _c
+}
+
+// SetNillableAllowVideoGeneration sets the "allow_video_generation" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableAllowVideoGeneration(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetAllowVideoGeneration(*v)
+	}
+	return _c
+}
+
 // SetImageRateIndependent sets the "image_rate_independent" field.
 func (_c *GroupCreate) SetImageRateIndependent(v bool) *GroupCreate {
 	_c.mutation.SetImageRateIndependent(v)
@@ -1039,6 +1053,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultAllowBatchImageGeneration
 		_c.mutation.SetAllowBatchImageGeneration(v)
 	}
+	if _, ok := _c.mutation.AllowVideoGeneration(); !ok {
+		v := group.DefaultAllowVideoGeneration
+		_c.mutation.SetAllowVideoGeneration(v)
+	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
 		v := group.DefaultImageRateIndependent
 		_c.mutation.SetImageRateIndependent(v)
@@ -1223,6 +1241,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.AllowBatchImageGeneration(); !ok {
 		return &ValidationError{Name: "allow_batch_image_generation", err: errors.New(`ent: missing required field "Group.allow_batch_image_generation"`)}
+	}
+	if _, ok := _c.mutation.AllowVideoGeneration(); !ok {
+		return &ValidationError{Name: "allow_video_generation", err: errors.New(`ent: missing required field "Group.allow_video_generation"`)}
 	}
 	if _, ok := _c.mutation.ImageRateIndependent(); !ok {
 		return &ValidationError{Name: "image_rate_independent", err: errors.New(`ent: missing required field "Group.image_rate_independent"`)}
@@ -1439,6 +1460,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AllowBatchImageGeneration(); ok {
 		_spec.SetField(group.FieldAllowBatchImageGeneration, field.TypeBool, value)
 		_node.AllowBatchImageGeneration = value
+	}
+	if value, ok := _c.mutation.AllowVideoGeneration(); ok {
+		_spec.SetField(group.FieldAllowVideoGeneration, field.TypeBool, value)
+		_node.AllowVideoGeneration = value
 	}
 	if value, ok := _c.mutation.ImageRateIndependent(); ok {
 		_spec.SetField(group.FieldImageRateIndependent, field.TypeBool, value)
@@ -2051,6 +2076,18 @@ func (u *GroupUpsert) SetAllowBatchImageGeneration(v bool) *GroupUpsert {
 // UpdateAllowBatchImageGeneration sets the "allow_batch_image_generation" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateAllowBatchImageGeneration() *GroupUpsert {
 	u.SetExcluded(group.FieldAllowBatchImageGeneration)
+	return u
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (u *GroupUpsert) SetAllowVideoGeneration(v bool) *GroupUpsert {
+	u.Set(group.FieldAllowVideoGeneration, v)
+	return u
+}
+
+// UpdateAllowVideoGeneration sets the "allow_video_generation" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateAllowVideoGeneration() *GroupUpsert {
+	u.SetExcluded(group.FieldAllowVideoGeneration)
 	return u
 }
 
@@ -3156,6 +3193,20 @@ func (u *GroupUpsertOne) SetAllowBatchImageGeneration(v bool) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateAllowBatchImageGeneration() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (u *GroupUpsertOne) SetAllowVideoGeneration(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAllowVideoGeneration(v)
+	})
+}
+
+// UpdateAllowVideoGeneration sets the "allow_video_generation" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateAllowVideoGeneration() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAllowVideoGeneration()
 	})
 }
 
@@ -4546,6 +4597,20 @@ func (u *GroupUpsertBulk) SetAllowBatchImageGeneration(v bool) *GroupUpsertBulk 
 func (u *GroupUpsertBulk) UpdateAllowBatchImageGeneration() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateAllowBatchImageGeneration()
+	})
+}
+
+// SetAllowVideoGeneration sets the "allow_video_generation" field.
+func (u *GroupUpsertBulk) SetAllowVideoGeneration(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetAllowVideoGeneration(v)
+	})
+}
+
+// UpdateAllowVideoGeneration sets the "allow_video_generation" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateAllowVideoGeneration() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateAllowVideoGeneration()
 	})
 }
 

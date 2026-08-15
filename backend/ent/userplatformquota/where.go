@@ -110,6 +110,11 @@ func MonthlyUsageUsd(v float64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldMonthlyUsageUsd, v))
 }
 
+// Revision applies equality check predicate on the "revision" field. It's identical to RevisionEQ.
+func Revision(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldRevision, v))
+}
+
 // DailyWindowStart applies equality check predicate on the "daily_window_start" field. It's identical to DailyWindowStartEQ.
 func DailyWindowStart(v time.Time) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldEQ(FieldDailyWindowStart, v))
@@ -608,6 +613,46 @@ func MonthlyUsageUsdLT(v float64) predicate.UserPlatformQuota {
 // MonthlyUsageUsdLTE applies the LTE predicate on the "monthly_usage_usd" field.
 func MonthlyUsageUsdLTE(v float64) predicate.UserPlatformQuota {
 	return predicate.UserPlatformQuota(sql.FieldLTE(FieldMonthlyUsageUsd, v))
+}
+
+// RevisionEQ applies the EQ predicate on the "revision" field.
+func RevisionEQ(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldEQ(FieldRevision, v))
+}
+
+// RevisionNEQ applies the NEQ predicate on the "revision" field.
+func RevisionNEQ(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNEQ(FieldRevision, v))
+}
+
+// RevisionIn applies the In predicate on the "revision" field.
+func RevisionIn(vs ...int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldIn(FieldRevision, vs...))
+}
+
+// RevisionNotIn applies the NotIn predicate on the "revision" field.
+func RevisionNotIn(vs ...int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldNotIn(FieldRevision, vs...))
+}
+
+// RevisionGT applies the GT predicate on the "revision" field.
+func RevisionGT(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldGT(FieldRevision, v))
+}
+
+// RevisionGTE applies the GTE predicate on the "revision" field.
+func RevisionGTE(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldGTE(FieldRevision, v))
+}
+
+// RevisionLT applies the LT predicate on the "revision" field.
+func RevisionLT(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldLT(FieldRevision, v))
+}
+
+// RevisionLTE applies the LTE predicate on the "revision" field.
+func RevisionLTE(v int64) predicate.UserPlatformQuota {
+	return predicate.UserPlatformQuota(sql.FieldLTE(FieldRevision, v))
 }
 
 // DailyWindowStartEQ applies the EQ predicate on the "daily_window_start" field.

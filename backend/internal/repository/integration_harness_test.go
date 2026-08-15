@@ -36,6 +36,7 @@ const (
 
 var (
 	integrationDB        *sql.DB
+	integrationDSN       string
 	integrationEntClient *dbent.Client
 	integrationRedis     *redisclient.Client
 
@@ -90,6 +91,7 @@ func TestMain(m *testing.M) {
 		log.Printf("failed to get postgres dsn: %v", err)
 		os.Exit(1)
 	}
+	integrationDSN = dsn
 
 	integrationDB, err = openSQLWithRetry(ctx, dsn, 30*time.Second)
 	if err != nil {
@@ -229,6 +231,26 @@ func testEntTx(t *testing.T) *dbent.Tx {
 		_ = tx.Rollback()
 	})
 	return tx
+}
+
+func resetIntegrationCoreTables(t *testing.T) {
+	t.Helper()
+
+	_, err := integrationDB.ExecContext(context.Background(), `
+TRUNCATE TABLE
+	usage_dashboard_hourly_users,
+	usage_dashboard_daily_users,
+	usage_dashboard_hourly,
+	usage_dashboard_daily,
+	usage_dashboard_aggregation_watermark,
+	usage_logs,
+	api_keys,
+	accounts,
+	groups,
+	users
+RESTART IDENTITY CASCADE;
+`)
+	require.NoError(t, err, "reset integration core tables")
 }
 
 // testEntSQLTx 已弃用：不要在新测试中使用此函数。

@@ -114,3 +114,127 @@ func TestUsageLog_GetStatsWithFilters_AggregatesAndEndpoints(t *testing.T) {
 	require.NotEmpty(t, stats.UpstreamEndpoints)
 	require.NotEmpty(t, stats.EndpointPaths)
 }
+
+func TestUsageLog_GetStatsWithFilters_UsesNetRefundedCosts(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	client := tx.Client()
+	repo := newUsageLogRepositoryWithSQL(client, tx)
+	user := mustCreateUser(t, client, &service.User{Email: "refund-stats@test.com"})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-refund-stats", Name: "k"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "refund-stats-account"})
+	now := time.Now().UTC()
+	refundedAt := now
+	accountGrossA, accountGrossB := 10.0, 8.0
+	for _, usage := range []*service.UsageLog{
+		{UserID: user.ID, APIKeyID: apiKey.ID, AccountID: account.ID, Model: "video-a", TotalCost: 10, ActualCost: 10, AccountStatsCost: &accountGrossA, RefundedTotalCost: 4, RefundedCost: 4, RefundedAccountCost: 4, RefundedAt: &refundedAt, CreatedAt: now},
+		{UserID: user.ID, APIKeyID: apiKey.ID, AccountID: account.ID, Model: "video-b", TotalCost: 8, ActualCost: 8, AccountStatsCost: &accountGrossB, RefundedTotalCost: 8, RefundedCost: 8, RefundedAccountCost: 8, RefundedAt: &refundedAt, CreatedAt: now},
+	} {
+		_, err := repo.Create(ctx, usage)
+		require.NoError(t, err)
+	}
+
+	start, end := now.Add(-time.Hour), now.Add(time.Hour)
+	stats, err := repo.GetStatsWithFilters(ctx, usagestats.UsageLogFilters{UserID: user.ID, StartTime: &start, EndTime: &end})
+	require.NoError(t, err)
+	require.InDelta(t, 6, stats.TotalCost, 1e-9)
+	require.InDelta(t, 6, stats.TotalActualCost, 1e-9)
+	require.NotNil(t, stats.TotalAccountCost)
+	require.InDelta(t, 6, *stats.TotalAccountCost, 1e-9)
+	for _, endpoint := range stats.Endpoints {
+		require.NotEqual(t, "video-b", endpoint.Endpoint)
+	}
+}
+
+func TestUsageLog_RefundedCosts_PreaggregationReadersAndSuccessRanking(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	client := tx.Client()
+	repo := newUsageLogRepositoryWithSQL(client, tx)
+	for _, table := range []string{
+		"usage_dashboard_hourly_users", "usage_dashboard_daily_users",
+		"usage_dashboard_hourly", "usage_dashboard_daily",
+	} {
+		_, err := tx.ExecContext(ctx, "DELETE FROM "+table)
+		require.NoError(t, err)
+	}
+
+	partialUser := mustCreateUser(t, client, &service.User{Email: "refund-partial@test.com"})
+	fullUser := mustCreateUser(t, client, &service.User{Email: "refund-full@test.com"})
+	partialKey := mustCreateApiKey(t, client, &service.APIKey{UserID: partialUser.ID, Key: "sk-refund-partial", Name: "partial"})
+	fullKey := mustCreateApiKey(t, client, &service.APIKey{UserID: fullUser.ID, Key: "sk-refund-full", Name: "full"})
+	account := mustCreateAccount(t, client, &service.Account{Name: "refund-preaggregation-account"})
+	dayStart := truncateToDayUTC(time.Now().UTC()).Add(-48 * time.Hour)
+	hourStart := dayStart.Add(3 * time.Hour)
+	accountGrossA, accountGrossB := 10.0, 8.0
+	refundedAt := hourStart.Add(15 * time.Minute)
+	for _, usage := range []*service.UsageLog{
+		{UserID: partialUser.ID, APIKeyID: partialKey.ID, AccountID: account.ID, Model: "refund-partial", InputTokens: 1, TotalCost: 10, ActualCost: 10, AccountStatsCost: &accountGrossA, RefundedTotalCost: 4, RefundedCost: 4, RefundedAccountCost: 4, RefundedAt: &refundedAt, CreatedAt: hourStart.Add(5 * time.Minute)},
+		{UserID: fullUser.ID, APIKeyID: fullKey.ID, AccountID: account.ID, Model: "refund-full", InputTokens: 1, TotalCost: 8, ActualCost: 8, AccountStatsCost: &accountGrossB, RefundedTotalCost: 8, RefundedCost: 8, RefundedAccountCost: 8, RefundedAt: &refundedAt, CreatedAt: hourStart.Add(10 * time.Minute)},
+	} {
+		_, err := repo.Create(ctx, usage)
+		require.NoError(t, err)
+	}
+
+	aggRepo := newDashboardAggregationRepositoryWithSQL(tx)
+	require.NoError(t, aggRepo.AggregateRange(ctx, hourStart, hourStart.Add(time.Hour)))
+	assertPersisted := func(table, bucketColumn string, bucket any) {
+		var grossTotal, refundTotal, grossActual, refundActual, grossAccount, refundAccount float64
+		err := scanSingleRow(ctx, tx, `SELECT total_cost,refunded_total_cost,actual_cost,refunded_cost,account_cost,refunded_account_cost FROM `+table+` WHERE `+bucketColumn+`=$1`, []any{bucket},
+			&grossTotal, &refundTotal, &grossActual, &refundActual, &grossAccount, &refundAccount)
+		require.NoError(t, err)
+		for _, got := range []float64{grossTotal, grossActual, grossAccount} {
+			require.InDelta(t, 18, got, 1e-9)
+		}
+		for _, got := range []float64{refundTotal, refundActual, refundAccount} {
+			require.InDelta(t, 12, got, 1e-9)
+		}
+	}
+	assertPersisted("usage_dashboard_hourly", "bucket_start", hourStart)
+	assertPersisted("usage_dashboard_daily", "bucket_date", dayStart)
+
+	for _, granularity := range []string{"hour", "day"} {
+		trend, err := repo.getUsageTrendFromAggregates(ctx, dayStart, dayStart.Add(24*time.Hour), granularity)
+		require.NoError(t, err)
+		require.Len(t, trend, 1)
+		require.InDelta(t, 6, trend[0].Cost, 1e-9)
+		require.InDelta(t, 6, trend[0].ActualCost, 1e-9)
+	}
+	dashboard := &DashboardStats{}
+	require.NoError(t, repo.fillDashboardUsageStatsAggregated(ctx, dashboard, dayStart, hourStart))
+	require.InDelta(t, 6, dashboard.TotalCost, 1e-9)
+	require.InDelta(t, 6, dashboard.TotalActualCost, 1e-9)
+	require.InDelta(t, 6, dashboard.TotalAccountCost, 1e-9)
+
+	historicalUser := mustCreateUser(t, client, &service.User{Email: "refund-historical@test.com"})
+	historicalKey := mustCreateApiKey(t, client, &service.APIKey{UserID: historicalUser.ID, Key: "sk-refund-historical", Name: "historical"})
+	historicalAccountCost := 3.0
+	historical := &service.UsageLog{UserID: historicalUser.ID, APIKeyID: historicalKey.ID, AccountID: account.ID, Model: "refund-historical", InputTokens: 1, TotalCost: 3, ActualCost: 3, AccountStatsCost: &historicalAccountCost, CreatedAt: hourStart.Add(2 * time.Hour)}
+	_, err := repo.Create(ctx, historical)
+	require.NoError(t, err)
+	for _, column := range []string{"refunded_cost", "refunded_total_cost", "refunded_account_cost"} {
+		_, err = tx.ExecContext(ctx, "ALTER TABLE usage_logs ALTER COLUMN "+column+" DROP NOT NULL")
+		require.NoError(t, err)
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE usage_logs SET refunded_cost=NULL,refunded_total_cost=NULL,refunded_account_cost=NULL WHERE id=$1`, historical.ID)
+	require.NoError(t, err)
+	start, end := dayStart, dayStart.Add(24*time.Hour)
+	historicalStats, err := repo.GetStatsWithFilters(ctx, usagestats.UsageLogFilters{UserID: historicalUser.ID, StartTime: &start, EndTime: &end})
+	require.NoError(t, err)
+	require.InDelta(t, 3, historicalStats.TotalCost, 1e-9)
+	require.InDelta(t, 3, historicalStats.TotalActualCost, 1e-9)
+	require.InDelta(t, 3, *historicalStats.TotalAccountCost, 1e-9)
+
+	batch, err := repo.GetBatchUserUsageStats(ctx, []int64{partialUser.ID, fullUser.ID, historicalUser.ID}, start, end)
+	require.NoError(t, err)
+	require.InDelta(t, 6, batch[partialUser.ID].TotalActualCost, 1e-9)
+	require.Zero(t, batch[fullUser.ID].TotalActualCost)
+	require.InDelta(t, 3, batch[historicalUser.ID].TotalActualCost, 1e-9)
+	ranking, err := repo.GetUserSpendingRanking(ctx, start, end, 10)
+	require.NoError(t, err)
+	require.Len(t, ranking.Ranking, 2)
+	require.Equal(t, int64(2), ranking.TotalRequests)
+	for _, item := range ranking.Ranking {
+		require.NotEqual(t, fullUser.ID, item.UserID)
+	}
+}

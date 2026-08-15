@@ -44,6 +44,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'admin.usage.billingModeVideo': 'Per-second video',
   'admin.usage.allGroups': 'All groups',
   'admin.usage.allModels': 'All models',
   'usage.allApiKeys': 'All API Keys',
@@ -53,6 +54,18 @@ const messages: Record<string, string> = {
   'usage.ws': 'WS',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
+  'usage.costDetails': 'Cost Breakdown',
+  'usage.serviceTier': 'Service tier',
+  'usage.serviceTierStandard': 'Standard',
+  'usage.rate': 'Rate',
+  'usage.original': 'Original',
+  'usage.userBilled': 'User billed',
+  'usage.grossCost': 'Customer gross',
+  'usage.refund': 'Customer refund',
+  'usage.netCost': 'Customer net',
+  'usage.refunded': 'Refunded',
+  'usage.refundedLabel': 'Refunded usage',
+  'usage.videoCount': '1 video | {count} videos',
   'usage.exporting': 'Exporting',
   'usage.exportCsv': 'Export CSV',
   'usage.failedToLoad': 'Failed to load',
@@ -88,7 +101,12 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: { count?: number }, plural?: number) => {
+        const message = messages[key] ?? key
+        const count = params?.count ?? plural
+        const variant = message.includes('|') ? message.split('|')[count === 1 ? 0 : 1].trim() : message
+        return count == null ? variant : variant.replace('{count}', String(count))
+      },
     }),
   }
 })
@@ -137,7 +155,6 @@ function mountUsageView() {
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: chartStub,
-        UsageTable: chartStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,
@@ -149,6 +166,18 @@ function mountUsageView() {
 
 describe('user UsageView', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query !== '(min-width: 768px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      })),
+    })
     query.mockReset()
     getStats.mockReset()
     getDashboardModels.mockReset()
@@ -205,6 +234,68 @@ describe('user UsageView', () => {
     }))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('offers video billing mode and sends it in usage queries', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Per-second video' })
+    ;(wrapper.vm as any).filters.billing_mode = 'video'
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ billing_mode: 'video' }), expect.anything())
+  })
+
+  it('renders refunded video customer costs through the real user usage table without leaking account costs', async () => {
+    query.mockResolvedValue({
+      items: [{
+        ...usageLog,
+        request_id: 'req-user-refunded-video',
+        model: 'sora-2',
+        billing_mode: 'video',
+        video_count: 1,
+        video_resolution: '720p',
+        video_duration_seconds: 5,
+        input_tokens: 123,
+        output_tokens: 456,
+        actual_cost: 0.4,
+        total_cost: 0.4,
+        refunded_cost: 0.4,
+        refunded_total_cost: 0.4,
+        net_actual_cost: 0,
+        net_total_cost: 0,
+        refunded_at: '2026-07-12T00:00:00Z',
+        account_rate_multiplier: 1,
+        account_stats_cost: 0.3,
+        refunded_account_cost: 0.2,
+        net_account_cost: 0.1,
+      }],
+      total: 1,
+      pages: 1,
+    })
+
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5s · 720p · 1 video')
+    expect(wrapper.text()).toContain('$0.000000')
+    expect(wrapper.text()).toContain('Refunded')
+    expect(wrapper.text()).not.toContain('123')
+    expect(wrapper.text()).not.toContain('456')
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await flushPromises()
+    const tooltip = document.body.querySelector('.cost-tooltip')
+    expect(tooltip).not.toBeNull()
+    expect(tooltip?.textContent).toContain('Customer gross')
+    expect(tooltip?.textContent).toContain('Customer refund')
+    expect(tooltip?.textContent).toContain('Customer net')
+    expect(tooltip?.textContent).toContain('$0.400000')
+    expect(tooltip?.textContent).not.toContain('$0.300000')
+    expect(tooltip?.textContent).not.toContain('$0.200000')
+    expect(tooltip?.textContent).not.toContain('$0.100000')
   })
 
   it('exports csv with current filters and without admin-only fields', async () => {

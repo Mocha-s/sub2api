@@ -163,7 +163,7 @@ func (r *channelMonitorV2Repository) RecomputeRange(ctx context.Context, start, 
 	return nil
 }
 
-const channelMonitorV2UsageMetricsSQL = `
+var channelMonitorV2UsageMetricsSQL = `
 INSERT INTO channel_monitor_v2_metrics_1m (
   bucket_start, platform, group_id, model, success_requests,
   input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
@@ -186,7 +186,7 @@ LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2
 GROUP BY 1, 2, 3, 4`
 
-const channelMonitorV2UserMetricsSQL = `
+var channelMonitorV2UserMetricsSQL = `
 INSERT INTO channel_monitor_v2_user_metrics_1m (
   bucket_start, platform, group_id, model, user_id, success_requests,
   input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
@@ -209,7 +209,7 @@ LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2 AND ul.user_id IS NOT NULL
 GROUP BY 1, 2, 3, 4, 5`
 
-const channelMonitorV2HistogramSQL = `
+var channelMonitorV2HistogramSQL = `
 INSERT INTO channel_monitor_v2_latency_histograms_1m (
   bucket_start, platform, group_id, model, user_id, metric, upper_bound_ms, sample_count
 )

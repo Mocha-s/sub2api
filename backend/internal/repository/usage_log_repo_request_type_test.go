@@ -68,6 +68,11 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			log.CacheReadCost,
 			log.TotalCost,
 			log.ActualCost,
+			log.RefundedCost,
+			log.RefundedTotalCost,
+			log.RefundedAccountCost,
+			sqlmock.AnyArg(), // refund_reason
+			sqlmock.AnyArg(), // refunded_at
 			log.RateMultiplier,
 			log.AccountRateMultiplier,
 			log.BillingType,
@@ -160,6 +165,11 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			log.CacheReadCost,
 			log.TotalCost,
 			log.ActualCost,
+			log.RefundedCost,
+			log.RefundedTotalCost,
+			log.RefundedAccountCost,
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
 			log.RateMultiplier,
 			log.AccountRateMultiplier,
 			log.BillingType,
@@ -277,11 +287,11 @@ func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
 		CreatedAt:          time.Date(2025, 1, 6, 12, 0, 0, 0, time.UTC),
 	})
 
-	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[38])
-	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[39])
-	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[40])
-	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[41])
-	breakdownJSON, ok := prepared.args[42].(string)
+	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[43])
+	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[44])
+	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[45])
+	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[46])
+	breakdownJSON, ok := prepared.args[47].(string)
 	require.True(t, ok)
 	require.JSONEq(t, `{"1K":1,"4K":1}`, breakdownJSON)
 }
@@ -821,6 +831,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_output_tokens, image_output_cost
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.0, 0.0, 0.0, 0.0, 0.8, 0.8,
+			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),
@@ -898,6 +909,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0.4,               // cache_read_cost
 			1.0,               // total_cost
 			0.9,               // actual_cost
+			0.0,               // refunded_cost
+			0.0,               // refunded_total_cost
+			0.0,               // refunded_account_cost
+			sql.NullString{},  // refund_reason
+			sql.NullTime{},    // refunded_at
 			1.0,               // rate_multiplier
 			sql.NullFloat64{}, // account_rate_multiplier
 			int16(service.BillingTypeBalance),
@@ -958,6 +974,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_output_tokens, image_output_cost
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
+			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),
@@ -1018,6 +1035,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_output_tokens, image_output_cost
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
+			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),

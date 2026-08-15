@@ -26,16 +26,22 @@ export default {
         billingModeToken: 'Per Token',
         billingModePerRequest: 'Per Request',
         billingModeImage: 'Per Image',
-        billingModeVideo: 'Per Video',
+        billingModeVideo: 'Per-second video',
         inputPrice: 'Input',
         outputPrice: 'Output',
         cacheWritePrice: 'Cache Write',
         cacheReadPrice: 'Cache Read',
         imageOutputPrice: 'Image Output',
         perRequestPrice: 'Per Request',
+        videoPricePerSecond: 'Price per second',
+        videoDefaultSeconds: 'Default duration',
+        videoAllowedSeconds: 'Duration policy',
+        anyDuration: 'Any duration',
         intervals: 'Tiered Pricing',
         unitPerMillion: '/ 1M tokens',
-        unitPerRequest: '/ request'
+        unitPerRequest: '/ request',
+        unitPerSecond: '/ second',
+        unitSeconds: 'seconds'
       }
     },
 
@@ -70,6 +76,10 @@ export default {
         maxPositive: 'Interval #{index}: maximum token count ({value}) must be greater than 0',
         maxGreaterThanMin: 'Interval #{index}: maximum token count ({max}) must be greater than minimum token count ({min})',
         negativePrice: 'Interval #{index}: {field} cannot be negative',
+        nonFinitePrice: 'Interval #{index}: {field} must be a finite number',
+        videoTierLabelRequired: 'Video tier #{index}: resolution is required',
+        tierLabelUnique: 'Video tier resolutions must be unique',
+        videoTierPriceRequired: 'Video tier #{index}: price per second is required',
         unboundedLast: 'Interval #{index}: an unbounded interval (empty maximum token count) must be last',
         overlap: 'Intervals #{previousIndex} and #{currentIndex} overlap: previous upper bound ({previousMax}) is greater than current lower bound ({currentMin})',
         price: {
@@ -77,8 +87,19 @@ export default {
           outputPrice: 'output price',
           cacheWritePrice: 'cache write price',
           cacheReadPrice: 'cache read price',
-          perRequestPrice: 'per-request price'
+          perRequestPrice: 'per-request price',
+          videoPricePerSecond: 'video price per second'
         }
+      },
+      pricingValidation: {
+        invalidPrice: '{field} must be a finite non-negative number'
+      },
+      videoValidation: {
+        defaultSeconds: 'Default video duration must be a whole number from 1 to 3600 seconds',
+        allowedSecondsBounds: 'Allowed video durations must be whole numbers from 1 to 3600 seconds',
+        allowedSecondsUnique: 'Allowed video durations must not contain duplicates',
+        defaultNotAllowed: 'Default video duration must be included in allowed video durations',
+        missingPrice: 'Set a default video price or at least one resolution tier price'
       },
       deleteConfirm: 'Are you sure you want to delete channel "{name}"? This cannot be undone.',
       columns: {
@@ -106,6 +127,8 @@ export default {
         noGroupsAvailable: 'No groups available',
         inOtherChannel: 'In "{name}"',
         modelPricing: 'Model Pricing',
+        pricingDescription: 'Pricing Description',
+        pricingDescriptionPlaceholder: 'Optional notes shown with this model pricing',
         models: 'Models',
         modelsPlaceholder: 'Type full model name and press Enter',
         modelInputHint: 'Press Enter to add, supports paste for batch import.',
@@ -155,6 +178,11 @@ export default {
         defaultPerRequestPrice: 'Default per-request price (fallback when no tier matches)',
         defaultImagePrice: 'Default image price (fallback when no tier matches)',
         defaultVideoPrice: 'Default video price per second (fallback when no tier matches)',
+        videoPricePerSecond: 'Price per Second',
+        videoDefaultSeconds: 'Default Duration (seconds)',
+        videoAllowedSeconds: 'Allowed Durations (seconds, optional)',
+        videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',
+        videoTiers: 'Video Resolution Tiers',
         platformConfig: 'Platform Configuration',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationHint: '⚠️ When enabled, all accounts in this channel\'s Anthropic groups will intercept web_search requests. Use with caution.',

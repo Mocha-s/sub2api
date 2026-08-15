@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -935,6 +936,20 @@ func (s *HTTPUpstreamSuite) TestIdleTTLDoesNotEvictActive() {
 	_, _ = svc.getOrCreateClient("", 2, 1)
 
 	require.True(s.T(), hasEntry(svc, entry1), "有活跃请求时不应回收")
+}
+
+func TestHTTPUpstreamRedirectCheckerRunsRequestValidator(t *testing.T) {
+	wantErr := errors.New("redirect host rejected")
+	ctx := service.WithHTTPRedirectValidator(context.Background(), func(target *url.URL) error {
+		require.Equal(t, "blocked.example", target.Hostname())
+		return wantErr
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://blocked.example/video.mp4", nil)
+	require.NoError(t, err)
+
+	err = (&httpUpstreamService{}).redirectChecker(req, nil)
+
+	require.ErrorIs(t, err, wantErr)
 }
 
 // TestHTTPUpstreamSuite 运行测试套件

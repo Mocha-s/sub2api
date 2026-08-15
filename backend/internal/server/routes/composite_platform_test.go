@@ -194,6 +194,126 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t 
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 
+func TestCompositeTargetPlatformMiddlewareUsesExplicitVideoRouteAndRewritesBody(t *testing.T) {
+	for _, path := range []string{"/v1/videos", "/v1/video/generations"} {
+		t.Run(path, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
+				routes: []service.CompositeModelRoute{
+					{
+						ID:             1,
+						GroupID:        1,
+						PublicModel:    "video-alias",
+						MatchType:      service.CompositeRouteMatchExact,
+						TargetPlatform: service.PlatformAnthropic,
+						UpstreamModel:  "claude-wrong",
+						Endpoint:       service.CompositeRouteEndpointAny,
+						Priority:       1,
+						Enabled:        true,
+					},
+					{
+						ID:             2,
+						GroupID:        1,
+						PublicModel:    "video-alias",
+						MatchType:      service.CompositeRouteMatchExact,
+						TargetPlatform: service.PlatformOpenAI,
+						UpstreamModel:  "sora-upstream",
+						Endpoint:       "video",
+						Priority:       100,
+						Enabled:        true,
+					},
+				},
+			})
+			router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+				groupID := int64(1)
+				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+					GroupID: &groupID,
+					Group:   &service.Group{ID: groupID, Platform: service.PlatformComposite},
+				})
+				c.Next()
+			})))
+			router.Use(compositeTargetPlatformMiddleware(resolver))
+			router.POST(path, func(c *gin.Context) {
+				platform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+				require.True(t, ok)
+				require.Equal(t, service.PlatformOpenAI, platform)
+
+				upstreamModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context())
+				require.True(t, ok)
+				require.Equal(t, "sora-upstream", upstreamModel)
+
+				body, err := io.ReadAll(c.Request.Body)
+				require.NoError(t, err)
+				require.JSONEq(t, `{"model":"sora-upstream","prompt":"waves"}`, string(body))
+				c.Status(http.StatusNoContent)
+			})
+
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"video-alias","prompt":"waves"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusNoContent, w.Code)
+		})
+	}
+}
+
+func TestCompositeRouteEndpointForPathMapsDurableVideoPaths(t *testing.T) {
+	for _, path := range []string{
+		"/v1/videos",
+		"/videos",
+		"/v1/videos/estimate",
+		"/videos/estimate",
+		"/v1/videos/references",
+		"/videos/references",
+		"/v1/videos/material-assets",
+		"/videos/material-assets",
+		"/v1/videos/task_123/refresh",
+		"/videos/task_123/refresh",
+		"/v1/videos/task_123/cancel",
+		"/videos/task_123/cancel",
+		"/v1/videos/task_123",
+		"/videos/task_123",
+		"/v1/videos/task_123/content",
+		"/videos/task_123/content",
+		"/v1/videos/generations/task_123",
+		"/videos/generations/task_123",
+		"/v1/videos/generations/task_123/content",
+		"/videos/generations/task_123/content",
+		"/v1/video/generations",
+		"/video/generations",
+		"/v1/video/generations/estimate",
+		"/video/generations/estimate",
+		"/v1/video/generations/references",
+		"/video/generations/references",
+		"/v1/video/generations/material-assets",
+		"/video/generations/material-assets",
+		"/v1/video/generations/task_123/refresh",
+		"/video/generations/task_123/refresh",
+		"/v1/video/generations/task_123/cancel",
+		"/video/generations/task_123/cancel",
+		"/v1/video/generations/task_123",
+		"/video/generations/task_123",
+		"/v1/video/generations/task_123/content",
+		"/video/generations/task_123/content",
+	} {
+		require.Equal(t, "video", compositeRouteEndpointForPath(path), "path=%s", path)
+	}
+
+	for _, path := range []string{
+		"/v1/videos/generations",
+		"/videos/generations",
+		"/v1/videos/edits",
+		"/videos/edits",
+		"/v1/videos/extensions",
+		"/videos/extensions",
+	} {
+		require.Equal(t, service.CompositeRouteEndpointAny, compositeRouteEndpointForPath(path), "path=%s", path)
+	}
+}
+
 func TestCompositeGeminiTargetPlatformMiddlewareUsesPathRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

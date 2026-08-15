@@ -31,14 +31,14 @@ type createChannelRequest struct {
 	Name                       string                           `json:"name" binding:"required,max=100"`
 	Description                string                           `json:"description"`
 	GroupIDs                   []int64                          `json:"group_ids"`
-	ModelPricing               []channelModelPricingRequest     `json:"model_pricing"`
+	ModelPricing               []channelModelPricingRequest     `json:"model_pricing" binding:"dive"`
 	ModelMapping               map[string]map[string]string     `json:"model_mapping"`
 	BillingModelSource         string                           `json:"billing_model_source" binding:"omitempty,oneof=requested upstream channel_mapped response_model"`
 	RestrictModels             bool                             `json:"restrict_models"`
 	Features                   string                           `json:"features"`
 	FeaturesConfig             map[string]any                   `json:"features_config"`
 	ApplyPricingToAccountStats bool                             `json:"apply_pricing_to_account_stats"`
-	AccountStatsPricingRules   []accountStatsPricingRuleRequest `json:"account_stats_pricing_rules"`
+	AccountStatsPricingRules   []accountStatsPricingRuleRequest `json:"account_stats_pricing_rules" binding:"dive"`
 }
 
 type updateChannelRequest struct {
@@ -46,47 +46,69 @@ type updateChannelRequest struct {
 	Description                *string                           `json:"description"`
 	Status                     string                            `json:"status" binding:"omitempty,oneof=active disabled"`
 	GroupIDs                   *[]int64                          `json:"group_ids"`
-	ModelPricing               *[]channelModelPricingRequest     `json:"model_pricing"`
+	ModelPricing               *[]channelModelPricingRequest     `json:"model_pricing" binding:"omitempty,dive"`
 	ModelMapping               map[string]map[string]string      `json:"model_mapping"`
 	BillingModelSource         string                            `json:"billing_model_source" binding:"omitempty,oneof=requested upstream channel_mapped response_model"`
 	RestrictModels             *bool                             `json:"restrict_models"`
 	Features                   *string                           `json:"features"`
 	FeaturesConfig             map[string]any                    `json:"features_config"`
 	ApplyPricingToAccountStats *bool                             `json:"apply_pricing_to_account_stats"`
-	AccountStatsPricingRules   *[]accountStatsPricingRuleRequest `json:"account_stats_pricing_rules"`
+	AccountStatsPricingRules   *[]accountStatsPricingRuleRequest `json:"account_stats_pricing_rules" binding:"omitempty,dive"`
 }
 
 type channelModelPricingRequest struct {
-	Platform         string                   `json:"platform" binding:"omitempty,max=50"`
-	Models           []string                 `json:"models" binding:"required,min=1,max=100"`
-	BillingMode      string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
-	InputPrice       *float64                 `json:"input_price" binding:"omitempty,min=0"`
-	OutputPrice      *float64                 `json:"output_price" binding:"omitempty,min=0"`
-	CacheWritePrice  *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
-	CacheReadPrice   *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
-	ImageInputPrice  *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
-	ImageOutputPrice *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
-	PerRequestPrice  *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
-	Intervals        []pricingIntervalRequest `json:"intervals"`
+	Platform            string                   `json:"platform" binding:"omitempty,max=50"`
+	Models              []string                 `json:"models" binding:"required,min=1,max=100"`
+	Description         string                   `json:"description" binding:"max=500"`
+	BillingMode         string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
+	InputPrice          *float64                 `json:"input_price" binding:"omitempty,min=0"`
+	OutputPrice         *float64                 `json:"output_price" binding:"omitempty,min=0"`
+	CacheWritePrice     *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
+	CacheReadPrice      *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
+	ImageInputPrice     *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
+	ImageOutputPrice    *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
+	PerRequestPrice     *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
+	VideoPricePerSecond *float64                 `json:"video_price_per_second" binding:"omitempty,min=0"`
+	VideoDefaultSeconds *int                     `json:"video_default_seconds" binding:"omitempty,min=1,max=3600"`
+	VideoAllowedSeconds []int                    `json:"video_allowed_seconds" binding:"omitempty,dive,min=1,max=3600"`
+	Intervals           []pricingIntervalRequest `json:"intervals"`
+}
+
+type accountStatsModelPricingRequest struct {
+	Platform            string                   `json:"platform" binding:"omitempty,max=50"`
+	Models              []string                 `json:"models" binding:"required,min=1,max=100"`
+	BillingMode         string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
+	InputPrice          *float64                 `json:"input_price" binding:"omitempty,min=0"`
+	OutputPrice         *float64                 `json:"output_price" binding:"omitempty,min=0"`
+	CacheWritePrice     *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
+	CacheReadPrice      *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
+	ImageInputPrice     *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
+	ImageOutputPrice    *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
+	PerRequestPrice     *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
+	VideoPricePerSecond *float64                 `json:"video_price_per_second" binding:"omitempty,min=0"`
+	VideoDefaultSeconds *int                     `json:"video_default_seconds" binding:"omitempty,min=1,max=3600"`
+	VideoAllowedSeconds []int                    `json:"video_allowed_seconds" binding:"omitempty,dive,min=1,max=3600"`
+	Intervals           []pricingIntervalRequest `json:"intervals"`
 }
 
 type pricingIntervalRequest struct {
-	MinTokens       int      `json:"min_tokens"`
-	MaxTokens       *int     `json:"max_tokens"`
-	TierLabel       string   `json:"tier_label"`
-	InputPrice      *float64 `json:"input_price"`
-	OutputPrice     *float64 `json:"output_price"`
-	CacheWritePrice *float64 `json:"cache_write_price"`
-	CacheReadPrice  *float64 `json:"cache_read_price"`
-	PerRequestPrice *float64 `json:"per_request_price"`
-	SortOrder       int      `json:"sort_order"`
+	MinTokens           int      `json:"min_tokens"`
+	MaxTokens           *int     `json:"max_tokens"`
+	TierLabel           string   `json:"tier_label"`
+	InputPrice          *float64 `json:"input_price"`
+	OutputPrice         *float64 `json:"output_price"`
+	CacheWritePrice     *float64 `json:"cache_write_price"`
+	CacheReadPrice      *float64 `json:"cache_read_price"`
+	PerRequestPrice     *float64 `json:"per_request_price"`
+	VideoPricePerSecond *float64 `json:"video_price_per_second"`
+	SortOrder           int      `json:"sort_order"`
 }
 
 type accountStatsPricingRuleRequest struct {
-	Name       string                       `json:"name"`
-	GroupIDs   []int64                      `json:"group_ids"`
-	AccountIDs []int64                      `json:"account_ids"`
-	Pricing    []channelModelPricingRequest `json:"pricing"`
+	Name       string                            `json:"name"`
+	GroupIDs   []int64                           `json:"group_ids"`
+	AccountIDs []int64                           `json:"account_ids"`
+	Pricing    []accountStatsModelPricingRequest `json:"pricing" binding:"dive"`
 }
 
 type channelResponse struct {
@@ -108,31 +130,36 @@ type channelResponse struct {
 }
 
 type channelModelPricingResponse struct {
-	ID               int64                     `json:"id"`
-	Platform         string                    `json:"platform"`
-	Models           []string                  `json:"models"`
-	BillingMode      string                    `json:"billing_mode"`
-	InputPrice       *float64                  `json:"input_price"`
-	OutputPrice      *float64                  `json:"output_price"`
-	CacheWritePrice  *float64                  `json:"cache_write_price"`
-	CacheReadPrice   *float64                  `json:"cache_read_price"`
-	ImageInputPrice  *float64                  `json:"image_input_price"`
-	ImageOutputPrice *float64                  `json:"image_output_price"`
-	PerRequestPrice  *float64                  `json:"per_request_price"`
-	Intervals        []pricingIntervalResponse `json:"intervals"`
+	ID                  int64                     `json:"id"`
+	Platform            string                    `json:"platform"`
+	Models              []string                  `json:"models"`
+	Description         *string                   `json:"description,omitempty"`
+	BillingMode         string                    `json:"billing_mode"`
+	InputPrice          *float64                  `json:"input_price"`
+	OutputPrice         *float64                  `json:"output_price"`
+	CacheWritePrice     *float64                  `json:"cache_write_price"`
+	CacheReadPrice      *float64                  `json:"cache_read_price"`
+	ImageInputPrice     *float64                  `json:"image_input_price"`
+	ImageOutputPrice    *float64                  `json:"image_output_price"`
+	PerRequestPrice     *float64                  `json:"per_request_price"`
+	VideoPricePerSecond *float64                  `json:"video_price_per_second"`
+	VideoDefaultSeconds *int                      `json:"video_default_seconds"`
+	VideoAllowedSeconds []int                     `json:"video_allowed_seconds"`
+	Intervals           []pricingIntervalResponse `json:"intervals"`
 }
 
 type pricingIntervalResponse struct {
-	ID              int64    `json:"id"`
-	MinTokens       int      `json:"min_tokens"`
-	MaxTokens       *int     `json:"max_tokens"`
-	TierLabel       string   `json:"tier_label,omitempty"`
-	InputPrice      *float64 `json:"input_price"`
-	OutputPrice     *float64 `json:"output_price"`
-	CacheWritePrice *float64 `json:"cache_write_price"`
-	CacheReadPrice  *float64 `json:"cache_read_price"`
-	PerRequestPrice *float64 `json:"per_request_price"`
-	SortOrder       int      `json:"sort_order"`
+	ID                  int64    `json:"id"`
+	MinTokens           int      `json:"min_tokens"`
+	MaxTokens           *int     `json:"max_tokens"`
+	TierLabel           string   `json:"tier_label,omitempty"`
+	InputPrice          *float64 `json:"input_price"`
+	OutputPrice         *float64 `json:"output_price"`
+	CacheWritePrice     *float64 `json:"cache_write_price"`
+	CacheReadPrice      *float64 `json:"cache_read_price"`
+	PerRequestPrice     *float64 `json:"per_request_price"`
+	VideoPricePerSecond *float64 `json:"video_price_per_second"`
+	SortOrder           int      `json:"sort_order"`
 }
 
 type accountStatsPricingRuleResponse struct {
@@ -142,6 +169,13 @@ type accountStatsPricingRuleResponse struct {
 	AccountIDs []int64                       `json:"account_ids"`
 	Pricing    []channelModelPricingResponse `json:"pricing"`
 }
+
+type pricingScope uint8
+
+const (
+	pricingScopePrimary pricingScope = iota
+	pricingScopeAccountStats
+)
 
 func channelToResponse(ch *service.Channel) *channelResponse {
 	if ch == nil {
@@ -170,7 +204,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 
 	resp.ModelPricing = make([]channelModelPricingResponse, 0, len(ch.ModelPricing))
 	for _, p := range ch.ModelPricing {
-		resp.ModelPricing = append(resp.ModelPricing, pricingToResponse(&p))
+		resp.ModelPricing = append(resp.ModelPricing, pricingToResponse(&p, pricingScopePrimary))
 	}
 
 	resp.ApplyPricingToAccountStats = ch.ApplyPricingToAccountStats
@@ -190,7 +224,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 			ruleResp.AccountIDs = []int64{}
 		}
 		for i := range rule.Pricing {
-			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i]))
+			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i], pricingScopeAccountStats))
 		}
 		resp.AccountStatsPricingRules = append(resp.AccountStatsPricingRules, ruleResp)
 	}
@@ -198,7 +232,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 	return resp
 }
 
-func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingResponse {
+func pricingToResponse(p *service.ChannelModelPricing, scope pricingScope) channelModelPricingResponse {
 	models := p.Models
 	if models == nil {
 		models = []string{}
@@ -215,38 +249,48 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 	for _, iv := range p.Intervals {
 		intervals = append(intervals, intervalToResponse(iv))
 	}
+	var description *string
+	if scope == pricingScopePrimary {
+		desc := p.Description
+		description = &desc
+	}
 	return channelModelPricingResponse{
-		ID:               p.ID,
-		Platform:         platform,
-		Models:           models,
-		BillingMode:      billingMode,
-		InputPrice:       p.InputPrice,
-		OutputPrice:      p.OutputPrice,
-		CacheWritePrice:  p.CacheWritePrice,
-		CacheReadPrice:   p.CacheReadPrice,
-		ImageInputPrice:  p.ImageInputPrice,
-		ImageOutputPrice: p.ImageOutputPrice,
-		PerRequestPrice:  p.PerRequestPrice,
-		Intervals:        intervals,
+		ID:                  p.ID,
+		Platform:            platform,
+		Models:              models,
+		Description:         description,
+		BillingMode:         billingMode,
+		InputPrice:          p.InputPrice,
+		OutputPrice:         p.OutputPrice,
+		CacheWritePrice:     p.CacheWritePrice,
+		CacheReadPrice:      p.CacheReadPrice,
+		ImageInputPrice:     p.ImageInputPrice,
+		ImageOutputPrice:    p.ImageOutputPrice,
+		PerRequestPrice:     p.PerRequestPrice,
+		VideoPricePerSecond: p.VideoPricePerSecond,
+		VideoDefaultSeconds: p.VideoDefaultSeconds,
+		VideoAllowedSeconds: p.VideoAllowedSeconds,
+		Intervals:           intervals,
 	}
 }
 
 func intervalToResponse(iv service.PricingInterval) pricingIntervalResponse {
 	return pricingIntervalResponse{
-		ID:              iv.ID,
-		MinTokens:       iv.MinTokens,
-		MaxTokens:       iv.MaxTokens,
-		TierLabel:       iv.TierLabel,
-		InputPrice:      iv.InputPrice,
-		OutputPrice:     iv.OutputPrice,
-		CacheWritePrice: iv.CacheWritePrice,
-		CacheReadPrice:  iv.CacheReadPrice,
-		PerRequestPrice: iv.PerRequestPrice,
-		SortOrder:       iv.SortOrder,
+		ID:                  iv.ID,
+		MinTokens:           iv.MinTokens,
+		MaxTokens:           iv.MaxTokens,
+		TierLabel:           iv.TierLabel,
+		InputPrice:          iv.InputPrice,
+		OutputPrice:         iv.OutputPrice,
+		CacheWritePrice:     iv.CacheWritePrice,
+		CacheReadPrice:      iv.CacheReadPrice,
+		PerRequestPrice:     iv.PerRequestPrice,
+		VideoPricePerSecond: iv.VideoPricePerSecond,
+		SortOrder:           iv.SortOrder,
 	}
 }
 
-func pricingRequestToService(reqs []channelModelPricingRequest) []service.ChannelModelPricing {
+func pricingRequestToService(reqs []channelModelPricingRequest, scope pricingScope) []service.ChannelModelPricing {
 	result := make([]service.ChannelModelPricing, 0, len(reqs))
 	for _, r := range reqs {
 		billingMode := service.BillingMode(r.BillingMode)
@@ -256,30 +300,90 @@ func pricingRequestToService(reqs []channelModelPricingRequest) []service.Channe
 		platform := r.Platform
 		intervals := make([]service.PricingInterval, 0, len(r.Intervals))
 		for _, iv := range r.Intervals {
+			tierLabel := iv.TierLabel
+			if billingMode == service.BillingModeVideo {
+				tierLabel = service.NormalizeVideoResolutionTier(tierLabel)
+			}
 			intervals = append(intervals, service.PricingInterval{
-				MinTokens:       iv.MinTokens,
-				MaxTokens:       iv.MaxTokens,
-				TierLabel:       iv.TierLabel,
-				InputPrice:      iv.InputPrice,
-				OutputPrice:     iv.OutputPrice,
-				CacheWritePrice: iv.CacheWritePrice,
-				CacheReadPrice:  iv.CacheReadPrice,
-				PerRequestPrice: iv.PerRequestPrice,
-				SortOrder:       iv.SortOrder,
+				MinTokens:           iv.MinTokens,
+				MaxTokens:           iv.MaxTokens,
+				TierLabel:           tierLabel,
+				InputPrice:          iv.InputPrice,
+				OutputPrice:         iv.OutputPrice,
+				CacheWritePrice:     iv.CacheWritePrice,
+				CacheReadPrice:      iv.CacheReadPrice,
+				PerRequestPrice:     iv.PerRequestPrice,
+				VideoPricePerSecond: iv.VideoPricePerSecond,
+				SortOrder:           iv.SortOrder,
+			})
+		}
+		description := ""
+		if scope == pricingScopePrimary {
+			description = strings.TrimSpace(r.Description)
+		}
+		result = append(result, service.ChannelModelPricing{
+			Platform:            platform,
+			Models:              r.Models,
+			Description:         description,
+			BillingMode:         billingMode,
+			InputPrice:          r.InputPrice,
+			OutputPrice:         r.OutputPrice,
+			CacheWritePrice:     r.CacheWritePrice,
+			CacheReadPrice:      r.CacheReadPrice,
+			ImageInputPrice:     r.ImageInputPrice,
+			ImageOutputPrice:    r.ImageOutputPrice,
+			PerRequestPrice:     r.PerRequestPrice,
+			VideoPricePerSecond: r.VideoPricePerSecond,
+			VideoDefaultSeconds: r.VideoDefaultSeconds,
+			VideoAllowedSeconds: r.VideoAllowedSeconds,
+			Intervals:           intervals,
+		})
+	}
+	return result
+}
+
+func accountStatsPricingRequestToService(reqs []accountStatsModelPricingRequest) []service.ChannelModelPricing {
+	result := make([]service.ChannelModelPricing, 0, len(reqs))
+	for _, r := range reqs {
+		billingMode := service.BillingMode(r.BillingMode)
+		if billingMode == "" {
+			billingMode = service.BillingModeToken
+		}
+		platform := r.Platform
+		intervals := make([]service.PricingInterval, 0, len(r.Intervals))
+		for _, iv := range r.Intervals {
+			tierLabel := iv.TierLabel
+			if billingMode == service.BillingModeVideo {
+				tierLabel = service.NormalizeVideoResolutionTier(tierLabel)
+			}
+			intervals = append(intervals, service.PricingInterval{
+				MinTokens:           iv.MinTokens,
+				MaxTokens:           iv.MaxTokens,
+				TierLabel:           tierLabel,
+				InputPrice:          iv.InputPrice,
+				OutputPrice:         iv.OutputPrice,
+				CacheWritePrice:     iv.CacheWritePrice,
+				CacheReadPrice:      iv.CacheReadPrice,
+				PerRequestPrice:     iv.PerRequestPrice,
+				VideoPricePerSecond: iv.VideoPricePerSecond,
+				SortOrder:           iv.SortOrder,
 			})
 		}
 		result = append(result, service.ChannelModelPricing{
-			Platform:         platform,
-			Models:           r.Models,
-			BillingMode:      billingMode,
-			InputPrice:       r.InputPrice,
-			OutputPrice:      r.OutputPrice,
-			CacheWritePrice:  r.CacheWritePrice,
-			CacheReadPrice:   r.CacheReadPrice,
-			ImageInputPrice:  r.ImageInputPrice,
-			ImageOutputPrice: r.ImageOutputPrice,
-			PerRequestPrice:  r.PerRequestPrice,
-			Intervals:        intervals,
+			Platform:            platform,
+			Models:              r.Models,
+			BillingMode:         billingMode,
+			InputPrice:          r.InputPrice,
+			OutputPrice:         r.OutputPrice,
+			CacheWritePrice:     r.CacheWritePrice,
+			CacheReadPrice:      r.CacheReadPrice,
+			ImageInputPrice:     r.ImageInputPrice,
+			ImageOutputPrice:    r.ImageOutputPrice,
+			PerRequestPrice:     r.PerRequestPrice,
+			VideoPricePerSecond: r.VideoPricePerSecond,
+			VideoDefaultSeconds: r.VideoDefaultSeconds,
+			VideoAllowedSeconds: r.VideoAllowedSeconds,
+			Intervals:           intervals,
 		})
 	}
 	return result
@@ -290,7 +394,7 @@ func accountStatsPricingRuleRequestToService(r accountStatsPricingRuleRequest) s
 		Name:       r.Name,
 		GroupIDs:   r.GroupIDs,
 		AccountIDs: r.AccountIDs,
-		Pricing:    pricingRequestToService(r.Pricing),
+		Pricing:    accountStatsPricingRequestToService(r.Pricing),
 	}
 }
 
@@ -351,7 +455,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		return
 	}
 
-	pricing := pricingRequestToService(req.ModelPricing)
+	pricing := pricingRequestToService(req.ModelPricing, pricingScopePrimary)
 	// Main model_pricing requires a platform; default to anthropic for backward compatibility.
 	for i := range pricing {
 		if pricing[i].Platform == "" {
@@ -425,7 +529,7 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		ApplyPricingToAccountStats: req.ApplyPricingToAccountStats,
 	}
 	if req.ModelPricing != nil {
-		pricing := pricingRequestToService(*req.ModelPricing)
+		pricing := pricingRequestToService(*req.ModelPricing, pricingScopePrimary)
 		for i := range pricing {
 			if pricing[i].Platform == "" {
 				pricing[i].Platform = service.PlatformAnthropic

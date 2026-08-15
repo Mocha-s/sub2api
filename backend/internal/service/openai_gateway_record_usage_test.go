@@ -438,6 +438,57 @@ func TestOpenAIGatewayServiceRecordUsage_UsesUserSpecificGroupRate(t *testing.T)
 	require.Equal(t, 1, userRepo.deductCalls)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_ManagedAccountRateAppliesMarkup(t *testing.T) {
+	groupID := int64(13)
+	groupRate := 0.1223
+	accountRate := 0.02
+	markup := 1.5
+	finalRate := accountRate * markup
+	usage := OpenAIUsage{InputTokens: 1200, OutputTokens: 300}
+
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_managed_account_rate",
+			Usage:     usage,
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      1003,
+			GroupID: i64p(groupID),
+			Group: &Group{
+				ID:             groupID,
+				RateMultiplier: groupRate,
+			},
+		},
+		User: &User{ID: 2003},
+		Account: &Account{
+			ID:             3003,
+			RateMultiplier: &accountRate,
+			Credentials: map[string]any{
+				"pricing_managed_by":    "api-pricing-sync",
+				"pricing_markup_factor": markup,
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, finalRate, usageRepo.lastLog.RateMultiplier)
+	require.NotNil(t, usageRepo.lastLog.AccountRateMultiplier)
+	require.Equal(t, accountRate, *usageRepo.lastLog.AccountRateMultiplier)
+
+	expected := expectedOpenAICost(t, svc, "gpt-5.1", usage, finalRate)
+	require.InDelta(t, expected.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expected.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputTokens(t *testing.T) {
 	groupID := int64(14)
 	groupRate := 1.0
@@ -2153,6 +2204,44 @@ func TestGrokVideoBillingUsesSeparateVideoRateMultiplier(t *testing.T) {
 	require.Equal(t, VideoBillingResolution480P, *usageRepo.lastLog.VideoResolution)
 	require.NotNil(t, usageRepo.lastLog.VideoDurationSeconds)
 	require.Equal(t, 1, *usageRepo.lastLog.VideoDurationSeconds)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_SeedanceQuoteUsesExactCostAndUnclampedMetadata(t *testing.T) {
+	groupID := int64(12601)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	quote := VideoTaskQuote{
+		BillingMode: BillingModeVideo, BillingModel: "seedance-2.0-fast-720p",
+		Effective:    VideoTaskEffectiveParams{Seconds: 60, Resolution: "720p", VideoCount: 1},
+		UnitPriceUSD: 0.08, GrossCostUSD: 4.8, ActualCostUSD: 2.4,
+		AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 4.8, AccountCostUSD: 6.0,
+		RateMultiplier: 0.5, AccountRateMultiplier: 1.25,
+	}
+	result := &OpenAIForwardResult{
+		RequestID: "seedance-quoted-60", Model: "seedance-2.0-fast-720p", BillingModel: quote.BillingModel,
+		VideoCount: 1, VideoResolution: "720p", VideoDurationSeconds: 60, videoTaskQuote: &quote,
+	}
+
+	liveAccountRate := 7.0
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: result,
+		APIKey: &APIKey{ID: 1012601, GroupID: i64p(groupID), Group: &Group{ID: groupID, Platform: PlatformOpenAI, RateMultiplier: 9}},
+		User:   &User{ID: 2012601}, Account: &Account{ID: 3012601, Platform: PlatformOpenAI, RateMultiplier: &liveAccountRate},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 4.8, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 2.4, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 1, usageRepo.lastLog.VideoCount)
+	require.Equal(t, "720p", *usageRepo.lastLog.VideoResolution)
+	require.Equal(t, 60, *usageRepo.lastLog.VideoDurationSeconds)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 0.5, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.AccountRateMultiplier)
+	require.InDelta(t, 1.25, *usageRepo.lastLog.AccountRateMultiplier, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.AccountStatsCost)
+	require.InDelta(t, 6.0, *usageRepo.lastLog.AccountStatsCost, 1e-12)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_GrokVideoUsesDefaultRateCard(t *testing.T) {

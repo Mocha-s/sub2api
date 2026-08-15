@@ -161,6 +161,20 @@ func (_c *UserPlatformQuotaCreate) SetNillableMonthlyUsageUsd(v *float64) *UserP
 	return _c
 }
 
+// SetRevision sets the "revision" field.
+func (_c *UserPlatformQuotaCreate) SetRevision(v int64) *UserPlatformQuotaCreate {
+	_c.mutation.SetRevision(v)
+	return _c
+}
+
+// SetNillableRevision sets the "revision" field if the given value is not nil.
+func (_c *UserPlatformQuotaCreate) SetNillableRevision(v *int64) *UserPlatformQuotaCreate {
+	if v != nil {
+		_c.SetRevision(*v)
+	}
+	return _c
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (_c *UserPlatformQuotaCreate) SetDailyWindowStart(v time.Time) *UserPlatformQuotaCreate {
 	_c.mutation.SetDailyWindowStart(v)
@@ -271,6 +285,10 @@ func (_c *UserPlatformQuotaCreate) defaults() error {
 		v := userplatformquota.DefaultMonthlyUsageUsd
 		_c.mutation.SetMonthlyUsageUsd(v)
 	}
+	if _, ok := _c.mutation.Revision(); !ok {
+		v := userplatformquota.DefaultRevision
+		_c.mutation.SetRevision(v)
+	}
 	return nil
 }
 
@@ -301,6 +319,14 @@ func (_c *UserPlatformQuotaCreate) check() error {
 	}
 	if _, ok := _c.mutation.MonthlyUsageUsd(); !ok {
 		return &ValidationError{Name: "monthly_usage_usd", err: errors.New(`ent: missing required field "UserPlatformQuota.monthly_usage_usd"`)}
+	}
+	if _, ok := _c.mutation.Revision(); !ok {
+		return &ValidationError{Name: "revision", err: errors.New(`ent: missing required field "UserPlatformQuota.revision"`)}
+	}
+	if v, ok := _c.mutation.Revision(); ok {
+		if err := userplatformquota.RevisionValidator(v); err != nil {
+			return &ValidationError{Name: "revision", err: fmt.Errorf(`ent: validator failed for field "UserPlatformQuota.revision": %w`, err)}
+		}
 	}
 	if len(_c.mutation.UserIDs()) == 0 {
 		return &ValidationError{Name: "user", err: errors.New(`ent: missing required edge "UserPlatformQuota.user"`)}
@@ -371,6 +397,10 @@ func (_c *UserPlatformQuotaCreate) createSpec() (*UserPlatformQuota, *sqlgraph.C
 	if value, ok := _c.mutation.MonthlyUsageUsd(); ok {
 		_spec.SetField(userplatformquota.FieldMonthlyUsageUsd, field.TypeFloat64, value)
 		_node.MonthlyUsageUsd = value
+	}
+	if value, ok := _c.mutation.Revision(); ok {
+		_spec.SetField(userplatformquota.FieldRevision, field.TypeInt64, value)
+		_node.Revision = value
 	}
 	if value, ok := _c.mutation.DailyWindowStart(); ok {
 		_spec.SetField(userplatformquota.FieldDailyWindowStart, field.TypeTime, value)
@@ -630,6 +660,24 @@ func (u *UserPlatformQuotaUpsert) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpse
 // AddMonthlyUsageUsd adds v to the "monthly_usage_usd" field.
 func (u *UserPlatformQuotaUpsert) AddMonthlyUsageUsd(v float64) *UserPlatformQuotaUpsert {
 	u.Add(userplatformquota.FieldMonthlyUsageUsd, v)
+	return u
+}
+
+// SetRevision sets the "revision" field.
+func (u *UserPlatformQuotaUpsert) SetRevision(v int64) *UserPlatformQuotaUpsert {
+	u.Set(userplatformquota.FieldRevision, v)
+	return u
+}
+
+// UpdateRevision sets the "revision" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsert) UpdateRevision() *UserPlatformQuotaUpsert {
+	u.SetExcluded(userplatformquota.FieldRevision)
+	return u
+}
+
+// AddRevision adds v to the "revision" field.
+func (u *UserPlatformQuotaUpsert) AddRevision(v int64) *UserPlatformQuotaUpsert {
+	u.Add(userplatformquota.FieldRevision, v)
 	return u
 }
 
@@ -939,6 +987,27 @@ func (u *UserPlatformQuotaUpsertOne) AddMonthlyUsageUsd(v float64) *UserPlatform
 func (u *UserPlatformQuotaUpsertOne) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpsertOne {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateMonthlyUsageUsd()
+	})
+}
+
+// SetRevision sets the "revision" field.
+func (u *UserPlatformQuotaUpsertOne) SetRevision(v int64) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetRevision(v)
+	})
+}
+
+// AddRevision adds v to the "revision" field.
+func (u *UserPlatformQuotaUpsertOne) AddRevision(v int64) *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.AddRevision(v)
+	})
+}
+
+// UpdateRevision sets the "revision" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertOne) UpdateRevision() *UserPlatformQuotaUpsertOne {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateRevision()
 	})
 }
 
@@ -1423,6 +1492,27 @@ func (u *UserPlatformQuotaUpsertBulk) AddMonthlyUsageUsd(v float64) *UserPlatfor
 func (u *UserPlatformQuotaUpsertBulk) UpdateMonthlyUsageUsd() *UserPlatformQuotaUpsertBulk {
 	return u.Update(func(s *UserPlatformQuotaUpsert) {
 		s.UpdateMonthlyUsageUsd()
+	})
+}
+
+// SetRevision sets the "revision" field.
+func (u *UserPlatformQuotaUpsertBulk) SetRevision(v int64) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.SetRevision(v)
+	})
+}
+
+// AddRevision adds v to the "revision" field.
+func (u *UserPlatformQuotaUpsertBulk) AddRevision(v int64) *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.AddRevision(v)
+	})
+}
+
+// UpdateRevision sets the "revision" field to the value that was provided on create.
+func (u *UserPlatformQuotaUpsertBulk) UpdateRevision() *UserPlatformQuotaUpsertBulk {
+	return u.Update(func(s *UserPlatformQuotaUpsert) {
+		s.UpdateRevision()
 	})
 }
 

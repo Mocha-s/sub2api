@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"net/url"
 	"reflect"
 	"sort"
@@ -116,6 +117,9 @@ const (
 	OpenAIAuthModePersonalAccessToken = "personalAccessToken"
 	openAIAuthModeCredentialKey       = "auth_mode"
 	openAIAuthModeLegacyCredentialKey = "openai_auth_mode"
+	pricingManagedByCredentialKey     = "pricing_managed_by"
+	pricingMarkupFactorCredentialKey  = "pricing_markup_factor"
+	pricingManagedByAPIPricingSync    = "api-pricing-sync"
 )
 
 func isOpenAIPersonalAccessTokenAuthMode(value string) bool {
@@ -162,6 +166,31 @@ func (a *Account) BillingRateMultiplier() float64 {
 		return 1.0
 	}
 	return *a.RateMultiplier
+}
+
+func (a *Account) UsesManagedBillingRate() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(a.GetCredential(pricingManagedByCredentialKey)), pricingManagedByAPIPricingSync)
+}
+
+func (a *Account) ManagedPricingMarkupFactor() float64 {
+	if a == nil || a.Credentials == nil {
+		return 1.0
+	}
+	factor := parseExtraFloat64(a.Credentials[pricingMarkupFactorCredentialKey])
+	if factor < 1.0 || math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return 1.0
+	}
+	return factor
+}
+
+func effectiveRequestRateMultiplier(account *Account, fallback float64) float64 {
+	if account != nil && account.UsesManagedBillingRate() {
+		return account.BillingRateMultiplier() * account.ManagedPricingMarkupFactor()
+	}
+	return fallback
 }
 
 func (a *Account) EffectiveLoadFactor() int {

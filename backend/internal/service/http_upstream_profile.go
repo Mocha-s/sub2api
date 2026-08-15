@@ -1,6 +1,9 @@
 package service
 
-import "context"
+import (
+	"context"
+	"net/url"
+)
 
 // HTTPUpstreamProfile marks HTTP upstream requests that need provider-specific
 // transport policy.
@@ -12,7 +15,10 @@ const (
 )
 
 type httpUpstreamProfileContextKey struct{}
+type httpRedirectValidatorContextKey struct{}
 type httpUpstreamDisableRedirectsContextKey struct{}
+
+type HTTPRedirectValidator func(*url.URL) error
 
 // WithHTTPUpstreamProfile injects an upstream transport profile into ctx.
 func WithHTTPUpstreamProfile(ctx context.Context, profile HTTPUpstreamProfile) context.Context {
@@ -23,6 +29,27 @@ func WithHTTPUpstreamProfile(ctx context.Context, profile HTTPUpstreamProfile) c
 		return ctx
 	}
 	return context.WithValue(ctx, httpUpstreamProfileContextKey{}, profile)
+}
+
+func WithHTTPRedirectValidator(ctx context.Context, validator HTTPRedirectValidator) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if validator == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, httpRedirectValidatorContextKey{}, validator)
+}
+
+func ValidateHTTPRedirect(ctx context.Context, target *url.URL) error {
+	if ctx == nil {
+		return nil
+	}
+	validator, _ := ctx.Value(httpRedirectValidatorContextKey{}).(HTTPRedirectValidator)
+	if validator == nil {
+		return nil
+	}
+	return validator(target)
 }
 
 // HTTPUpstreamProfileFromContext resolves the upstream transport profile from ctx.

@@ -4,11 +4,15 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,6 +98,14 @@ WHERE ns.nspname = 'public'
 	require.Contains(t, mismatchIndexDef, "created_at DESC")
 	require.Contains(t, mismatchIndexDef, "id DESC")
 	require.Contains(t, mismatchIndexDef, "WHERE (upstream_model_mismatch IS TRUE)")
+	requireNumericColumn(t, tx, "usage_logs", "refunded_cost", false)
+	requireNumericColumn(t, tx, "usage_logs", "refunded_total_cost", false)
+	requireNumericColumn(t, tx, "usage_logs", "refunded_account_cost", false)
+	requireColumn(t, tx, "usage_logs", "refund_reason", "text", 0, true)
+	requireColumn(t, tx, "usage_logs", "refunded_at", "timestamp with time zone", 0, true)
+	requireColumnDefaultContains(t, tx, "usage_logs", "refunded_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_logs", "refunded_total_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_logs", "refunded_account_cost", "0")
 	requireConstraintDefinitionContains(
 		t,
 		tx,
@@ -120,6 +132,123 @@ WHERE ns.nspname = 'public'
 		"'4K'",
 		"'mixed'",
 	)
+
+	// Channel video pricing is mirrored for customer billing and account statistics.
+	requireColumn(t, tx, "channel_model_pricing", "description", "character varying", 500, false)
+	requireColumnDefaultContains(t, tx, "channel_model_pricing", "description", "''")
+	requireNumericColumn(t, tx, "channel_model_pricing", "video_price_per_second", true)
+	requireColumn(t, tx, "channel_model_pricing", "video_default_seconds", "integer", 0, true)
+	requireColumn(t, tx, "channel_model_pricing", "video_allowed_seconds", "jsonb", 0, true)
+	requireNumericColumn(t, tx, "channel_pricing_intervals", "video_price_per_second", true)
+	requireColumnCount(t, tx, "channel_account_stats_model_pricing", "description", 0)
+	requireNumericColumn(t, tx, "channel_account_stats_model_pricing", "video_price_per_second", true)
+	requireColumn(t, tx, "channel_account_stats_model_pricing", "video_default_seconds", "integer", 0, true)
+	requireColumn(t, tx, "channel_account_stats_model_pricing", "video_allowed_seconds", "jsonb", 0, true)
+	requireNumericColumn(t, tx, "channel_account_stats_pricing_intervals", "video_price_per_second", true)
+	requireStoredMigrationChecksum(t, tx, "187_add_channel_model_pricing_description.sql")
+
+	// Dashboard costs remain gross; refund totals are tracked separately.
+	requireNumericColumn(t, tx, "usage_dashboard_hourly", "refunded_total_cost", false)
+	requireNumericColumn(t, tx, "usage_dashboard_hourly", "refunded_cost", false)
+	requireNumericColumn(t, tx, "usage_dashboard_hourly", "refunded_account_cost", false)
+	requireNumericColumn(t, tx, "usage_dashboard_daily", "refunded_total_cost", false)
+	requireNumericColumn(t, tx, "usage_dashboard_daily", "refunded_cost", false)
+	requireNumericColumn(t, tx, "usage_dashboard_daily", "refunded_account_cost", false)
+	requireColumnDefaultContains(t, tx, "usage_dashboard_hourly", "refunded_total_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_dashboard_hourly", "refunded_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_dashboard_hourly", "refunded_account_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_dashboard_daily", "refunded_total_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_dashboard_daily", "refunded_cost", "0")
+	requireColumnDefaultContains(t, tx, "usage_dashboard_daily", "refunded_account_cost", "0")
+	requireColumn(t, tx, "user_platform_quotas", "revision", "bigint", 0, false)
+	requireColumnDefaultContains(t, tx, "user_platform_quotas", "revision", "0")
+	requireConstraintDefinitionContains(t, tx, "usage_logs", "usage_logs_refunds_nonnegative_check", "refunded_cost", ">=", "refunded_total_cost", "refunded_account_cost")
+	requireConstraintDefinitionContains(t, tx, "usage_logs", "usage_logs_refunds_not_over_gross_check", "refunded_cost", "actual_cost", "refunded_total_cost", "total_cost", "refunded_account_cost", "account_stats_cost")
+	requireConstraintDefinitionContains(t, tx, "usage_logs", "usage_logs_refund_metadata_check", "refunded_at", "refund_reason")
+
+	// Durable video settlement ledger and idempotent event audit trail.
+	var videoTaskSettlementsRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.video_task_settlements')").Scan(&videoTaskSettlementsRegclass))
+	require.True(t, videoTaskSettlementsRegclass.Valid, "expected video_task_settlements table to exist")
+	var cacheInvalidationJobsRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.video_task_cache_invalidation_jobs')").Scan(&cacheInvalidationJobsRegclass))
+	require.True(t, cacheInvalidationJobsRegclass.Valid, "expected video_task_cache_invalidation_jobs table to exist")
+	requireColumn(t, tx, "video_task_settlements", "video_task_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "user_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "api_key_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "group_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "account_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "platform", "character varying", 50, false)
+	requireColumn(t, tx, "video_task_settlements", "channel_id", "bigint", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "subscription_id", "bigint", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "usage_log_id", "bigint", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "charge_request_id", "character varying", 160, false)
+	requireColumn(t, tx, "video_task_settlements", "state", "character varying", 24, false)
+	requireColumn(t, tx, "video_task_settlements", "billing_type", "smallint", 0, false)
+	requireNumericColumn(t, tx, "video_task_settlements", "gross_cost_usd", false)
+	requireNumericColumn(t, tx, "video_task_settlements", "actual_cost_usd", false)
+	requireNumericColumn(t, tx, "video_task_settlements", "account_cost_usd", false)
+	requireNumericColumn(t, tx, "video_task_settlements", "refunded_cost_usd", false)
+	requireColumn(t, tx, "video_task_settlements", "pricing_snapshot", "jsonb", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "effect_snapshot", "jsonb", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "applied_snapshot", "jsonb", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "last_error", "text", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "next_reconcile_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "locked_by", "character varying", 128, true)
+	requireColumn(t, tx, "video_task_settlements", "locked_until", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "reserved_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "charged_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "released_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "refunded_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_settlements", "created_at", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "video_task_settlements", "updated_at", "timestamp with time zone", 0, false)
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "video_task_id", "video_tasks", "CASCADE")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "user_id", "users", "RESTRICT")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "api_key_id", "api_keys", "RESTRICT")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "group_id", "groups", "RESTRICT")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "account_id", "accounts", "RESTRICT")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "channel_id", "channels", "SET NULL")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "subscription_id", "user_subscriptions", "SET NULL")
+	requireForeignKeyOnDelete(t, tx, "video_task_settlements", "usage_log_id", "usage_logs", "SET NULL")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlements", "video_task_settlements_task_unique", "UNIQUE", "video_task_id")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlements", "video_task_settlements_charge_key_unique", "UNIQUE", "charge_request_id")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlements", "video_task_settlements_state_check", "reserved", "charged", "released", "refunded")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlements", "video_task_settlements_billing_type_check", "billing_type", "0", "1")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlements", "video_task_settlements_amounts_nonnegative_check", "gross_cost_usd", ">=", "actual_cost_usd", "account_cost_usd", "refunded_cost_usd")
+	requireIndexDefinitionContains(t, tx, "video_task_settlements", "idx_video_task_settlements_reconcile", "state", "next_reconcile_at", "WHERE")
+
+	var refundReportingRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.video_task_refund_reporting_jobs')").Scan(&refundReportingRegclass))
+	require.True(t, refundReportingRegclass.Valid, "expected video_task_refund_reporting_jobs table to exist")
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "settlement_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "usage_log_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "usage_created_at", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "attempts", "integer", 0, false)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "next_attempt_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "locked_by", "character varying", 128, true)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "locked_until", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "last_error", "text", 0, true)
+	requireColumn(t, tx, "video_task_refund_reporting_jobs", "completed_at", "timestamp with time zone", 0, true)
+	requireConstraintDefinitionContains(t, tx, "video_task_refund_reporting_jobs", "video_task_refund_reporting_jobs_settlement_unique", "UNIQUE", "settlement_id")
+	requireConstraintDefinitionContains(t, tx, "video_task_refund_reporting_jobs", "video_task_refund_reporting_jobs_usage_unique", "UNIQUE", "usage_log_id")
+	requireForeignKeyOnDelete(t, tx, "video_task_refund_reporting_jobs", "settlement_id", "video_task_settlements", "RESTRICT")
+	requireForeignKeyOnDelete(t, tx, "video_task_refund_reporting_jobs", "usage_log_id", "usage_logs", "RESTRICT")
+	requireIndexDefinitionContains(t, tx, "video_task_refund_reporting_jobs", "idx_video_task_refund_reporting_jobs_due", "next_attempt_at", "locked_until", "WHERE")
+
+	var videoTaskSettlementEventsRegclass sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.video_task_settlement_events')").Scan(&videoTaskSettlementEventsRegclass))
+	require.True(t, videoTaskSettlementEventsRegclass.Valid, "expected video_task_settlement_events table to exist")
+	requireColumn(t, tx, "video_task_settlement_events", "settlement_id", "bigint", 0, false)
+	requireColumn(t, tx, "video_task_settlement_events", "event_id", "character varying", 200, false)
+	requireColumn(t, tx, "video_task_settlement_events", "event_type", "character varying", 24, false)
+	requireNumericColumn(t, tx, "video_task_settlement_events", "amount_usd", false)
+	requireColumn(t, tx, "video_task_settlement_events", "metadata", "jsonb", 0, false)
+	requireColumn(t, tx, "video_task_settlement_events", "created_at", "timestamp with time zone", 0, false)
+	requireForeignKeyOnDelete(t, tx, "video_task_settlement_events", "settlement_id", "video_task_settlements", "CASCADE")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlement_events", "video_task_settlement_events_unique", "UNIQUE", "settlement_id", "event_type")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlement_events", "video_task_settlement_events_event_id_unique", "UNIQUE", "event_id")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlement_events", "video_task_settlement_events_type_check", "reserve", "capture", "release", "refund", "legacy_refund")
+	requireConstraintDefinitionContains(t, tx, "video_task_settlement_events", "video_task_settlement_events_amount_nonnegative_check", "amount_usd", ">=")
 
 	// usage_billing_dedup: billing idempotency narrow table
 	var usageBillingDedupRegclass sql.NullString
@@ -243,6 +372,27 @@ SELECT EXISTS (
 	require.False(t, exists, "expected index %s on %s to be absent", index, table)
 }
 
+func requireIndexDefinitionContains(t *testing.T, tx *sql.Tx, table, index string, fragments ...string) {
+	t.Helper()
+
+	var def string
+	err := tx.QueryRowContext(context.Background(), `
+SELECT pg_get_indexdef(i.indexrelid)
+FROM pg_class idx
+JOIN pg_index i ON i.indexrelid = idx.oid
+JOIN pg_class tbl ON tbl.oid = i.indrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = $1
+  AND idx.relname = $2
+`, table, index).Scan(&def)
+	require.NoError(t, err, "query index definition for %s.%s", table, index)
+
+	for _, fragment := range fragments {
+		require.Contains(t, def, fragment, "expected index definition for %s.%s to contain %q", table, index, fragment)
+	}
+}
+
 func requirePartialUniqueIndexDefinition(t *testing.T, tx *sql.Tx, table, index string, fragments ...string) {
 	t.Helper()
 
@@ -335,6 +485,73 @@ WHERE table_schema = 'public'
 
 	for _, fragment := range fragments {
 		require.Contains(t, columnDefault.String, fragment, "expected default for %s.%s to contain %q", table, column, fragment)
+	}
+}
+
+func requireColumnCount(t *testing.T, tx *sql.Tx, table, column string, expected int) {
+	t.Helper()
+
+	var count int
+	err := tx.QueryRowContext(context.Background(), `
+SELECT COUNT(*)
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name = $2
+`, table, column).Scan(&count)
+	require.NoError(t, err, "query column count for %s.%s", table, column)
+	require.Equal(t, expected, count, "column count mismatch for %s.%s", table, column)
+}
+
+func requireStoredMigrationChecksum(t *testing.T, tx *sql.Tx, filename string) {
+	t.Helper()
+
+	content, err := migrations.FS.ReadFile(filename)
+	require.NoError(t, err, "read migration %s", filename)
+
+	sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+	expected := hex.EncodeToString(sum[:])
+
+	var actual string
+	err = tx.QueryRowContext(context.Background(), `
+SELECT checksum
+FROM schema_migrations
+WHERE filename = $1
+`, filename).Scan(&actual)
+	require.NoError(t, err, "query schema_migrations checksum for %s", filename)
+	require.Equal(t, expected, actual, "checksum mismatch for %s", filename)
+}
+
+func requireNumericColumn(t *testing.T, tx *sql.Tx, table, column string, nullable bool) {
+	t.Helper()
+
+	var row struct {
+		DataType  string
+		Precision sql.NullInt64
+		Scale     sql.NullInt64
+		Nullable  string
+	}
+
+	err := tx.QueryRowContext(context.Background(), `
+SELECT
+  data_type,
+  numeric_precision,
+  numeric_scale,
+  is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = $1
+  AND column_name = $2
+`, table, column).Scan(&row.DataType, &row.Precision, &row.Scale, &row.Nullable)
+	require.NoError(t, err, "query numeric column metadata for %s.%s", table, column)
+	require.Equal(t, "numeric", row.DataType, "data_type mismatch for %s.%s", table, column)
+	require.Equal(t, sql.NullInt64{Int64: 20, Valid: true}, row.Precision, "numeric_precision mismatch for %s.%s", table, column)
+	require.Equal(t, sql.NullInt64{Int64: 10, Valid: true}, row.Scale, "numeric_scale mismatch for %s.%s", table, column)
+
+	if nullable {
+		require.Equal(t, "YES", row.Nullable, "nullable mismatch for %s.%s", table, column)
+	} else {
+		require.Equal(t, "NO", row.Nullable, "nullable mismatch for %s.%s", table, column)
 	}
 }
 

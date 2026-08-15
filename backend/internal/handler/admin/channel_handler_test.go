@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,6 +277,206 @@ func TestChannelToResponse_MultipleEntries(t *testing.T) {
 // 2. pricingRequestToService
 // ---------------------------------------------------------------------------
 
+func TestChannelModelPricingRequestDescriptionValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		description string
+		wantErr     bool
+	}{
+		{
+			name:        "500 characters accepted",
+			description: strings.Repeat("a", 500),
+			wantErr:     false,
+		},
+		{
+			name:        "501 characters rejected",
+			description: strings.Repeat("a", 501),
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]any{
+				"name": "ch",
+				"model_pricing": []map[string]any{
+					{
+						"models":      []string{"m1"},
+						"description": tt.description,
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/channels", strings.NewReader(string(payload)))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			var req createChannelRequest
+			err = c.ShouldBindJSON(&req)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.description, req.ModelPricing[0].Description)
+		})
+	}
+}
+
+func TestAccountStatsPricingNestedModelsValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		payload      map[string]any
+		bindAndCheck func(t *testing.T, payload map[string]any)
+	}{
+		{
+			name: "create rejects missing models",
+			payload: map[string]any{
+				"name": "ch",
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req createChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPost, payload, &req))
+			},
+		},
+		{
+			name: "create rejects empty models",
+			payload: map[string]any{
+				"name": "ch",
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"models":       []string{},
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req createChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPost, payload, &req))
+			},
+		},
+		{
+			name: "update rejects missing models",
+			payload: map[string]any{
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req updateChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPut, payload, &req))
+			},
+		},
+		{
+			name: "update rejects empty models",
+			payload: map[string]any{
+				"account_stats_pricing_rules": []map[string]any{{
+					"name":      "stats",
+					"group_ids": []int64{1},
+					"pricing": []map[string]any{{
+						"models":       []string{},
+						"billing_mode": "token",
+					}},
+				}},
+			},
+			bindAndCheck: func(t *testing.T, payload map[string]any) {
+				var req updateChannelRequest
+				require.Error(t, bindAdminJSON(t, http.MethodPut, payload, &req))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.bindAndCheck(t, tt.payload)
+		})
+	}
+}
+
+func bindAdminJSON(t *testing.T, method string, payload map[string]any, out any) error {
+	t.Helper()
+
+	raw, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, "/channels", strings.NewReader(string(raw)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	return c.ShouldBindJSON(out)
+}
+
+func TestPricingRequestToService_DescriptionScope(t *testing.T) {
+	reqs := []channelModelPricingRequest{
+		{
+			Models:      []string{"m1"},
+			Description: " \nFirst line\nSecond line\t ",
+		},
+	}
+
+	primary := pricingRequestToService(reqs, pricingScopePrimary)
+	require.Len(t, primary, 1)
+	require.Equal(t, "First line\nSecond line", primary[0].Description)
+
+	accountStats := pricingRequestToService(reqs, pricingScopeAccountStats)
+	require.Len(t, accountStats, 1)
+	require.Empty(t, accountStats[0].Description)
+}
+
+func TestChannelToResponse_DescriptionScope(t *testing.T) {
+	now := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
+	ch := &service.Channel{
+		ID:        1,
+		Name:      "ch",
+		CreatedAt: now,
+		UpdatedAt: now,
+		ModelPricing: []service.ChannelModelPricing{
+			{Models: []string{"primary-described"}, Description: "visible"},
+			{Models: []string{"primary-empty"}, Description: ""},
+		},
+		AccountStatsPricingRules: []service.AccountStatsPricingRule{
+			{
+				ID:   10,
+				Name: "stats",
+				Pricing: []service.ChannelModelPricing{
+					{Models: []string{"stats-described"}, Description: "hidden"},
+				},
+			},
+		},
+	}
+
+	resp := channelToResponse(ch)
+	require.Len(t, resp.ModelPricing, 2)
+	require.NotNil(t, resp.ModelPricing[0].Description)
+	require.Equal(t, "visible", *resp.ModelPricing[0].Description)
+	require.NotNil(t, resp.ModelPricing[1].Description)
+	require.Empty(t, *resp.ModelPricing[1].Description)
+
+	require.Len(t, resp.AccountStatsPricingRules, 1)
+	require.Len(t, resp.AccountStatsPricingRules[0].Pricing, 1)
+	require.Nil(t, resp.AccountStatsPricingRules[0].Pricing[0].Description)
+}
+
 func TestPricingRequestToService_Defaults(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -305,7 +506,7 @@ func TestPricingRequestToService_Defaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := pricingRequestToService([]channelModelPricingRequest{tt.req})
+			result := pricingRequestToService([]channelModelPricingRequest{tt.req}, pricingScopePrimary)
 			require.Len(t, result, 1)
 			switch tt.wantField {
 			case "BillingMode":
@@ -332,7 +533,7 @@ func TestPricingRequestToService_WithAllFields(t *testing.T) {
 		},
 	}
 
-	result := pricingRequestToService(reqs)
+	result := pricingRequestToService(reqs, pricingScopePrimary)
 	require.Len(t, result, 1)
 	r := result[0]
 	require.Equal(t, "openai", r.Platform)
@@ -373,7 +574,7 @@ func TestPricingRequestToService_WithIntervals(t *testing.T) {
 		},
 	}
 
-	result := pricingRequestToService(reqs)
+	result := pricingRequestToService(reqs, pricingScopePrimary)
 	require.Len(t, result, 1)
 	require.Len(t, result[0].Intervals, 2)
 
@@ -396,7 +597,7 @@ func TestPricingRequestToService_WithIntervals(t *testing.T) {
 }
 
 func TestPricingRequestToService_EmptySlice(t *testing.T) {
-	result := pricingRequestToService([]channelModelPricingRequest{})
+	result := pricingRequestToService([]channelModelPricingRequest{}, pricingScopePrimary)
 	require.NotNil(t, result)
 	require.Empty(t, result)
 }
@@ -410,7 +611,7 @@ func TestPricingRequestToService_NilPriceFields(t *testing.T) {
 		},
 	}
 
-	result := pricingRequestToService(reqs)
+	result := pricingRequestToService(reqs, pricingScopePrimary)
 	require.Len(t, result, 1)
 	r := result[0]
 	require.Nil(t, r.InputPrice)

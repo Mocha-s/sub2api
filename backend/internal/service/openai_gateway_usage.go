@@ -143,7 +143,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
-	if !isGrokVideoUsageResult(result, nil) {
+	if !isVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
 
@@ -176,6 +176,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// 高峰因子按请求级 PricingAt 现算（与利润门 D 同源同刻，跨峰谷请求不中途
 	// 变价）；未装配 PricingAt 的路径回退记录时刻，保持既有行为。不并入上面的
 	// Resolve，以免污染 user:group 倍率缓存。
+	accountRateMultiplier := account.BillingRateMultiplier()
+	multiplier = effectiveRequestRateMultiplier(account, multiplier)
 	baseMultiplier := multiplier
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, openAIUsagePricingAt(input))
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
@@ -280,7 +282,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
-	accountRateMultiplier := account.BillingRateMultiplier()
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	if result.OpenAIWSMode {
 		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
@@ -343,11 +344,22 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:       optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:    result.ImageSizeBreakdown,
 	}
-	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
+	quote, hasVideoQuote := videoTaskQuoteFromForwardResult(result)
+	if hasVideoQuote {
+		accountRateMultiplier = quote.AccountRateMultiplier
+	}
+	isVideoUsage := hasVideoQuote || isGrokVideoUsageResult(result, billingModels)
 	if isVideoUsage {
-		usageLog.VideoCount = result.VideoCount
-		usageLog.VideoResolution = optionalTrimmedStringPtr(NormalizeVideoBillingResolutionOrDefault(result.VideoResolution))
+		videoCount := result.VideoCount
+		videoResolution := NormalizeVideoBillingResolutionOrDefault(result.VideoResolution)
 		videoDurationSeconds := NormalizeVideoBillingDurationSecondsOrDefault(result.VideoDurationSeconds)
+		if hasVideoQuote {
+			videoCount = quote.Effective.VideoCount
+			videoResolution = quote.Effective.Resolution
+			videoDurationSeconds = quote.Effective.Seconds
+		}
+		usageLog.VideoCount = videoCount
+		usageLog.VideoResolution = optionalTrimmedStringPtr(videoResolution)
 		usageLog.VideoDurationSeconds = &videoDurationSeconds
 	}
 	if cost != nil {
@@ -361,7 +373,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.ActualCost = cost.ActualCost
 		usageLog.LongContextBillingApplied = cost.LongContextBillingApplied
 	}
-	if isVideoUsage && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
+	if hasVideoQuote && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
+		usageLog.RateMultiplier = quote.RateMultiplier
+	} else if isVideoUsage && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = videoMultiplier
 	} else if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
@@ -421,6 +435,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
 			tokens, cost.TotalCost,
 		)
+	}
+	if hasVideoQuote {
+		accountCost := quote.AccountCostUSD
+		usageLog.AccountStatsCost = &accountCost
 	}
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
@@ -494,6 +512,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
 	billingModel := firstUsageBillingModel(billingModels)
+	if _, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return s.calculateOpenAIVideoCost(ctx, billingModel, apiKey, result, videoMultiplier), nil
+	}
 	if result != nil && result.WebSearchCalls > 0 {
 		// Codex alpha/search 网页搜索按次计费：上游不返回 usage/token 字段，单价只取
 		// 分组覆盖价（nil 时默认 0.01 = 官方 $10/1000 次），不参与渠道级模型定价。
@@ -614,6 +635,20 @@ func isGrokVideoUsageResult(result *OpenAIForwardResult, billingModels []string)
 	return true
 }
 
+func isVideoUsageResult(result *OpenAIForwardResult, billingModels []string) bool {
+	if _, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return true
+	}
+	return isGrokVideoUsageResult(result, billingModels)
+}
+
+func videoTaskQuoteFromForwardResult(result *OpenAIForwardResult) (VideoTaskQuote, bool) {
+	if result == nil || !validVideoTaskQuote(result.videoTaskQuote) {
+		return VideoTaskQuote{}, false
+	}
+	return *result.videoTaskQuote, true
+}
+
 func isUsagePricingUnavailableError(err error) bool {
 	if err == nil {
 		return false
@@ -714,6 +749,13 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
+	if quote, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return &CostBreakdown{
+			TotalCost:   quote.GrossCostUSD,
+			ActualCost:  quote.ActualCostUSD,
+			BillingMode: string(quote.BillingMode),
+		}
+	}
 	videoCount := result.VideoCount
 	if videoCount <= 0 {
 		videoCount = 1
