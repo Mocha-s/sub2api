@@ -182,7 +182,6 @@ export default {
         videoDefaultSeconds: '默认时长（秒）',
         videoAllowedSeconds: '允许时长（秒，可选）',
         videoAllowedSecondsPlaceholder: '例如：5, 10, 15',
-        videoTiers: '视频分辨率层级',
         platformConfig: '平台配置',
         webSearchEmulation: 'Web Search 模拟',
         webSearchEmulationHint: '⚠️ 开启后该渠道下所有 Anthropic 分组的账号将自动拦截 web_search 请求，请谨慎操作',

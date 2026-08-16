@@ -4446,11 +4446,10 @@ import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffor
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
 import type { PricingFormEntry } from "@/components/admin/channel/types";
 import {
+  apiVideoPricingToForm,
   apiIntervalsToForm,
-  formIntervalsToAPI,
-  mTokToPerToken,
+  formPricingToAPI,
   perTokenToMTok,
-  toNullableNumber,
 } from "@/components/admin/channel/types";
 import type { ChannelModelPricing } from "@/api/admin/channels";
 import { VueDraggable } from "vue-draggable-plus";
@@ -4508,6 +4507,7 @@ import {
 
 const emptyGroupPricing = (): PricingFormEntry => ({
   models: [],
+  description: "",
   billing_mode: "token",
   input_price: null,
   output_price: null,
@@ -4516,6 +4516,9 @@ const emptyGroupPricing = (): PricingFormEntry => ({
   image_input_price: null,
   image_output_price: null,
   per_request_price: null,
+  video_price_per_second: null,
+  video_default_seconds: null,
+  video_allowed_seconds: [],
   intervals: [],
 });
 
@@ -4527,6 +4530,7 @@ const groupPricingFromAPI = (
 ): PricingFormEntry[] =>
   (pricing || []).map((entry) => ({
     models: entry.models || [],
+    description: entry.description || "",
     billing_mode: entry.billing_mode || "token",
     input_price: perTokenToMTok(entry.input_price),
     output_price: perTokenToMTok(entry.output_price),
@@ -4535,6 +4539,7 @@ const groupPricingFromAPI = (
     image_input_price: perTokenToMTok(entry.image_input_price),
     image_output_price: perTokenToMTok(entry.image_output_price),
     per_request_price: entry.per_request_price,
+    ...apiVideoPricingToForm(entry),
     intervals: apiIntervalsToForm(entry.intervals || []),
   }));
 
@@ -4544,22 +4549,7 @@ const groupPricingToAPI = (
 ): ChannelModelPricing[] =>
   pricing
     .filter((entry) => entry.models.length > 0)
-    .map((entry) => ({
-      platform,
-      models: entry.models,
-      billing_mode: entry.billing_mode,
-      input_price: mTokToPerToken(entry.input_price),
-      output_price: mTokToPerToken(entry.output_price),
-      cache_write_price: mTokToPerToken(entry.cache_write_price),
-      cache_read_price: mTokToPerToken(entry.cache_read_price),
-      image_input_price: mTokToPerToken(entry.image_input_price),
-      image_output_price: mTokToPerToken(entry.image_output_price),
-      per_request_price: toNullableNumber(entry.per_request_price),
-      intervals:
-        entry.billing_mode === "token"
-          ? []
-          : formIntervalsToAPI(entry.intervals || []),
-    }));
+    .map((entry) => formPricingToAPI(entry, platform));
 
 const { t } = useI18n();
 const appStore = useAppStore();

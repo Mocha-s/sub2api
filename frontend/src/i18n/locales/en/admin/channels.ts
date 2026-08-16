@@ -182,7 +182,6 @@ export default {
         videoDefaultSeconds: 'Default Duration (seconds)',
         videoAllowedSeconds: 'Allowed Durations (seconds, optional)',
         videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',
-        videoTiers: 'Video Resolution Tiers',
         platformConfig: 'Platform Configuration',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationHint: '⚠️ When enabled, all accounts in this channel\'s Anthropic groups will intercept web_search requests. Use with caution.',
