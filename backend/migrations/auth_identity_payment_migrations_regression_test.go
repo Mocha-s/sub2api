@@ -1,6 +1,8 @@
 package migrations
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -217,6 +219,19 @@ func TestMigration189GroupAuthCacheInvalidationCoversSnapshotFields(t *testing.T
 		"deleted_at",
 	} {
 		require.Contains(t, condition, "old."+field+" is not distinct from new."+field)
+	}
+}
+
+func TestProductionAppliedMigrationsKeepStableChecksums(t *testing.T) {
+	for filename, expected := range map[string]string{
+		"172_composite_model_routes.sql":            "d68f38cf89a4ba8fdd41302196fb6ec2ebe57423ec18db90140945a89fd9ed40",
+		"178_channel_image_input_price.sql":         "816f993420f76ee0eff0f4dc67ccb3f9a670b8861d3736f966186e6de212a5fc",
+		"186_group_auth_cache_image_generation.sql": "f572176e02edc425551304461c86d9df8cd7a0f11c71b92122307fa2d5a7dbbf",
+	} {
+		content, err := FS.ReadFile(filename)
+		require.NoError(t, err)
+		sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+		require.Equal(t, expected, fmt.Sprintf("%x", sum), "checksum changed for %s", filename)
 	}
 }
 
