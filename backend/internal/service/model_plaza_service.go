@@ -69,6 +69,20 @@ type ModelPlazaService struct {
 	resolver       *ModelPricingResolver
 }
 
+func (s *ModelPlazaService) channelServiceFillGlobalPricingFallback(models []SupportedModel) {
+	if s == nil || s.pricingService == nil {
+		return
+	}
+	for i := range models {
+		if !pricingNeedsFallback(models[i].Pricing) {
+			continue
+		}
+		if pricing := s.pricingService.GetModelPricing(models[i].Name); pricing != nil {
+			models[i].Pricing = synthesizePricingFromLiteLLM(pricing, models[i].Pricing)
+		}
+	}
+}
+
 // NewModelPlazaService 创建模型广场服务。
 func NewModelPlazaService(
 	channelRepo ChannelRepository,
@@ -151,7 +165,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		}
 		ch.normalizeBillingModelSource()
 		supported := ch.SupportedModels()
-		fillGlobalPricingFallback(s.pricingService, supported)
+		s.channelServiceFillGlobalPricingFallback(supported)
 
 		for _, gid := range ch.GroupIDs {
 			pg, ok := byGroup[gid]

@@ -41,6 +41,7 @@ func TestUserPlatformQuotaCache_SetThenGet(t *testing.T) {
 		WeeklyUsageUSD:   3.0,
 		MonthlyUsageUSD:  10.0,
 		Version:          7,
+		Revision:         11,
 		SchemaVersion:    service.UserPlatformQuotaCacheSchemaV1,
 		DailyLimitUSD:    &dailyLimit,
 		DailyWindowStart: &ts,
@@ -52,7 +53,7 @@ func TestUserPlatformQuotaCache_SetThenGet(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("get: ok=%v err=%v", ok, err)
 	}
-	if got.DailyUsageUSD != 1.5 || got.WeeklyUsageUSD != 3.0 || got.MonthlyUsageUSD != 10.0 || got.Version != 7 {
+	if got.DailyUsageUSD != 1.5 || got.WeeklyUsageUSD != 3.0 || got.MonthlyUsageUSD != 10.0 || got.Version != 7 || got.Revision != 11 {
 		t.Errorf("got = %+v, want %+v", got, in)
 	}
 	if got.SchemaVersion != service.UserPlatformQuotaCacheSchemaV1 {
@@ -63,6 +64,37 @@ func TestUserPlatformQuotaCache_SetThenGet(t *testing.T) {
 	}
 	if got.DailyWindowStart == nil || !got.DailyWindowStart.Equal(ts) {
 		t.Errorf("DailyWindowStart = %v, want %v", got.DailyWindowStart, ts)
+	}
+}
+
+func TestUserPlatformQuotaCache_FinalizeFlushUsesCacheVersionFence(t *testing.T) {
+	c, _ := newMiniRedisCache(t)
+	ctx := context.Background()
+	key := service.UserPlatformQuotaKey{UserID: 1, Platform: "openai"}
+	requireNoError := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	requireNoError(c.SetUserPlatformQuotaCache(ctx, key.UserID, key.Platform, &service.UserPlatformQuotaCacheEntry{Version: 2, Revision: 7, SchemaVersion: service.UserPlatformQuotaCacheSchemaV1}, time.Minute))
+	requireNoError(c.FinalizeUserPlatformQuotaFlush(ctx, key, 2, service.UserPlatformQuotaCacheSchemaV1, 8, true))
+	got, ok, err := c.GetUserPlatformQuotaCache(ctx, key.UserID, key.Platform)
+	requireNoError(err)
+	if !ok || got.Revision != 8 {
+		t.Fatalf("revision=%v ok=%v", got, ok)
+	}
+
+	requireNoError(c.IncrUserPlatformQuotaUsageCache(ctx, key.UserID, key.Platform, 1, time.Minute, true))
+	requireNoError(c.FinalizeUserPlatformQuotaFlush(ctx, key, 2, service.UserPlatformQuotaCacheSchemaV1, 9, false))
+	_, ok, err = c.GetUserPlatformQuotaCache(ctx, key.UserID, key.Platform)
+	requireNoError(err)
+	if !ok {
+		t.Fatal("concurrent cache mutation must not be deleted")
+	}
+	dirty, err := c.rdb.SIsMember(ctx, userPlatformQuotaDirtySetKey(), userPlatformQuotaDirtyMember(key.UserID, key.Platform)).Result()
+	requireNoError(err)
+	if !dirty {
+		t.Fatal("concurrent mutation must remain dirty")
 	}
 }
 

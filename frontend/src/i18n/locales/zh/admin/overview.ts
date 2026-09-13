@@ -824,6 +824,15 @@ export default {
       accountsRateLimited: '限流:',
       accountsTotal: '总量:',
       accountsUnit: '个账号',
+      modelsList: {
+        title: '自定义模型列表',
+        hint: '选择该分组在模型列表中展示的模型。',
+        selectedSummary: '已选择 {count} 个模型',
+        selectAll: '全选',
+        invertSelection: '反选',
+        loading: '正在加载模型...',
+        empty: '暂无可用模型',
+      },
       form: {
         name: '名称',
         description: '描述',
@@ -1009,6 +1018,7 @@ export default {
         finalPricePreview: '最终单张价格预览',
         notConfigured: '未配置'
       },
+      allowVideoGeneration: '允许当前分组生成视频',
       videoPricing: {
         title: '视频生成计费',
         description:
@@ -1139,6 +1149,7 @@ export default {
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',
           images: 'Images',
+          video: '视频',
           gemini: 'Gemini 原生'
         },
         match: {

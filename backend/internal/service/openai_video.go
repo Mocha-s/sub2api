@@ -10,6 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
 const (
@@ -32,6 +36,75 @@ func NewOpenAICompatibleVideoProvider(client *http.Client) VideoTaskProvider {
 
 func NewOpenAICompatibleVideoProviderForGateway(openai *OpenAIGatewayService) VideoTaskProvider {
 	return &openAICompatibleVideoProvider{client: http.DefaultClient, openai: openai}
+}
+
+func (s *OpenAIGatewayService) ResolveVideoTaskPricing(ctx context.Context, input VideoTaskPricingResolveInput) VideoTaskPricingSelection {
+	return s.resolveVideoTaskPricingAt(ctx, input, timezone.Now())
+}
+
+func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, input VideoTaskPricingResolveInput, now time.Time) VideoTaskPricingSelection {
+	selection := VideoTaskPricingSelection{
+		BillingModel:          strings.TrimSpace(input.RequestedModel),
+		BillingModelSource:    BillingModelSourceRequested,
+		RateMultiplier:        1,
+		AccountRateMultiplier: input.Account.BillingRateMultiplier(),
+	}
+	if s == nil || s.channelService == nil || input.GroupID <= 0 {
+		return selection
+	}
+
+	mapping := s.channelService.ResolveChannelMapping(ctx, input.GroupID, input.RequestedModel)
+	selection.ChannelID = mapping.ChannelID
+	selection.BillingModelSource = mapping.BillingModelSource
+	switch mapping.BillingModelSource {
+	case BillingModelSourceUpstream:
+		selection.BillingModel = strings.TrimSpace(input.UpstreamModel)
+	case BillingModelSourceChannelMapped:
+		selection.BillingModel = strings.TrimSpace(mapping.MappedModel)
+	default:
+		selection.BillingModel = strings.TrimSpace(input.RequestedModel)
+	}
+	if selection.BillingModel == "" {
+		selection.BillingModel = strings.TrimSpace(input.RequestedModel)
+	}
+	selection.Pricing = s.channelService.GetChannelModelPricing(ctx, input.GroupID, selection.BillingModel)
+	if channel, err := s.channelService.GetChannelForGroup(ctx, input.GroupID); err == nil && channel != nil {
+		for i := range channel.AccountStatsPricingRules {
+			rule := &channel.AccountStatsPricingRules[i]
+			if !matchAccountStatsRule(rule, input.Account.ID, input.GroupID) {
+				continue
+			}
+			if pricing := findPricingForModel(rule.Pricing, s.channelService.GetGroupPlatform(ctx, input.GroupID), strings.ToLower(selection.BillingModel)); pricing != nil {
+				selection.AccountStatsPricing = pricing
+				break
+			}
+		}
+	}
+	if selection.Pricing == nil || (selection.Pricing.BillingMode != BillingModeVideo && selection.Pricing.BillingMode != BillingModePerRequest) {
+		selection.Pricing = nil
+		return selection
+	}
+
+	groupMultiplier := 1.0
+	if s.cfg != nil {
+		groupMultiplier = s.cfg.Default.RateMultiplier
+	}
+	if input.APIKey != nil && input.APIKey.Group != nil {
+		resolver := s.userGroupRateResolver
+		if resolver == nil {
+			resolver = newUserGroupRateResolver(nil, nil, resolveUserGroupRateCacheTTL(s.cfg), nil, "service.openai_gateway")
+		}
+		groupMultiplier = resolver.Resolve(ctx, input.UserID, input.GroupID, input.APIKey.Group.RateMultiplier)
+	}
+	baseMultiplier := effectiveRequestRateMultiplier(input.Account, groupMultiplier)
+	selection.RateMultiplier = baseMultiplier
+	if selection.Pricing.BillingMode == BillingModePerRequest {
+		selection.RateMultiplier, _ = computePeakAwareMultipliers(input.APIKey, baseMultiplier, now)
+	}
+	if selection.Pricing.BillingMode == BillingModeVideo {
+		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, baseMultiplier)
+	}
+	return selection
 }
 
 type OpenAIVideoUpstreamError struct {
@@ -84,7 +157,7 @@ func (p *openAICompatibleVideoProvider) Create(ctx context.Context, account *Acc
 	if err != nil {
 		return nil, err
 	}
-	forwardBody, err := copyValidOpenAIVideoCreateJSON(body)
+	forwardBody, err := copyValidOpenAIVideoCreateJSON(body, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +171,15 @@ func (p *openAICompatibleVideoProvider) Create(ctx context.Context, account *Acc
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	if requestID := videoTaskRequestIDFromContext(ctx); requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
 
 	resp, err := p.do(req, account)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, openAIVideoStatusError(resp, token)
 	}
@@ -153,7 +229,7 @@ func (p *openAICompatibleVideoProvider) Fetch(ctx context.Context, account *Acco
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, openAIVideoStatusError(resp, token)
 	}
@@ -193,7 +269,7 @@ func (p *openAICompatibleVideoProvider) Content(ctx context.Context, account *Ac
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, videoTaskContentMethodFromContext(ctx), endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +283,7 @@ func (p *openAICompatibleVideoProvider) Content(ctx context.Context, account *Ac
 		return nil, err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, openAIVideoStatusError(resp, token)
 	}
 
@@ -255,10 +331,6 @@ func parseOpenAIVideoResponse(rawBody []byte, requestID string) (*parsedOpenAIVi
 	}, nil
 }
 
-func openAIVideoEndpoint(account *Account, path string) string {
-	return buildOpenAIVideoEndpoint(openAIVideoBaseURL(account), path)
-}
-
 func (p *openAICompatibleVideoProvider) openAIVideoEndpoint(account *Account, path string) (string, error) {
 	baseURL := openAIVideoBaseURL(account)
 	if p != nil && p.openai != nil && p.openai.cfg != nil {
@@ -287,7 +359,27 @@ func buildOpenAIVideoEndpoint(baseURL string, path string) string {
 	return baseURL + path
 }
 
-func copyValidOpenAIVideoCreateJSON(body []byte) ([]byte, error) {
+func validateVideoResultURL(openai *OpenAIGatewayService, raw string) (string, error) {
+	if openai != nil && openai.cfg != nil {
+		return openai.validateUpstreamBaseURL(raw)
+	}
+	return urlvalidator.ValidateURLFormat(raw, true)
+}
+
+func withVideoResultRedirectValidator(ctx context.Context, openai *OpenAIGatewayService) context.Context {
+	if openai == nil || openai.cfg == nil || !openai.cfg.Security.URLAllowlist.Enabled {
+		return ctx
+	}
+	return WithHTTPRedirectValidator(ctx, func(target *url.URL) error {
+		if target == nil {
+			return errors.New("video result redirect URL is nil")
+		}
+		_, err := validateVideoResultURL(openai, target.String())
+		return err
+	})
+}
+
+func copyValidOpenAIVideoCreateJSON(body []byte, upstreamModel string) ([]byte, error) {
 	var value any
 	if err := json.Unmarshal(body, &value); err != nil {
 		return nil, fmt.Errorf("invalid video create JSON: %w", err)
@@ -295,7 +387,25 @@ func copyValidOpenAIVideoCreateJSON(body []byte) ([]byte, error) {
 	if _, ok := value.(map[string]any); !ok {
 		return nil, errors.New("video create JSON body must be an object")
 	}
-	return append([]byte(nil), body...), nil
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	if upstreamModel == "" {
+		return append([]byte(nil), body...), nil
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid video create JSON: %w", err)
+	}
+	encodedModel, err := json.Marshal(upstreamModel)
+	if err != nil {
+		return nil, err
+	}
+	payload["model"] = encodedModel
+	forwardBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return forwardBody, nil
 }
 
 func openAIVideoToken(account *Account) (string, error) {
@@ -434,4 +544,293 @@ func isOpenAIVideoSensitiveKey(key string) bool {
 	default:
 		return false
 	}
+}
+
+func stampVideoAdapterMetadata(metadata map[string]any, name string) map[string]any {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata[VideoAdapterMetadataKey] = name
+	return metadata
+}
+
+type jimengOpenAIVideosAdapter struct {
+	provider VideoTaskProvider
+}
+
+func (a *jimengOpenAIVideosAdapter) Name() string { return VideoAdapterJimengOpenAIVideos }
+
+func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) (*VideoProviderCreateResult, error) {
+	if a == nil || a.provider == nil {
+		return nil, errors.New("video adapter provider is required")
+	}
+	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
+		return nil, err
+	}
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
+		adapted, _, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+		if err != nil {
+			return nil, err
+		}
+		body = adapted
+	}
+	result, err := a.provider.Create(ctx, account, body, contentType, upstreamModel)
+	if result != nil {
+		result.Metadata = stampVideoResultMetadata(result.Metadata, result.RawBody, a.Name())
+	}
+	return result, err
+}
+
+func (a *jimengOpenAIVideosAdapter) ValidateCreate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) error {
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
+		adapted, legacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+		if err != nil {
+			return err
+		}
+		if err := validateJimengOpenAIVideoGenerationsFields(ctx, body, legacy); err != nil {
+			return err
+		}
+		if !legacy {
+			return nil
+		}
+		body = adapted
+	}
+	return validateOpenAIVideoCreateShape(body)
+}
+
+func (a *jimengOpenAIVideosAdapter) Fetch(ctx context.Context, account *Account, task *VideoTask) (*VideoProviderFetchResult, error) {
+	if a == nil || a.provider == nil {
+		return nil, errors.New("video adapter provider is required")
+	}
+	result, err := a.provider.Fetch(ctx, account, task)
+	if result != nil {
+		result.Metadata = stampVideoResultMetadata(result.Metadata, result.RawBody, a.Name())
+	}
+	return result, err
+}
+
+func (a *jimengOpenAIVideosAdapter) Refresh(ctx context.Context, account *Account, task *VideoTask) (*VideoProviderFetchResult, error) {
+	return a.Fetch(ctx, account, task)
+}
+
+func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) (*VideoTaskEstimateResult, error) {
+	req, err := ParseVideoTaskCreateEnvelope(body)
+	if err != nil {
+		return nil, err
+	}
+	legacy := true
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
+		adapted, normalizedLegacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+		if err != nil {
+			return nil, err
+		}
+		body = adapted
+		legacy = normalizedLegacy
+	}
+	if legacy {
+		if err := validateOpenAIVideoCreateShape(body); err != nil {
+			return nil, err
+		}
+	}
+	return localVideoEstimateResult(a.Name(), videoTaskEndpointFromContext(ctx), req.Model, body, upstreamModel)
+}
+
+func (a *jimengOpenAIVideosAdapter) Content(ctx context.Context, account *Account, task *VideoTask, headers http.Header) (*VideoContentStream, error) {
+	if a == nil || a.provider == nil {
+		return nil, errors.New("video adapter provider is required")
+	}
+	return a.provider.Content(ctx, account, task, headers)
+}
+
+func normalizeJimengOpenAIVideoGenerationsBody(body []byte, upstreamModel string) ([]byte, bool, error) {
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+	}
+
+	_, legacyUpstreamModel := supportedOpenAIVideoModels[strings.TrimSpace(upstreamModel)]
+	_, legacyRequestedModel := supportedOpenAIVideoModels[strings.TrimSpace(payload.Model)]
+	if !legacyUpstreamModel && !legacyRequestedModel && (isSeedance2VideoModel(upstreamModel) || isSeedance2VideoModel(payload.Model)) {
+		adapted, err := openAIDurationCreateBody(body, upstreamModel)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+		}
+		return adapted, false, nil
+	}
+
+	adapted, err := adaptJimengVideoGenerationsCompatBody(body, true)
+	if err != nil {
+		return nil, true, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+	}
+	return adapted, true, nil
+}
+
+func isSeedance2VideoModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "seedance2.")
+}
+
+func validateJimengOpenAIVideoGenerationsFields(ctx context.Context, body []byte, legacy bool) error {
+	if legacy {
+		return validateUnifiedVideoGenerationFields(ctx, body,
+			"ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "images", "videos", "audios",
+		)
+	}
+	return validateUnifiedVideoGenerationFields(ctx, body,
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"content", "images", "videos", "audios",
+	)
+}
+
+func validateOpenAIVideoCreateShape(body []byte) error {
+	var payload openAIVideoCreatePayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+	if err := rejectForbiddenOpenAIVideoFields(body); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.Model) == "" {
+		return errors.New("model is required")
+	}
+	if strings.TrimSpace(payload.Prompt) == "" {
+		return errors.New("prompt is required")
+	}
+	return nil
+}
+
+func localVideoEstimateResult(adapterName string, endpoint string, requestedModel string, body []byte, upstreamModel string) (*VideoTaskEstimateResult, error) {
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		model = strings.TrimSpace(openAIVideoString(payload, "model"))
+	}
+	if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel == "" {
+		upstreamModel = model
+	}
+	metadata := map[string]any{}
+	for _, key := range []string{"seconds", "duration", "duration_seconds", "aspect_ratio", "ratio", "resolution"} {
+		if value, ok := payload[key]; ok {
+			metadata[key] = value
+		}
+	}
+	response := map[string]any{
+		"object":         "video.estimate",
+		"model":          model,
+		"upstream_model": upstreamModel,
+		"adapter":        adapterName,
+		"endpoint":       normalizeVideoTaskEndpoint(endpoint),
+		"metadata":       metadata,
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	return &VideoTaskEstimateResult{ResponseBody: encoded, Metadata: response}, nil
+}
+
+func adaptLegacyVideoGenerationsCompatBody(body []byte) ([]byte, error) {
+	return adaptJimengVideoGenerationsCompatBody(body, false)
+}
+
+func adaptJimengVideoGenerationsCompatBody(body []byte, includeDurationSeconds bool) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		return nil, errors.New("jimeng OpenAI video create JSON body must be an object")
+	}
+	if duration, ok := payload["duration"]; ok {
+		if _, hasSeconds := payload["seconds"]; !hasSeconds {
+			seconds, err := jimengVideoGenerationDurationAsSeconds(duration)
+			if err != nil {
+				return nil, err
+			}
+			encodedSeconds, err := json.Marshal(seconds)
+			if err != nil {
+				return nil, err
+			}
+			payload["seconds"] = encodedSeconds
+		}
+		delete(payload, "duration")
+	}
+	if duration, ok := payload["duration_seconds"]; ok {
+		if includeDurationSeconds {
+			if _, hasSeconds := payload["seconds"]; !hasSeconds {
+				seconds, err := jimengVideoGenerationDurationAsSeconds(duration)
+				if err != nil {
+					return nil, err
+				}
+				encodedSeconds, err := json.Marshal(seconds)
+				if err != nil {
+					return nil, err
+				}
+				payload["seconds"] = encodedSeconds
+			}
+		}
+		delete(payload, "duration_seconds")
+	}
+	if ratio, ok := payload["ratio"]; ok {
+		if _, hasAspectRatio := payload["aspect_ratio"]; !hasAspectRatio {
+			payload["aspect_ratio"] = ratio
+		}
+		delete(payload, "ratio")
+	}
+	allowed := map[string]struct{}{
+		"model":        {},
+		"prompt":       {},
+		"seconds":      {},
+		"aspect_ratio": {},
+		"images":       {},
+		"videos":       {},
+		"audios":       {},
+	}
+	for field := range payload {
+		if _, ok := allowed[field]; !ok {
+			delete(payload, field)
+		}
+	}
+	adapted, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	return adapted, nil
+}
+
+func jimengVideoGenerationDurationAsSeconds(raw json.RawMessage) (string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "", errors.New("duration must be a number or string")
+	}
+	if strings.HasPrefix(trimmed, "\"") {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return "", err
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", errors.New("duration must be a number or string")
+		}
+		return value, nil
+	}
+
+	var number json.Number
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&number); err != nil {
+		return "", errors.New("duration must be a number or string")
+	}
+	return number.String(), nil
+}
+
+func NewJimengOpenAIVideoAdapter(openai *OpenAIGatewayService) VideoTaskAdapter {
+	return &jimengOpenAIVideosAdapter{provider: NewOpenAICompatibleVideoProviderForGateway(openai)}
 }

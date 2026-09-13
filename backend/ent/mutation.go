@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"sync"
@@ -22145,8 +22145,8 @@ type GroupMutation struct {
 	audio_stt_price_per_hour                *float64
 	addaudio_stt_price_per_hour             *float64
 	long_context_pricing_enabled            *bool
-	model_pricing                           *json.RawMessage
-	appendmodel_pricing                     json.RawMessage
+	model_pricing                           *jsontext.Value
+	appendmodel_pricing                     jsontext.Value
 	claude_code_only                        *bool
 	fallback_group_id                       *int64
 	addfallback_group_id                    *int64
@@ -22161,14 +22161,18 @@ type GroupMutation struct {
 	addsort_order                           *int
 	allow_messages_dispatch                 *bool
 	allow_live                              *bool
+	force_openai_fast                       *bool
+	free_openai_fast                        *bool
 	require_oauth_only                      *bool
 	require_privacy_set                     *bool
 	default_mapped_model                    *string
 	messages_dispatch_model_config          *domain.OpenAIMessagesDispatchModelConfig
-	models_list_config                      *domain.GroupModelsListConfig
+	model_allowlist                         *domain.GroupModelAllowlist
+	codex_models_manifest_config            *domain.GroupCodexModelsManifestConfig
 	rpm_limit                               *int
 	addrpm_limit                            *int
 	max_reasoning_effort                    *string
+	max_reasoning_effort_over_limit         *string
 	reasoning_effort_mappings               *[]domain.ReasoningEffortMapping
 	appendreasoning_effort_mappings         []domain.ReasoningEffortMapping
 	profit_control_enabled                  *bool
@@ -24443,13 +24447,13 @@ func (m *GroupMutation) ResetLongContextPricingEnabled() {
 }
 
 // SetModelPricing sets the "model_pricing" field.
-func (m *GroupMutation) SetModelPricing(jm json.RawMessage) {
-	m.model_pricing = &jm
+func (m *GroupMutation) SetModelPricing(j jsontext.Value) {
+	m.model_pricing = &j
 	m.appendmodel_pricing = nil
 }
 
 // ModelPricing returns the value of the "model_pricing" field in the mutation.
-func (m *GroupMutation) ModelPricing() (r json.RawMessage, exists bool) {
+func (m *GroupMutation) ModelPricing() (r jsontext.Value, exists bool) {
 	v := m.model_pricing
 	if v == nil {
 		return
@@ -24460,7 +24464,7 @@ func (m *GroupMutation) ModelPricing() (r json.RawMessage, exists bool) {
 // OldModelPricing returns the old "model_pricing" field's value of the Group entity.
 // If the Group object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldModelPricing(ctx context.Context) (v json.RawMessage, err error) {
+func (m *GroupMutation) OldModelPricing(ctx context.Context) (v jsontext.Value, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldModelPricing is only allowed on UpdateOne operations")
 	}
@@ -24474,13 +24478,13 @@ func (m *GroupMutation) OldModelPricing(ctx context.Context) (v json.RawMessage,
 	return oldValue.ModelPricing, nil
 }
 
-// AppendModelPricing adds jm to the "model_pricing" field.
-func (m *GroupMutation) AppendModelPricing(jm json.RawMessage) {
-	m.appendmodel_pricing = append(m.appendmodel_pricing, jm...)
+// AppendModelPricing adds j to the "model_pricing" field.
+func (m *GroupMutation) AppendModelPricing(j jsontext.Value) {
+	m.appendmodel_pricing = append(m.appendmodel_pricing, j...)
 }
 
 // AppendedModelPricing returns the list of values that were appended to the "model_pricing" field in this mutation.
-func (m *GroupMutation) AppendedModelPricing() (json.RawMessage, bool) {
+func (m *GroupMutation) AppendedModelPricing() (jsontext.Value, bool) {
 	if len(m.appendmodel_pricing) == 0 {
 		return nil, false
 	}
@@ -24983,6 +24987,78 @@ func (m *GroupMutation) ResetAllowLive() {
 	m.allow_live = nil
 }
 
+// SetForceOpenaiFast sets the "force_openai_fast" field.
+func (m *GroupMutation) SetForceOpenaiFast(b bool) {
+	m.force_openai_fast = &b
+}
+
+// ForceOpenaiFast returns the value of the "force_openai_fast" field in the mutation.
+func (m *GroupMutation) ForceOpenaiFast() (r bool, exists bool) {
+	v := m.force_openai_fast
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldForceOpenaiFast returns the old "force_openai_fast" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldForceOpenaiFast(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldForceOpenaiFast is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldForceOpenaiFast requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldForceOpenaiFast: %w", err)
+	}
+	return oldValue.ForceOpenaiFast, nil
+}
+
+// ResetForceOpenaiFast resets all changes to the "force_openai_fast" field.
+func (m *GroupMutation) ResetForceOpenaiFast() {
+	m.force_openai_fast = nil
+}
+
+// SetFreeOpenaiFast sets the "free_openai_fast" field.
+func (m *GroupMutation) SetFreeOpenaiFast(b bool) {
+	m.free_openai_fast = &b
+}
+
+// FreeOpenaiFast returns the value of the "free_openai_fast" field in the mutation.
+func (m *GroupMutation) FreeOpenaiFast() (r bool, exists bool) {
+	v := m.free_openai_fast
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFreeOpenaiFast returns the old "free_openai_fast" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldFreeOpenaiFast(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFreeOpenaiFast is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFreeOpenaiFast requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFreeOpenaiFast: %w", err)
+	}
+	return oldValue.FreeOpenaiFast, nil
+}
+
+// ResetFreeOpenaiFast resets all changes to the "free_openai_fast" field.
+func (m *GroupMutation) ResetFreeOpenaiFast() {
+	m.free_openai_fast = nil
+}
+
 // SetRequireOauthOnly sets the "require_oauth_only" field.
 func (m *GroupMutation) SetRequireOauthOnly(b bool) {
 	m.require_oauth_only = &b
@@ -25127,40 +25203,76 @@ func (m *GroupMutation) ResetMessagesDispatchModelConfig() {
 	m.messages_dispatch_model_config = nil
 }
 
-// SetModelsListConfig sets the "models_list_config" field.
-func (m *GroupMutation) SetModelsListConfig(dmlc domain.GroupModelsListConfig) {
-	m.models_list_config = &dmlc
+// SetModelAllowlist sets the "model_allowlist" field.
+func (m *GroupMutation) SetModelAllowlist(dma domain.GroupModelAllowlist) {
+	m.model_allowlist = &dma
 }
 
-// ModelsListConfig returns the value of the "models_list_config" field in the mutation.
-func (m *GroupMutation) ModelsListConfig() (r domain.GroupModelsListConfig, exists bool) {
-	v := m.models_list_config
+// ModelAllowlist returns the value of the "model_allowlist" field in the mutation.
+func (m *GroupMutation) ModelAllowlist() (r domain.GroupModelAllowlist, exists bool) {
+	v := m.model_allowlist
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldModelsListConfig returns the old "models_list_config" field's value of the Group entity.
+// OldModelAllowlist returns the old "model_allowlist" field's value of the Group entity.
 // If the Group object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldModelsListConfig(ctx context.Context) (v domain.GroupModelsListConfig, err error) {
+func (m *GroupMutation) OldModelAllowlist(ctx context.Context) (v domain.GroupModelAllowlist, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldModelsListConfig is only allowed on UpdateOne operations")
+		return v, errors.New("OldModelAllowlist is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldModelsListConfig requires an ID field in the mutation")
+		return v, errors.New("OldModelAllowlist requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldModelsListConfig: %w", err)
+		return v, fmt.Errorf("querying old value for OldModelAllowlist: %w", err)
 	}
-	return oldValue.ModelsListConfig, nil
+	return oldValue.ModelAllowlist, nil
 }
 
-// ResetModelsListConfig resets all changes to the "models_list_config" field.
-func (m *GroupMutation) ResetModelsListConfig() {
-	m.models_list_config = nil
+// ResetModelAllowlist resets all changes to the "model_allowlist" field.
+func (m *GroupMutation) ResetModelAllowlist() {
+	m.model_allowlist = nil
+}
+
+// SetCodexModelsManifestConfig sets the "codex_models_manifest_config" field.
+func (m *GroupMutation) SetCodexModelsManifestConfig(dcmmc domain.GroupCodexModelsManifestConfig) {
+	m.codex_models_manifest_config = &dcmmc
+}
+
+// CodexModelsManifestConfig returns the value of the "codex_models_manifest_config" field in the mutation.
+func (m *GroupMutation) CodexModelsManifestConfig() (r domain.GroupCodexModelsManifestConfig, exists bool) {
+	v := m.codex_models_manifest_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCodexModelsManifestConfig returns the old "codex_models_manifest_config" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldCodexModelsManifestConfig(ctx context.Context) (v domain.GroupCodexModelsManifestConfig, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCodexModelsManifestConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCodexModelsManifestConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCodexModelsManifestConfig: %w", err)
+	}
+	return oldValue.CodexModelsManifestConfig, nil
+}
+
+// ResetCodexModelsManifestConfig resets all changes to the "codex_models_manifest_config" field.
+func (m *GroupMutation) ResetCodexModelsManifestConfig() {
+	m.codex_models_manifest_config = nil
 }
 
 // SetRpmLimit sets the "rpm_limit" field.
@@ -25253,6 +25365,42 @@ func (m *GroupMutation) OldMaxReasoningEffort(ctx context.Context) (v string, er
 // ResetMaxReasoningEffort resets all changes to the "max_reasoning_effort" field.
 func (m *GroupMutation) ResetMaxReasoningEffort() {
 	m.max_reasoning_effort = nil
+}
+
+// SetMaxReasoningEffortOverLimit sets the "max_reasoning_effort_over_limit" field.
+func (m *GroupMutation) SetMaxReasoningEffortOverLimit(s string) {
+	m.max_reasoning_effort_over_limit = &s
+}
+
+// MaxReasoningEffortOverLimit returns the value of the "max_reasoning_effort_over_limit" field in the mutation.
+func (m *GroupMutation) MaxReasoningEffortOverLimit() (r string, exists bool) {
+	v := m.max_reasoning_effort_over_limit
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMaxReasoningEffortOverLimit returns the old "max_reasoning_effort_over_limit" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldMaxReasoningEffortOverLimit(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMaxReasoningEffortOverLimit is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMaxReasoningEffortOverLimit requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMaxReasoningEffortOverLimit: %w", err)
+	}
+	return oldValue.MaxReasoningEffortOverLimit, nil
+}
+
+// ResetMaxReasoningEffortOverLimit resets all changes to the "max_reasoning_effort_over_limit" field.
+func (m *GroupMutation) ResetMaxReasoningEffortOverLimit() {
+	m.max_reasoning_effort_over_limit = nil
 }
 
 // SetReasoningEffortMappings sets the "reasoning_effort_mappings" field.
@@ -25812,7 +25960,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 63)
+	fields := make([]string, 0, 67)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -25969,6 +26117,12 @@ func (m *GroupMutation) Fields() []string {
 	if m.allow_live != nil {
 		fields = append(fields, group.FieldAllowLive)
 	}
+	if m.force_openai_fast != nil {
+		fields = append(fields, group.FieldForceOpenaiFast)
+	}
+	if m.free_openai_fast != nil {
+		fields = append(fields, group.FieldFreeOpenaiFast)
+	}
 	if m.require_oauth_only != nil {
 		fields = append(fields, group.FieldRequireOauthOnly)
 	}
@@ -25981,14 +26135,20 @@ func (m *GroupMutation) Fields() []string {
 	if m.messages_dispatch_model_config != nil {
 		fields = append(fields, group.FieldMessagesDispatchModelConfig)
 	}
-	if m.models_list_config != nil {
-		fields = append(fields, group.FieldModelsListConfig)
+	if m.model_allowlist != nil {
+		fields = append(fields, group.FieldModelAllowlist)
+	}
+	if m.codex_models_manifest_config != nil {
+		fields = append(fields, group.FieldCodexModelsManifestConfig)
 	}
 	if m.rpm_limit != nil {
 		fields = append(fields, group.FieldRpmLimit)
 	}
 	if m.max_reasoning_effort != nil {
 		fields = append(fields, group.FieldMaxReasoningEffort)
+	}
+	if m.max_reasoning_effort_over_limit != nil {
+		fields = append(fields, group.FieldMaxReasoningEffortOverLimit)
 	}
 	if m.reasoning_effort_mappings != nil {
 		fields = append(fields, group.FieldReasoningEffortMappings)
@@ -26114,6 +26274,10 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.AllowMessagesDispatch()
 	case group.FieldAllowLive:
 		return m.AllowLive()
+	case group.FieldForceOpenaiFast:
+		return m.ForceOpenaiFast()
+	case group.FieldFreeOpenaiFast:
+		return m.FreeOpenaiFast()
 	case group.FieldRequireOauthOnly:
 		return m.RequireOauthOnly()
 	case group.FieldRequirePrivacySet:
@@ -26122,12 +26286,16 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DefaultMappedModel()
 	case group.FieldMessagesDispatchModelConfig:
 		return m.MessagesDispatchModelConfig()
-	case group.FieldModelsListConfig:
-		return m.ModelsListConfig()
+	case group.FieldModelAllowlist:
+		return m.ModelAllowlist()
+	case group.FieldCodexModelsManifestConfig:
+		return m.CodexModelsManifestConfig()
 	case group.FieldRpmLimit:
 		return m.RpmLimit()
 	case group.FieldMaxReasoningEffort:
 		return m.MaxReasoningEffort()
+	case group.FieldMaxReasoningEffortOverLimit:
+		return m.MaxReasoningEffortOverLimit()
 	case group.FieldReasoningEffortMappings:
 		return m.ReasoningEffortMappings()
 	case group.FieldProfitControlEnabled:
@@ -26249,6 +26417,10 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldAllowMessagesDispatch(ctx)
 	case group.FieldAllowLive:
 		return m.OldAllowLive(ctx)
+	case group.FieldForceOpenaiFast:
+		return m.OldForceOpenaiFast(ctx)
+	case group.FieldFreeOpenaiFast:
+		return m.OldFreeOpenaiFast(ctx)
 	case group.FieldRequireOauthOnly:
 		return m.OldRequireOauthOnly(ctx)
 	case group.FieldRequirePrivacySet:
@@ -26257,12 +26429,16 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDefaultMappedModel(ctx)
 	case group.FieldMessagesDispatchModelConfig:
 		return m.OldMessagesDispatchModelConfig(ctx)
-	case group.FieldModelsListConfig:
-		return m.OldModelsListConfig(ctx)
+	case group.FieldModelAllowlist:
+		return m.OldModelAllowlist(ctx)
+	case group.FieldCodexModelsManifestConfig:
+		return m.OldCodexModelsManifestConfig(ctx)
 	case group.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
 	case group.FieldMaxReasoningEffort:
 		return m.OldMaxReasoningEffort(ctx)
+	case group.FieldMaxReasoningEffortOverLimit:
+		return m.OldMaxReasoningEffortOverLimit(ctx)
 	case group.FieldReasoningEffortMappings:
 		return m.OldReasoningEffortMappings(ctx)
 	case group.FieldProfitControlEnabled:
@@ -26568,7 +26744,7 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		m.SetLongContextPricingEnabled(v)
 		return nil
 	case group.FieldModelPricing:
-		v, ok := value.(json.RawMessage)
+		v, ok := value.(jsontext.Value)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -26644,6 +26820,20 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAllowLive(v)
 		return nil
+	case group.FieldForceOpenaiFast:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetForceOpenaiFast(v)
+		return nil
+	case group.FieldFreeOpenaiFast:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFreeOpenaiFast(v)
+		return nil
 	case group.FieldRequireOauthOnly:
 		v, ok := value.(bool)
 		if !ok {
@@ -26672,12 +26862,19 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetMessagesDispatchModelConfig(v)
 		return nil
-	case group.FieldModelsListConfig:
-		v, ok := value.(domain.GroupModelsListConfig)
+	case group.FieldModelAllowlist:
+		v, ok := value.(domain.GroupModelAllowlist)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetModelsListConfig(v)
+		m.SetModelAllowlist(v)
+		return nil
+	case group.FieldCodexModelsManifestConfig:
+		v, ok := value.(domain.GroupCodexModelsManifestConfig)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCodexModelsManifestConfig(v)
 		return nil
 	case group.FieldRpmLimit:
 		v, ok := value.(int)
@@ -26692,6 +26889,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMaxReasoningEffort(v)
+		return nil
+	case group.FieldMaxReasoningEffortOverLimit:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMaxReasoningEffortOverLimit(v)
 		return nil
 	case group.FieldReasoningEffortMappings:
 		v, ok := value.([]domain.ReasoningEffortMapping)
@@ -27388,6 +27592,12 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldAllowLive:
 		m.ResetAllowLive()
 		return nil
+	case group.FieldForceOpenaiFast:
+		m.ResetForceOpenaiFast()
+		return nil
+	case group.FieldFreeOpenaiFast:
+		m.ResetFreeOpenaiFast()
+		return nil
 	case group.FieldRequireOauthOnly:
 		m.ResetRequireOauthOnly()
 		return nil
@@ -27400,14 +27610,20 @@ func (m *GroupMutation) ResetField(name string) error {
 	case group.FieldMessagesDispatchModelConfig:
 		m.ResetMessagesDispatchModelConfig()
 		return nil
-	case group.FieldModelsListConfig:
-		m.ResetModelsListConfig()
+	case group.FieldModelAllowlist:
+		m.ResetModelAllowlist()
+		return nil
+	case group.FieldCodexModelsManifestConfig:
+		m.ResetCodexModelsManifestConfig()
 		return nil
 	case group.FieldRpmLimit:
 		m.ResetRpmLimit()
 		return nil
 	case group.FieldMaxReasoningEffort:
 		m.ResetMaxReasoningEffort()
+		return nil
+	case group.FieldMaxReasoningEffortOverLimit:
+		m.ResetMaxReasoningEffortOverLimit()
 		return nil
 	case group.FieldReasoningEffortMappings:
 		m.ResetReasoningEffortMappings()
@@ -37206,33 +37422,36 @@ func (m *PromoCodeUsageMutation) ResetEdge(name string) error {
 // ProxyMutation represents an operation that mutates the Proxy nodes in the graph.
 type ProxyMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int64
-	created_at          *time.Time
-	updated_at          *time.Time
-	deleted_at          *time.Time
-	name                *string
-	protocol            *string
-	host                *string
-	port                *int
-	addport             *int
-	username            *string
-	password            *string
-	status              *string
-	expires_at          *time.Time
-	fallback_mode       *string
-	expiry_warn_days    *int
-	addexpiry_warn_days *int
-	clearedFields       map[string]struct{}
-	accounts            map[int64]struct{}
-	removedaccounts     map[int64]struct{}
-	clearedaccounts     bool
-	backup_proxy        *int64
-	clearedbackup_proxy bool
-	done                bool
-	oldValue            func(context.Context) (*Proxy, error)
-	predicates          []predicate.Proxy
+	op                     Op
+	typ                    string
+	id                     *int64
+	created_at             *time.Time
+	updated_at             *time.Time
+	deleted_at             *time.Time
+	name                   *string
+	protocol               *string
+	host                   *string
+	port                   *int
+	addport                *int
+	username               *string
+	password               *string
+	status                 *string
+	expires_at             *time.Time
+	fallback_mode          *string
+	expiry_warn_days       *int
+	addexpiry_warn_days    *int
+	clearedFields          map[string]struct{}
+	accounts               map[int64]struct{}
+	removedaccounts        map[int64]struct{}
+	clearedaccounts        bool
+	primary_proxies        map[int64]struct{}
+	removedprimary_proxies map[int64]struct{}
+	clearedprimary_proxies bool
+	backup_proxy           *int64
+	clearedbackup_proxy    bool
+	done                   bool
+	oldValue               func(context.Context) (*Proxy, error)
+	predicates             []predicate.Proxy
 }
 
 var _ ent.Mutation = (*ProxyMutation)(nil)
@@ -37996,6 +38215,60 @@ func (m *ProxyMutation) ResetAccounts() {
 	m.removedaccounts = nil
 }
 
+// AddPrimaryProxyIDs adds the "primary_proxies" edge to the Proxy entity by ids.
+func (m *ProxyMutation) AddPrimaryProxyIDs(ids ...int64) {
+	if m.primary_proxies == nil {
+		m.primary_proxies = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.primary_proxies[ids[i]] = struct{}{}
+	}
+}
+
+// ClearPrimaryProxies clears the "primary_proxies" edge to the Proxy entity.
+func (m *ProxyMutation) ClearPrimaryProxies() {
+	m.clearedprimary_proxies = true
+}
+
+// PrimaryProxiesCleared reports if the "primary_proxies" edge to the Proxy entity was cleared.
+func (m *ProxyMutation) PrimaryProxiesCleared() bool {
+	return m.clearedprimary_proxies
+}
+
+// RemovePrimaryProxyIDs removes the "primary_proxies" edge to the Proxy entity by IDs.
+func (m *ProxyMutation) RemovePrimaryProxyIDs(ids ...int64) {
+	if m.removedprimary_proxies == nil {
+		m.removedprimary_proxies = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.primary_proxies, ids[i])
+		m.removedprimary_proxies[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedPrimaryProxies returns the removed IDs of the "primary_proxies" edge to the Proxy entity.
+func (m *ProxyMutation) RemovedPrimaryProxiesIDs() (ids []int64) {
+	for id := range m.removedprimary_proxies {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// PrimaryProxiesIDs returns the "primary_proxies" edge IDs in the mutation.
+func (m *ProxyMutation) PrimaryProxiesIDs() (ids []int64) {
+	for id := range m.primary_proxies {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetPrimaryProxies resets all changes to the "primary_proxies" edge.
+func (m *ProxyMutation) ResetPrimaryProxies() {
+	m.primary_proxies = nil
+	m.clearedprimary_proxies = false
+	m.removedprimary_proxies = nil
+}
+
 // ClearBackupProxy clears the "backup_proxy" edge to the Proxy entity.
 func (m *ProxyMutation) ClearBackupProxy() {
 	m.clearedbackup_proxy = true
@@ -38437,9 +38710,12 @@ func (m *ProxyMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *ProxyMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.accounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
+	}
+	if m.primary_proxies != nil {
+		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	if m.backup_proxy != nil {
 		edges = append(edges, proxy.EdgeBackupProxy)
@@ -38457,6 +38733,12 @@ func (m *ProxyMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case proxy.EdgePrimaryProxies:
+		ids := make([]ent.Value, 0, len(m.primary_proxies))
+		for id := range m.primary_proxies {
+			ids = append(ids, id)
+		}
+		return ids
 	case proxy.EdgeBackupProxy:
 		if id := m.backup_proxy; id != nil {
 			return []ent.Value{*id}
@@ -38467,9 +38749,12 @@ func (m *ProxyMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *ProxyMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedaccounts != nil {
 		edges = append(edges, proxy.EdgeAccounts)
+	}
+	if m.removedprimary_proxies != nil {
+		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	return edges
 }
@@ -38484,15 +38769,24 @@ func (m *ProxyMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case proxy.EdgePrimaryProxies:
+		ids := make([]ent.Value, 0, len(m.removedprimary_proxies))
+		for id := range m.removedprimary_proxies {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *ProxyMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedaccounts {
 		edges = append(edges, proxy.EdgeAccounts)
+	}
+	if m.clearedprimary_proxies {
+		edges = append(edges, proxy.EdgePrimaryProxies)
 	}
 	if m.clearedbackup_proxy {
 		edges = append(edges, proxy.EdgeBackupProxy)
@@ -38506,6 +38800,8 @@ func (m *ProxyMutation) EdgeCleared(name string) bool {
 	switch name {
 	case proxy.EdgeAccounts:
 		return m.clearedaccounts
+	case proxy.EdgePrimaryProxies:
+		return m.clearedprimary_proxies
 	case proxy.EdgeBackupProxy:
 		return m.clearedbackup_proxy
 	}
@@ -38529,6 +38825,9 @@ func (m *ProxyMutation) ResetEdge(name string) error {
 	switch name {
 	case proxy.EdgeAccounts:
 		m.ResetAccounts()
+		return nil
+	case proxy.EdgePrimaryProxies:
+		m.ResetPrimaryProxies()
 		return nil
 	case proxy.EdgeBackupProxy:
 		m.ResetBackupProxy()
@@ -43207,8 +43506,8 @@ type UsageCleanupTaskMutation struct {
 	created_at      *time.Time
 	updated_at      *time.Time
 	status          *string
-	filters         *json.RawMessage
-	appendfilters   json.RawMessage
+	filters         *jsontext.Value
+	appendfilters   jsontext.Value
 	created_by      *int64
 	addcreated_by   *int64
 	deleted_rows    *int64
@@ -43432,13 +43731,13 @@ func (m *UsageCleanupTaskMutation) ResetStatus() {
 }
 
 // SetFilters sets the "filters" field.
-func (m *UsageCleanupTaskMutation) SetFilters(jm json.RawMessage) {
-	m.filters = &jm
+func (m *UsageCleanupTaskMutation) SetFilters(j jsontext.Value) {
+	m.filters = &j
 	m.appendfilters = nil
 }
 
 // Filters returns the value of the "filters" field in the mutation.
-func (m *UsageCleanupTaskMutation) Filters() (r json.RawMessage, exists bool) {
+func (m *UsageCleanupTaskMutation) Filters() (r jsontext.Value, exists bool) {
 	v := m.filters
 	if v == nil {
 		return
@@ -43449,7 +43748,7 @@ func (m *UsageCleanupTaskMutation) Filters() (r json.RawMessage, exists bool) {
 // OldFilters returns the old "filters" field's value of the UsageCleanupTask entity.
 // If the UsageCleanupTask object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v json.RawMessage, err error) {
+func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v jsontext.Value, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldFilters is only allowed on UpdateOne operations")
 	}
@@ -43463,13 +43762,13 @@ func (m *UsageCleanupTaskMutation) OldFilters(ctx context.Context) (v json.RawMe
 	return oldValue.Filters, nil
 }
 
-// AppendFilters adds jm to the "filters" field.
-func (m *UsageCleanupTaskMutation) AppendFilters(jm json.RawMessage) {
-	m.appendfilters = append(m.appendfilters, jm...)
+// AppendFilters adds j to the "filters" field.
+func (m *UsageCleanupTaskMutation) AppendFilters(j jsontext.Value) {
+	m.appendfilters = append(m.appendfilters, j...)
 }
 
 // AppendedFilters returns the list of values that were appended to the "filters" field in this mutation.
-func (m *UsageCleanupTaskMutation) AppendedFilters() (json.RawMessage, bool) {
+func (m *UsageCleanupTaskMutation) AppendedFilters() (jsontext.Value, bool) {
 	if len(m.appendfilters) == 0 {
 		return nil, false
 	}
@@ -44020,7 +44319,7 @@ func (m *UsageCleanupTaskMutation) SetField(name string, value ent.Value) error 
 		m.SetStatus(v)
 		return nil
 	case usagecleanuptask.FieldFilters:
-		v, ok := value.(json.RawMessage)
+		v, ok := value.(jsontext.Value)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -44322,6 +44621,14 @@ type UsageLogMutation struct {
 	addtotal_cost                *float64
 	actual_cost                  *float64
 	addactual_cost               *float64
+	refunded_cost                *float64
+	addrefunded_cost             *float64
+	refunded_total_cost          *float64
+	addrefunded_total_cost       *float64
+	refunded_account_cost        *float64
+	addrefunded_account_cost     *float64
+	refund_reason                *string
+	refunded_at                  *time.Time
 	rate_multiplier              *float64
 	addrate_multiplier           *float64
 	long_context_billing_applied *bool
@@ -45827,6 +46134,272 @@ func (m *UsageLogMutation) ResetActualCost() {
 	m.addactual_cost = nil
 }
 
+// SetRefundedCost sets the "refunded_cost" field.
+func (m *UsageLogMutation) SetRefundedCost(f float64) {
+	m.refunded_cost = &f
+	m.addrefunded_cost = nil
+}
+
+// RefundedCost returns the value of the "refunded_cost" field in the mutation.
+func (m *UsageLogMutation) RefundedCost() (r float64, exists bool) {
+	v := m.refunded_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundedCost returns the old "refunded_cost" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundedCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundedCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundedCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundedCost: %w", err)
+	}
+	return oldValue.RefundedCost, nil
+}
+
+// AddRefundedCost adds f to the "refunded_cost" field.
+func (m *UsageLogMutation) AddRefundedCost(f float64) {
+	if m.addrefunded_cost != nil {
+		*m.addrefunded_cost += f
+	} else {
+		m.addrefunded_cost = &f
+	}
+}
+
+// AddedRefundedCost returns the value that was added to the "refunded_cost" field in this mutation.
+func (m *UsageLogMutation) AddedRefundedCost() (r float64, exists bool) {
+	v := m.addrefunded_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRefundedCost resets all changes to the "refunded_cost" field.
+func (m *UsageLogMutation) ResetRefundedCost() {
+	m.refunded_cost = nil
+	m.addrefunded_cost = nil
+}
+
+// SetRefundedTotalCost sets the "refunded_total_cost" field.
+func (m *UsageLogMutation) SetRefundedTotalCost(f float64) {
+	m.refunded_total_cost = &f
+	m.addrefunded_total_cost = nil
+}
+
+// RefundedTotalCost returns the value of the "refunded_total_cost" field in the mutation.
+func (m *UsageLogMutation) RefundedTotalCost() (r float64, exists bool) {
+	v := m.refunded_total_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundedTotalCost returns the old "refunded_total_cost" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundedTotalCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundedTotalCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundedTotalCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundedTotalCost: %w", err)
+	}
+	return oldValue.RefundedTotalCost, nil
+}
+
+// AddRefundedTotalCost adds f to the "refunded_total_cost" field.
+func (m *UsageLogMutation) AddRefundedTotalCost(f float64) {
+	if m.addrefunded_total_cost != nil {
+		*m.addrefunded_total_cost += f
+	} else {
+		m.addrefunded_total_cost = &f
+	}
+}
+
+// AddedRefundedTotalCost returns the value that was added to the "refunded_total_cost" field in this mutation.
+func (m *UsageLogMutation) AddedRefundedTotalCost() (r float64, exists bool) {
+	v := m.addrefunded_total_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRefundedTotalCost resets all changes to the "refunded_total_cost" field.
+func (m *UsageLogMutation) ResetRefundedTotalCost() {
+	m.refunded_total_cost = nil
+	m.addrefunded_total_cost = nil
+}
+
+// SetRefundedAccountCost sets the "refunded_account_cost" field.
+func (m *UsageLogMutation) SetRefundedAccountCost(f float64) {
+	m.refunded_account_cost = &f
+	m.addrefunded_account_cost = nil
+}
+
+// RefundedAccountCost returns the value of the "refunded_account_cost" field in the mutation.
+func (m *UsageLogMutation) RefundedAccountCost() (r float64, exists bool) {
+	v := m.refunded_account_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundedAccountCost returns the old "refunded_account_cost" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundedAccountCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundedAccountCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundedAccountCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundedAccountCost: %w", err)
+	}
+	return oldValue.RefundedAccountCost, nil
+}
+
+// AddRefundedAccountCost adds f to the "refunded_account_cost" field.
+func (m *UsageLogMutation) AddRefundedAccountCost(f float64) {
+	if m.addrefunded_account_cost != nil {
+		*m.addrefunded_account_cost += f
+	} else {
+		m.addrefunded_account_cost = &f
+	}
+}
+
+// AddedRefundedAccountCost returns the value that was added to the "refunded_account_cost" field in this mutation.
+func (m *UsageLogMutation) AddedRefundedAccountCost() (r float64, exists bool) {
+	v := m.addrefunded_account_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRefundedAccountCost resets all changes to the "refunded_account_cost" field.
+func (m *UsageLogMutation) ResetRefundedAccountCost() {
+	m.refunded_account_cost = nil
+	m.addrefunded_account_cost = nil
+}
+
+// SetRefundReason sets the "refund_reason" field.
+func (m *UsageLogMutation) SetRefundReason(s string) {
+	m.refund_reason = &s
+}
+
+// RefundReason returns the value of the "refund_reason" field in the mutation.
+func (m *UsageLogMutation) RefundReason() (r string, exists bool) {
+	v := m.refund_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundReason returns the old "refund_reason" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundReason: %w", err)
+	}
+	return oldValue.RefundReason, nil
+}
+
+// ClearRefundReason clears the value of the "refund_reason" field.
+func (m *UsageLogMutation) ClearRefundReason() {
+	m.refund_reason = nil
+	m.clearedFields[usagelog.FieldRefundReason] = struct{}{}
+}
+
+// RefundReasonCleared returns if the "refund_reason" field was cleared in this mutation.
+func (m *UsageLogMutation) RefundReasonCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldRefundReason]
+	return ok
+}
+
+// ResetRefundReason resets all changes to the "refund_reason" field.
+func (m *UsageLogMutation) ResetRefundReason() {
+	m.refund_reason = nil
+	delete(m.clearedFields, usagelog.FieldRefundReason)
+}
+
+// SetRefundedAt sets the "refunded_at" field.
+func (m *UsageLogMutation) SetRefundedAt(t time.Time) {
+	m.refunded_at = &t
+}
+
+// RefundedAt returns the value of the "refunded_at" field in the mutation.
+func (m *UsageLogMutation) RefundedAt() (r time.Time, exists bool) {
+	v := m.refunded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundedAt returns the old "refunded_at" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundedAt: %w", err)
+	}
+	return oldValue.RefundedAt, nil
+}
+
+// ClearRefundedAt clears the value of the "refunded_at" field.
+func (m *UsageLogMutation) ClearRefundedAt() {
+	m.refunded_at = nil
+	m.clearedFields[usagelog.FieldRefundedAt] = struct{}{}
+}
+
+// RefundedAtCleared returns if the "refunded_at" field was cleared in this mutation.
+func (m *UsageLogMutation) RefundedAtCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldRefundedAt]
+	return ok
+}
+
+// ResetRefundedAt resets all changes to the "refunded_at" field.
+func (m *UsageLogMutation) ResetRefundedAt() {
+	m.refunded_at = nil
+	delete(m.clearedFields, usagelog.FieldRefundedAt)
+}
+
 // SetRateMultiplier sets the "rate_multiplier" field.
 func (m *UsageLogMutation) SetRateMultiplier(f float64) {
 	m.rate_multiplier = &f
@@ -47036,7 +47609,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 47)
+	fields := make([]string, 0, 52)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -47117,6 +47690,21 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.actual_cost != nil {
 		fields = append(fields, usagelog.FieldActualCost)
+	}
+	if m.refunded_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedCost)
+	}
+	if m.refunded_total_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedTotalCost)
+	}
+	if m.refunded_account_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedAccountCost)
+	}
+	if m.refund_reason != nil {
+		fields = append(fields, usagelog.FieldRefundReason)
+	}
+	if m.refunded_at != nil {
+		fields = append(fields, usagelog.FieldRefundedAt)
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, usagelog.FieldRateMultiplier)
@@ -47240,6 +47828,16 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.TotalCost()
 	case usagelog.FieldActualCost:
 		return m.ActualCost()
+	case usagelog.FieldRefundedCost:
+		return m.RefundedCost()
+	case usagelog.FieldRefundedTotalCost:
+		return m.RefundedTotalCost()
+	case usagelog.FieldRefundedAccountCost:
+		return m.RefundedAccountCost()
+	case usagelog.FieldRefundReason:
+		return m.RefundReason()
+	case usagelog.FieldRefundedAt:
+		return m.RefundedAt()
 	case usagelog.FieldRateMultiplier:
 		return m.RateMultiplier()
 	case usagelog.FieldLongContextBillingApplied:
@@ -47343,6 +47941,16 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldTotalCost(ctx)
 	case usagelog.FieldActualCost:
 		return m.OldActualCost(ctx)
+	case usagelog.FieldRefundedCost:
+		return m.OldRefundedCost(ctx)
+	case usagelog.FieldRefundedTotalCost:
+		return m.OldRefundedTotalCost(ctx)
+	case usagelog.FieldRefundedAccountCost:
+		return m.OldRefundedAccountCost(ctx)
+	case usagelog.FieldRefundReason:
+		return m.OldRefundReason(ctx)
+	case usagelog.FieldRefundedAt:
+		return m.OldRefundedAt(ctx)
 	case usagelog.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
 	case usagelog.FieldLongContextBillingApplied:
@@ -47581,6 +48189,41 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetActualCost(v)
 		return nil
+	case usagelog.FieldRefundedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundedCost(v)
+		return nil
+	case usagelog.FieldRefundedTotalCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundedTotalCost(v)
+		return nil
+	case usagelog.FieldRefundedAccountCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundedAccountCost(v)
+		return nil
+	case usagelog.FieldRefundReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundReason(v)
+		return nil
+	case usagelog.FieldRefundedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundedAt(v)
+		return nil
 	case usagelog.FieldRateMultiplier:
 		v, ok := value.(float64)
 		if !ok {
@@ -47768,6 +48411,15 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addactual_cost != nil {
 		fields = append(fields, usagelog.FieldActualCost)
 	}
+	if m.addrefunded_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedCost)
+	}
+	if m.addrefunded_total_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedTotalCost)
+	}
+	if m.addrefunded_account_cost != nil {
+		fields = append(fields, usagelog.FieldRefundedAccountCost)
+	}
 	if m.addrate_multiplier != nil {
 		fields = append(fields, usagelog.FieldRateMultiplier)
 	}
@@ -47826,6 +48478,12 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedTotalCost()
 	case usagelog.FieldActualCost:
 		return m.AddedActualCost()
+	case usagelog.FieldRefundedCost:
+		return m.AddedRefundedCost()
+	case usagelog.FieldRefundedTotalCost:
+		return m.AddedRefundedTotalCost()
+	case usagelog.FieldRefundedAccountCost:
+		return m.AddedRefundedAccountCost()
 	case usagelog.FieldRateMultiplier:
 		return m.AddedRateMultiplier()
 	case usagelog.FieldAccountRateMultiplier:
@@ -47942,6 +48600,27 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddActualCost(v)
 		return nil
+	case usagelog.FieldRefundedCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRefundedCost(v)
+		return nil
+	case usagelog.FieldRefundedTotalCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRefundedTotalCost(v)
+		return nil
+	case usagelog.FieldRefundedAccountCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRefundedAccountCost(v)
+		return nil
 	case usagelog.FieldRateMultiplier:
 		v, ok := value.(float64)
 		if !ok {
@@ -48036,6 +48715,12 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldSubscriptionID) {
 		fields = append(fields, usagelog.FieldSubscriptionID)
 	}
+	if m.FieldCleared(usagelog.FieldRefundReason) {
+		fields = append(fields, usagelog.FieldRefundReason)
+	}
+	if m.FieldCleared(usagelog.FieldRefundedAt) {
+		fields = append(fields, usagelog.FieldRefundedAt)
+	}
 	if m.FieldCleared(usagelog.FieldAccountRateMultiplier) {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
 	}
@@ -48115,6 +48800,12 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldSubscriptionID:
 		m.ClearSubscriptionID()
+		return nil
+	case usagelog.FieldRefundReason:
+		m.ClearRefundReason()
+		return nil
+	case usagelog.FieldRefundedAt:
+		m.ClearRefundedAt()
 		return nil
 	case usagelog.FieldAccountRateMultiplier:
 		m.ClearAccountRateMultiplier()
@@ -48240,6 +48931,21 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldActualCost:
 		m.ResetActualCost()
+		return nil
+	case usagelog.FieldRefundedCost:
+		m.ResetRefundedCost()
+		return nil
+	case usagelog.FieldRefundedTotalCost:
+		m.ResetRefundedTotalCost()
+		return nil
+	case usagelog.FieldRefundedAccountCost:
+		m.ResetRefundedAccountCost()
+		return nil
+	case usagelog.FieldRefundReason:
+		m.ResetRefundReason()
+		return nil
+	case usagelog.FieldRefundedAt:
+		m.ResetRefundedAt()
 		return nil
 	case usagelog.FieldRateMultiplier:
 		m.ResetRateMultiplier()
@@ -48478,6 +49184,7 @@ type UserMutation struct {
 	signup_source                 *string
 	last_login_at                 *time.Time
 	last_active_at                *time.Time
+	restrict_public_groups        *bool
 	balance_notify_enabled        *bool
 	balance_notify_threshold_type *string
 	balance_notify_threshold      *float64
@@ -49401,6 +50108,42 @@ func (m *UserMutation) LastActiveAtCleared() bool {
 func (m *UserMutation) ResetLastActiveAt() {
 	m.last_active_at = nil
 	delete(m.clearedFields, user.FieldLastActiveAt)
+}
+
+// SetRestrictPublicGroups sets the "restrict_public_groups" field.
+func (m *UserMutation) SetRestrictPublicGroups(b bool) {
+	m.restrict_public_groups = &b
+}
+
+// RestrictPublicGroups returns the value of the "restrict_public_groups" field in the mutation.
+func (m *UserMutation) RestrictPublicGroups() (r bool, exists bool) {
+	v := m.restrict_public_groups
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRestrictPublicGroups returns the old "restrict_public_groups" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldRestrictPublicGroups(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRestrictPublicGroups is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRestrictPublicGroups requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRestrictPublicGroups: %w", err)
+	}
+	return oldValue.RestrictPublicGroups, nil
+}
+
+// ResetRestrictPublicGroups resets all changes to the "restrict_public_groups" field.
+func (m *UserMutation) ResetRestrictPublicGroups() {
+	m.restrict_public_groups = nil
 }
 
 // SetBalanceNotifyEnabled sets the "balance_notify_enabled" field.
@@ -50429,7 +51172,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 25)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -50483,6 +51226,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.last_active_at != nil {
 		fields = append(fields, user.FieldLastActiveAt)
+	}
+	if m.restrict_public_groups != nil {
+		fields = append(fields, user.FieldRestrictPublicGroups)
 	}
 	if m.balance_notify_enabled != nil {
 		fields = append(fields, user.FieldBalanceNotifyEnabled)
@@ -50546,6 +51292,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.LastLoginAt()
 	case user.FieldLastActiveAt:
 		return m.LastActiveAt()
+	case user.FieldRestrictPublicGroups:
+		return m.RestrictPublicGroups()
 	case user.FieldBalanceNotifyEnabled:
 		return m.BalanceNotifyEnabled()
 	case user.FieldBalanceNotifyThresholdType:
@@ -50603,6 +51351,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldLastLoginAt(ctx)
 	case user.FieldLastActiveAt:
 		return m.OldLastActiveAt(ctx)
+	case user.FieldRestrictPublicGroups:
+		return m.OldRestrictPublicGroups(ctx)
 	case user.FieldBalanceNotifyEnabled:
 		return m.OldBalanceNotifyEnabled(ctx)
 	case user.FieldBalanceNotifyThresholdType:
@@ -50749,6 +51499,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastActiveAt(v)
+		return nil
+	case user.FieldRestrictPublicGroups:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRestrictPublicGroups(v)
 		return nil
 	case user.FieldBalanceNotifyEnabled:
 		v, ok := value.(bool)
@@ -51008,6 +51765,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldLastActiveAt:
 		m.ResetLastActiveAt()
+		return nil
+	case user.FieldRestrictPublicGroups:
+		m.ResetRestrictPublicGroups()
 		return nil
 	case user.FieldBalanceNotifyEnabled:
 		m.ResetBalanceNotifyEnabled()
@@ -53665,6 +54425,8 @@ type UserPlatformQuotaMutation struct {
 	addweekly_usage_usd  *float64
 	monthly_usage_usd    *float64
 	addmonthly_usage_usd *float64
+	revision             *int64
+	addrevision          *int64
 	daily_window_start   *time.Time
 	weekly_window_start  *time.Time
 	monthly_window_start *time.Time
@@ -54345,6 +55107,62 @@ func (m *UserPlatformQuotaMutation) ResetMonthlyUsageUsd() {
 	m.addmonthly_usage_usd = nil
 }
 
+// SetRevision sets the "revision" field.
+func (m *UserPlatformQuotaMutation) SetRevision(i int64) {
+	m.revision = &i
+	m.addrevision = nil
+}
+
+// Revision returns the value of the "revision" field in the mutation.
+func (m *UserPlatformQuotaMutation) Revision() (r int64, exists bool) {
+	v := m.revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevision returns the old "revision" field's value of the UserPlatformQuota entity.
+// If the UserPlatformQuota object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserPlatformQuotaMutation) OldRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevision: %w", err)
+	}
+	return oldValue.Revision, nil
+}
+
+// AddRevision adds i to the "revision" field.
+func (m *UserPlatformQuotaMutation) AddRevision(i int64) {
+	if m.addrevision != nil {
+		*m.addrevision += i
+	} else {
+		m.addrevision = &i
+	}
+}
+
+// AddedRevision returns the value that was added to the "revision" field in this mutation.
+func (m *UserPlatformQuotaMutation) AddedRevision() (r int64, exists bool) {
+	v := m.addrevision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRevision resets all changes to the "revision" field.
+func (m *UserPlatformQuotaMutation) ResetRevision() {
+	m.revision = nil
+	m.addrevision = nil
+}
+
 // SetDailyWindowStart sets the "daily_window_start" field.
 func (m *UserPlatformQuotaMutation) SetDailyWindowStart(t time.Time) {
 	m.daily_window_start = &t
@@ -54553,7 +55371,7 @@ func (m *UserPlatformQuotaMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserPlatformQuotaMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, userplatformquota.FieldCreatedAt)
 	}
@@ -54586,6 +55404,9 @@ func (m *UserPlatformQuotaMutation) Fields() []string {
 	}
 	if m.monthly_usage_usd != nil {
 		fields = append(fields, userplatformquota.FieldMonthlyUsageUsd)
+	}
+	if m.revision != nil {
+		fields = append(fields, userplatformquota.FieldRevision)
 	}
 	if m.daily_window_start != nil {
 		fields = append(fields, userplatformquota.FieldDailyWindowStart)
@@ -54626,6 +55447,8 @@ func (m *UserPlatformQuotaMutation) Field(name string) (ent.Value, bool) {
 		return m.WeeklyUsageUsd()
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.MonthlyUsageUsd()
+	case userplatformquota.FieldRevision:
+		return m.Revision()
 	case userplatformquota.FieldDailyWindowStart:
 		return m.DailyWindowStart()
 	case userplatformquota.FieldWeeklyWindowStart:
@@ -54663,6 +55486,8 @@ func (m *UserPlatformQuotaMutation) OldField(ctx context.Context, name string) (
 		return m.OldWeeklyUsageUsd(ctx)
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.OldMonthlyUsageUsd(ctx)
+	case userplatformquota.FieldRevision:
+		return m.OldRevision(ctx)
 	case userplatformquota.FieldDailyWindowStart:
 		return m.OldDailyWindowStart(ctx)
 	case userplatformquota.FieldWeeklyWindowStart:
@@ -54755,6 +55580,13 @@ func (m *UserPlatformQuotaMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetMonthlyUsageUsd(v)
 		return nil
+	case userplatformquota.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevision(v)
+		return nil
 	case userplatformquota.FieldDailyWindowStart:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -54802,6 +55634,9 @@ func (m *UserPlatformQuotaMutation) AddedFields() []string {
 	if m.addmonthly_usage_usd != nil {
 		fields = append(fields, userplatformquota.FieldMonthlyUsageUsd)
 	}
+	if m.addrevision != nil {
+		fields = append(fields, userplatformquota.FieldRevision)
+	}
 	return fields
 }
 
@@ -54822,6 +55657,8 @@ func (m *UserPlatformQuotaMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedWeeklyUsageUsd()
 	case userplatformquota.FieldMonthlyUsageUsd:
 		return m.AddedMonthlyUsageUsd()
+	case userplatformquota.FieldRevision:
+		return m.AddedRevision()
 	}
 	return nil, false
 }
@@ -54872,6 +55709,13 @@ func (m *UserPlatformQuotaMutation) AddField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddMonthlyUsageUsd(v)
+		return nil
+	case userplatformquota.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevision(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UserPlatformQuota numeric field %s", name)
@@ -54977,6 +55821,9 @@ func (m *UserPlatformQuotaMutation) ResetField(name string) error {
 		return nil
 	case userplatformquota.FieldMonthlyUsageUsd:
 		m.ResetMonthlyUsageUsd()
+		return nil
+	case userplatformquota.FieldRevision:
+		m.ResetRevision()
 		return nil
 	case userplatformquota.FieldDailyWindowStart:
 		m.ResetDailyWindowStart()
@@ -56784,6 +57631,7 @@ type VideoTaskMutation struct {
 	locked_by              *string
 	poll_attempts          *int
 	addpoll_attempts       *int
+	user_deleted_at        *time.Time
 	clearedFields          map[string]struct{}
 	done                   bool
 	oldValue               func(context.Context) (*VideoTask, error)
@@ -59210,6 +60058,55 @@ func (m *VideoTaskMutation) ResetPollAttempts() {
 	m.addpoll_attempts = nil
 }
 
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (m *VideoTaskMutation) SetUserDeletedAt(t time.Time) {
+	m.user_deleted_at = &t
+}
+
+// UserDeletedAt returns the value of the "user_deleted_at" field in the mutation.
+func (m *VideoTaskMutation) UserDeletedAt() (r time.Time, exists bool) {
+	v := m.user_deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserDeletedAt returns the old "user_deleted_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUserDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserDeletedAt: %w", err)
+	}
+	return oldValue.UserDeletedAt, nil
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (m *VideoTaskMutation) ClearUserDeletedAt() {
+	m.user_deleted_at = nil
+	m.clearedFields[videotask.FieldUserDeletedAt] = struct{}{}
+}
+
+// UserDeletedAtCleared returns if the "user_deleted_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) UserDeletedAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUserDeletedAt]
+	return ok
+}
+
+// ResetUserDeletedAt resets all changes to the "user_deleted_at" field.
+func (m *VideoTaskMutation) ResetUserDeletedAt() {
+	m.user_deleted_at = nil
+	delete(m.clearedFields, videotask.FieldUserDeletedAt)
+}
+
 // Where appends a list predicates to the VideoTaskMutation builder.
 func (m *VideoTaskMutation) Where(ps ...predicate.VideoTask) {
 	m.predicates = append(m.predicates, ps...)
@@ -59244,7 +60141,7 @@ func (m *VideoTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VideoTaskMutation) Fields() []string {
-	fields := make([]string, 0, 48)
+	fields := make([]string, 0, 49)
 	if m.created_at != nil {
 		fields = append(fields, videotask.FieldCreatedAt)
 	}
@@ -59389,6 +60286,9 @@ func (m *VideoTaskMutation) Fields() []string {
 	if m.poll_attempts != nil {
 		fields = append(fields, videotask.FieldPollAttempts)
 	}
+	if m.user_deleted_at != nil {
+		fields = append(fields, videotask.FieldUserDeletedAt)
+	}
 	return fields
 }
 
@@ -59493,6 +60393,8 @@ func (m *VideoTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.LockedBy()
 	case videotask.FieldPollAttempts:
 		return m.PollAttempts()
+	case videotask.FieldUserDeletedAt:
+		return m.UserDeletedAt()
 	}
 	return nil, false
 }
@@ -59598,6 +60500,8 @@ func (m *VideoTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldLockedBy(ctx)
 	case videotask.FieldPollAttempts:
 		return m.OldPollAttempts(ctx)
+	case videotask.FieldUserDeletedAt:
+		return m.OldUserDeletedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown VideoTask field %s", name)
 }
@@ -59943,6 +60847,13 @@ func (m *VideoTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPollAttempts(v)
 		return nil
+	case videotask.FieldUserDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserDeletedAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown VideoTask field %s", name)
 }
@@ -60201,6 +61112,9 @@ func (m *VideoTaskMutation) ClearedFields() []string {
 	if m.FieldCleared(videotask.FieldLockedBy) {
 		fields = append(fields, videotask.FieldLockedBy)
 	}
+	if m.FieldCleared(videotask.FieldUserDeletedAt) {
+		fields = append(fields, videotask.FieldUserDeletedAt)
+	}
 	return fields
 }
 
@@ -60295,6 +61209,9 @@ func (m *VideoTaskMutation) ClearField(name string) error {
 		return nil
 	case videotask.FieldLockedBy:
 		m.ClearLockedBy()
+		return nil
+	case videotask.FieldUserDeletedAt:
+		m.ClearUserDeletedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown VideoTask nullable field %s", name)
@@ -60447,6 +61364,9 @@ func (m *VideoTaskMutation) ResetField(name string) error {
 		return nil
 	case videotask.FieldPollAttempts:
 		m.ResetPollAttempts()
+		return nil
+	case videotask.FieldUserDeletedAt:
+		m.ResetUserDeletedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown VideoTask field %s", name)

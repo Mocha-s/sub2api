@@ -145,7 +145,7 @@ func TestVideoGenerationCompatPromptGuardRunsBeforeTaskCreation(t *testing.T) {
 	engine := blockingHandlerPromptEngine()
 	openAI := &OpenAIGatewayHandler{securityAuditCoordinator: securityaudit.NewCoordinator(nil, engine)}
 	fake := &fakeVideoTaskService{}
-	h := &VideoTaskHandler{videoTaskService: fake, openAI: openAI}
+	h := &VideoTaskHandler{videoTaskService: fake, securityAuditCoordinator: openAI.securityAuditCoordinator}
 
 	router := gin.New()
 	router.Use(securityAuditMediaTestMiddleware)

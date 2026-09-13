@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,42 @@ func mustCreateUserForQuota(t *testing.T, client *dbent.Client) int64 {
 		Email: fmt.Sprintf("quota-test-%d@example.com", time.Now().UnixNano()),
 	})
 	return u.ID
+}
+
+func TestUserPlatformQuotaRepository_ConcurrentFlushAndRefundBothOrderingsPreserveNet(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUserPlatformQuotaRepository(client).(*userPlatformQuotaRepository)
+	for iteration := 0; iteration < 10; iteration++ {
+		userID := mustCreateUserForQuota(t, client)
+		now := time.Now().UTC()
+		require.NoError(t, repo.BulkInsertInitial(ctx, []UserPlatformQuotaRecord{{UserID: userID, Platform: "openai"}}))
+		require.NoError(t, repo.IncrementUsageWithReset(ctx, userID, "openai", 10, now))
+		loaded, err := repo.GetByUserPlatform(ctx, userID, "openai")
+		require.NoError(t, err)
+		snapshot := UserPlatformQuotaSnapshot{UserID: userID, Platform: "openai", Revision: loaded.Revision, DailyUsageUSD: 10, WeeklyUsageUSD: 10, MonthlyUsageUSD: 10, DailyWindowStart: *loaded.DailyWindowStart, WeeklyWindowStart: *loaded.WeeklyWindowStart, MonthlyWindowStart: *loaded.MonthlyWindowStart}
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+		var flushErr, refundErr error
+		go func() {
+			defer wg.Done()
+			<-start
+			_, flushErr = repo.CompareAndSwapUsageSnapshots(ctx, []UserPlatformQuotaSnapshot{snapshot})
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			refundErr = repo.IncrementUsageWithReset(ctx, userID, "openai", -4, now)
+		}()
+		close(start)
+		wg.Wait()
+		require.NoError(t, flushErr)
+		require.NoError(t, refundErr)
+		final, err := repo.GetByUserPlatform(ctx, userID, "openai")
+		require.NoError(t, err)
+		require.InDelta(t, 6, final.DailyUsageUSD, 1e-9)
+	}
 }
 
 func TestUserPlatformQuotaRepository_BulkInsertInitial_Idempotent(t *testing.T) {
@@ -70,6 +107,35 @@ func TestUserPlatformQuotaRepository_BulkInsertInitial_Empty(t *testing.T) {
 	// 空切片不应报错
 	require.NoError(t, repo.BulkInsertInitial(txCtx, nil))
 	require.NoError(t, repo.BulkInsertInitial(txCtx, []UserPlatformQuotaRecord{}))
+}
+
+func TestUserPlatformQuotaRepository_RevisionRejectsStaleSnapshotIndependentOfClock(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	userID := mustCreateUserForQuota(t, client)
+	repo := NewUserPlatformQuotaRepository(client).(*userPlatformQuotaRepository)
+	now := time.Now().UTC()
+	require.NoError(t, repo.BulkInsertInitial(txCtx, []UserPlatformQuotaRecord{{UserID: userID, Platform: "openai"}}))
+	require.NoError(t, repo.IncrementUsageWithReset(txCtx, userID, "openai", 10, now))
+	loaded, err := repo.GetByUserPlatform(txCtx, userID, "openai")
+	require.NoError(t, err)
+
+	require.NoError(t, repo.IncrementUsageWithReset(txCtx, userID, "openai", -4, now))
+	results, err := repo.CompareAndSwapUsageSnapshots(txCtx, []UserPlatformQuotaSnapshot{{
+		UserID: userID, Platform: "openai", Revision: loaded.Revision,
+		DailyUsageUSD: 10, WeeklyUsageUSD: 10, MonthlyUsageUSD: 10,
+		DailyWindowStart: *loaded.DailyWindowStart, WeeklyWindowStart: *loaded.WeeklyWindowStart, MonthlyWindowStart: *loaded.MonthlyWindowStart,
+	}})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.False(t, results[0].Applied)
+
+	final, err := repo.GetByUserPlatform(txCtx, userID, "openai")
+	require.NoError(t, err)
+	require.InDelta(t, 6, final.DailyUsageUSD, 1e-9)
+	require.Greater(t, final.Revision, loaded.Revision)
 }
 
 // TestUserPlatformQuotaRepository_BulkInsertInitial_GrokAllowed 回归迁移 157：

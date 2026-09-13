@@ -109,6 +109,8 @@ const (
 	FieldLockedBy = "locked_by"
 	// FieldPollAttempts holds the string denoting the poll_attempts field in the database.
 	FieldPollAttempts = "poll_attempts"
+	// FieldUserDeletedAt holds the string denoting the user_deleted_at field in the database.
+	FieldUserDeletedAt = "user_deleted_at"
 	// Table holds the table name of the videotask in the database.
 	Table = "video_tasks"
 )
@@ -164,6 +166,7 @@ var Columns = []string{
 	FieldLockedUntil,
 	FieldLockedBy,
 	FieldPollAttempts,
+	FieldUserDeletedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -457,4 +460,9 @@ func ByLockedBy(opts ...sql.OrderTermOption) OrderOption {
 // ByPollAttempts orders the results by the poll_attempts field.
 func ByPollAttempts(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPollAttempts, opts...).ToFunc()
+}
+
+// ByUserDeletedAt orders the results by the user_deleted_at field.
+func ByUserDeletedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserDeletedAt, opts...).ToFunc()
 }

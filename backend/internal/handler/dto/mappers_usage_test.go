@@ -3,6 +3,7 @@ package dto
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -28,25 +29,77 @@ func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	require.False(t, UsageLogFromServiceAdmin(httpLog).OpenAIWSMode)
 }
 
-func TestUsageLogFromService_PreservesNativeCompactionAndStream(t *testing.T) {
-	t.Parallel()
-
+func TestUsageLogFromService_ExposesGrossRefundAndExplicitNetCosts(t *testing.T) {
+	reason := "provider failed"
+	refundedAt := time.Date(2026, 7, 12, 10, 30, 0, 0, time.UTC)
+	accountCost := 7.0
 	log := &service.UsageLog{
-		RequestID:          "resp_compaction",
-		Model:              "gpt-5.6-sol",
-		RequestType:        service.RequestTypeStream,
-		Stream:             true,
-		NativeCompactionV2: true,
+		ActualCost: 10, TotalCost: 12, AccountStatsCost: &accountCost,
+		RefundedCost: 4, RefundedTotalCost: 5, RefundedAccountCost: 3,
+		RefundReason: &reason, RefundedAt: &refundedAt,
 	}
 
-	userDTO := UsageLogFromService(log)
-	adminDTO := UsageLogFromServiceAdmin(log)
-	require.Equal(t, "stream", userDTO.RequestType)
-	require.True(t, userDTO.Stream)
-	require.True(t, userDTO.NativeCompactionV2)
-	require.Equal(t, "stream", adminDTO.RequestType)
-	require.True(t, adminDTO.Stream)
-	require.True(t, adminDTO.NativeCompactionV2)
+	user := UsageLogFromService(log)
+	admin := UsageLogFromServiceAdmin(log)
+	require.Equal(t, 10.0, user.ActualCost)
+	require.Equal(t, 12.0, user.TotalCost)
+	require.Equal(t, 4.0, user.RefundedCost)
+	require.Equal(t, 5.0, user.RefundedTotalCost)
+	require.Equal(t, 6.0, user.NetActualCost)
+	require.Equal(t, 7.0, user.NetTotalCost)
+	require.Equal(t, reason, *user.RefundReason)
+	require.Equal(t, refundedAt, *user.RefundedAt)
+	require.Equal(t, 3.0, admin.RefundedAccountCost)
+	require.Equal(t, 4.0, admin.NetAccountCost)
+}
+
+func TestUsageLogFromService_NormalizesCostPresentationToSchemaPrecision(t *testing.T) {
+	accountCost := 0.30000000004
+	log := &service.UsageLog{
+		ActualCost: 0.30000000004, TotalCost: 0.30000000004, AccountStatsCost: &accountCost,
+		RefundedCost: 0.10000000003, RefundedTotalCost: 0.10000000003, RefundedAccountCost: 0.10000000003,
+	}
+
+	user := UsageLogFromService(log)
+	admin := UsageLogFromServiceAdmin(log)
+	require.Equal(t, 0.3, user.ActualCost)
+	require.Equal(t, 0.1, user.RefundedCost)
+	require.Equal(t, 0.2, user.NetActualCost)
+	require.Equal(t, 0.2, user.NetTotalCost)
+	require.Equal(t, 0.1, admin.RefundedAccountCost)
+	require.Equal(t, 0.2, admin.NetAccountCost)
+}
+
+func TestUsageLogFromService_VideoMetadataAndLegacyNullSemantics(t *testing.T) {
+	resolution, duration := "720p", 5
+	tests := []struct {
+		name string
+		log  *service.UsageLog
+		want map[string]any
+	}{
+		{
+			name: "video row",
+			log:  &service.UsageLog{VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration},
+			want: map[string]any{"video_count": float64(1), "video_resolution": "720p", "video_duration_seconds": float64(5)},
+		},
+		{
+			name: "legacy nonvideo row",
+			log:  &service.UsageLog{},
+			want: map[string]any{"video_count": float64(0), "video_resolution": nil, "video_duration_seconds": nil},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(UsageLogFromService(tt.log))
+			require.NoError(t, err)
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(raw, &got))
+			for key, want := range tt.want {
+				require.Contains(t, got, key)
+				require.Equal(t, want, got[key])
+			}
+		})
+	}
 }
 
 func TestUsageLogFromService_PrefersRequestTypeForLegacyFields(t *testing.T) {
@@ -200,61 +253,6 @@ func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *test
 	require.NotContains(t, string(userJSON), "account_cost")
 }
 
-func TestUsageLogFromService_UsersSeeRequestedReasoningEffortOnly(t *testing.T) {
-	t.Parallel()
-
-	requested := "max"
-	forwarded := "xhigh"
-	log := &service.UsageLog{
-		RequestID:                "req_effort",
-		Model:                    "gpt-5.4",
-		ReasoningEffort:          &forwarded,
-		RequestedReasoningEffort: &requested,
-	}
-
-	userDTO := UsageLogFromService(log)
-	adminDTO := UsageLogFromServiceAdmin(log)
-
-	require.NotNil(t, userDTO.ReasoningEffort)
-	require.Equal(t, requested, *userDTO.ReasoningEffort)
-	require.NotNil(t, adminDTO.ReasoningEffort)
-	require.Equal(t, requested, *adminDTO.ReasoningEffort)
-	require.NotNil(t, adminDTO.UpstreamReasoningEffort)
-	require.Equal(t, forwarded, *adminDTO.UpstreamReasoningEffort)
-
-	userJSON, err := json.Marshal(userDTO)
-	require.NoError(t, err)
-	require.Contains(t, string(userJSON), `"reasoning_effort":"max"`)
-	require.NotContains(t, string(userJSON), "upstream_reasoning_effort")
-	require.NotContains(t, string(userJSON), "requested_reasoning_effort")
-
-	adminJSON, err := json.Marshal(adminDTO)
-	require.NoError(t, err)
-	require.Contains(t, string(adminJSON), `"reasoning_effort":"max"`)
-	require.Contains(t, string(adminJSON), `"upstream_reasoning_effort":"xhigh"`)
-}
-
-func TestUsageLogFromService_OmitsUpstreamReasoningEffortWhenUnmapped(t *testing.T) {
-	t.Parallel()
-
-	effort := "high"
-	log := &service.UsageLog{
-		RequestID:                "req_effort_same",
-		Model:                    "gpt-5.4",
-		ReasoningEffort:          &effort,
-		RequestedReasoningEffort: &effort,
-	}
-
-	adminDTO := UsageLogFromServiceAdmin(log)
-	require.NotNil(t, adminDTO.ReasoningEffort)
-	require.Equal(t, effort, *adminDTO.ReasoningEffort)
-	require.Nil(t, adminDTO.UpstreamReasoningEffort)
-
-	adminJSON, err := json.Marshal(adminDTO)
-	require.NoError(t, err)
-	require.NotContains(t, string(adminJSON), "upstream_reasoning_effort")
-}
-
 func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *testing.T) {
 	t.Parallel()
 
@@ -329,6 +327,28 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 	require.NotContains(t, string(body), `"image_size":"2K"`)
 }
 
+func TestUsageLogFromServiceAdmin_ImageStatsFallbackDisplaysMultiplierCostNotLiteLLMTokenEstimate(t *testing.T) {
+	t.Parallel()
+
+	log := &service.UsageLog{
+		BillingMode:           stringPtr("image"),
+		ImageCount:            1,
+		TotalCost:             0.21,
+		ActualCost:            0.039375,
+		RateMultiplier:        0.1875,
+		AccountRateMultiplier: f64Ptr(0.125),
+	}
+
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.Nil(t, adminDTO.AccountStatsCost)
+	require.InDelta(t, 0.02625, adminDTO.NetAccountCost, 1e-12)
+}
+
 func f64Ptr(value float64) *float64 {
+	return &value
+}
+
+func stringPtr(value string) *string {
 	return &value
 }

@@ -183,6 +183,10 @@ func (VideoTask) Fields() []ent.Field {
 			Nillable(),
 		field.Int("poll_attempts").
 			Default(0),
+		field.Time("user_deleted_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 	}
 }
 
@@ -196,5 +200,6 @@ func (VideoTask) Indexes() []ent.Index {
 		index.Fields("account_id", "status"),
 		index.Fields("status", "next_poll_at"),
 		index.Fields("request_hash"),
+		index.Fields("user_deleted_at"),
 	}
 }

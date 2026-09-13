@@ -207,6 +207,10 @@ type APIKeyAuthCacheInvalidator interface {
 	InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64)
 }
 
+type APIKeyAuthCacheStrictInvalidator interface {
+	InvalidateAuthCacheByUserIDStrict(context.Context, int64) error
+}
+
 // CreateAPIKeyRequest 创建API Key请求
 type CreateAPIKeyRequest struct {
 	Name        string   `json:"name"`

@@ -109,6 +109,7 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetAllowImageGeneration(groupIn.AllowImageGeneration).
 		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
 		SetAllowBatchImageGeneration(groupIn.AllowBatchImageGeneration).
+		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
 		SetImageRateIndependent(groupIn.ImageRateIndependent).
 		SetImageRateMultiplier(groupIn.ImageRateMultiplier).
 		SetNillableImagePrice1k(groupIn.ImagePrice1K).
@@ -297,6 +298,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetAllowImageGeneration(groupIn.AllowImageGeneration).
 		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
 		SetAllowBatchImageGeneration(groupIn.AllowBatchImageGeneration).
+		SetAllowVideoGeneration(groupIn.AllowVideoGeneration).
 		SetImageRateIndependent(groupIn.ImageRateIndependent).
 		SetImageRateMultiplier(groupIn.ImageRateMultiplier).
 		SetNillableImagePrice1k(groupIn.ImagePrice1K).

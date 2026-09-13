@@ -2,14 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
-import Select, { type SelectOption } from '@/components/common/Select.vue'
 
 const {
   query,
   getStats,
   getDashboardModels,
   getDashboardSnapshotV2,
-  listMyErrorRequests,
   list,
   getAvailable,
   showError,
@@ -21,7 +19,6 @@ const {
   getStats: vi.fn(),
   getDashboardModels: vi.fn(),
   getDashboardSnapshotV2: vi.fn(),
-  listMyErrorRequests: vi.fn(),
   list: vi.fn(),
   getAvailable: vi.fn(),
   showError: vi.fn(),
@@ -47,21 +44,28 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'admin.usage.billingModeVideo': 'Per-second video',
   'admin.usage.allGroups': 'All groups',
   'admin.usage.allModels': 'All models',
   'usage.allApiKeys': 'All API Keys',
-  'usage.errors.allKeys': 'All API Keys',
-  'usage.tabs.usage': 'Usage records',
-  'usage.tabs.errors': 'Error records',
   'usage.apiKeyFilter': 'API Key',
   'usage.model': 'Model',
   'usage.type': 'Type',
   'usage.ws': 'WS',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
-  'usage.compactionFilter': 'Request Kind',
-  'usage.allCompactionTypes': 'All Requests',
-  'usage.compactionOnly': 'Compaction Only',
+  'usage.costDetails': 'Cost Breakdown',
+  'usage.serviceTier': 'Service tier',
+  'usage.serviceTierStandard': 'Standard',
+  'usage.rate': 'Rate',
+  'usage.original': 'Original',
+  'usage.userBilled': 'User billed',
+  'usage.grossCost': 'Customer gross',
+  'usage.refund': 'Customer refund',
+  'usage.netCost': 'Customer net',
+  'usage.refunded': 'Refunded',
+  'usage.refundedLabel': 'Refunded usage',
+  'usage.videoCount': '1 video | {count} videos',
   'usage.exporting': 'Exporting',
   'usage.exportCsv': 'Export CSV',
   'usage.failedToLoad': 'Failed to load',
@@ -79,7 +83,6 @@ vi.mock('@/api', () => ({
     getStats,
     getDashboardModels,
     getDashboardSnapshotV2,
-    listMyErrorRequests,
   },
   keysAPI: {
     list,
@@ -90,10 +93,7 @@ vi.mock('@/api', () => ({
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({
-    showError, showWarning, showSuccess, showInfo,
-    cachedPublicSettings: { allow_user_view_error_requests: true },
-  }),
+  useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -101,7 +101,12 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: { count?: number }, plural?: number) => {
+        const message = messages[key] ?? key
+        const count = params?.count ?? plural
+        const variant = message.includes('|') ? message.split('|')[count === 1 ? 0 : 1].trim() : message
+        return count == null ? variant : variant.replace('{count}', String(count))
+      },
     }),
   }
 })
@@ -138,7 +143,6 @@ const usageLog = {
   billing_mode: 'token',
   request_type: 'sync',
   stream: false,
-  native_compaction_v2: false,
 }
 
 function mountUsageView() {
@@ -151,8 +155,6 @@ function mountUsageView() {
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: chartStub,
-        UsageTable: chartStub,
-        UserErrorRequestsTable: chartStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,
@@ -164,11 +166,22 @@ function mountUsageView() {
 
 describe('user UsageView', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query !== '(min-width: 768px)',
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      })),
+    })
     query.mockReset()
     getStats.mockReset()
     getDashboardModels.mockReset()
     getDashboardSnapshotV2.mockReset()
-    listMyErrorRequests.mockReset()
     list.mockReset()
     getAvailable.mockReset()
     showError.mockReset()
@@ -203,8 +216,7 @@ describe('user UsageView', () => {
       trend: [],
       groups: [],
     })
-    listMyErrorRequests.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
-    list.mockResolvedValue({ items: [{ id: 1, name: 'demo-key' }], total: 1, page: 1, page_size: 100, pages: 1 })
+    list.mockResolvedValue({ items: [{ id: 1, name: 'demo-key' }] })
     getAvailable.mockResolvedValue([{ id: 1, name: 'default' }])
   })
 
@@ -220,146 +232,75 @@ describe('user UsageView', () => {
       include_model_stats: false,
       include_group_stats: true,
     }))
-    expect(list).toHaveBeenCalledTimes(1)
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
   })
 
-  it('includes API keys after the first page in both record filters and queries by the selected key', async () => {
-    const firstPageKeys = Array.from({ length: 100 }, (_, index) => ({
-      id: index + 1,
-      name: `key-${index + 1}`,
-    }))
-    const laterKey = { id: 101, name: 'key-from-second-page' }
-    list
-      .mockResolvedValueOnce({ items: firstPageKeys, total: 101, page: 1, page_size: 100, pages: 2 })
-      .mockResolvedValueOnce({ items: [laterKey], total: 101, page: 2, page_size: 100, pages: 2 })
-
+  it('offers video billing mode and sends it in usage queries', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
 
-    expect(list.mock.calls).toEqual([[1, 100], [2, 100]])
-    const usageKeySelect = wrapper.findAllComponents(Select).find((select) =>
-      select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
-    )!
-    expect(usageKeySelect.props('options')).toHaveLength(102)
-    expect(usageKeySelect.props('options')).toContainEqual({ value: laterKey.id, label: laterKey.name })
-
-    query.mockClear()
-    usageKeySelect.vm.$emit('update:modelValue', laterKey.id)
-    usageKeySelect.vm.$emit('change', laterKey.id)
-    await flushPromises()
-
-    expect(query).toHaveBeenCalledWith(
-      expect.objectContaining({ api_key_id: laterKey.id, page: 1 }),
-      expect.anything()
-    )
-
-    await wrapper.findAll('button').find((button) => button.text() === 'Error records')!.trigger('click')
-    await flushPromises()
-
-    const errorKeySelect = wrapper.findAllComponents(Select).find((select) =>
-      select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
-    )!
-    expect(errorKeySelect.props('options')).toHaveLength(102)
-    expect(errorKeySelect.props('options')).toContainEqual({ value: laterKey.id, label: laterKey.name })
-
-    listMyErrorRequests.mockClear()
-    errorKeySelect.vm.$emit('update:modelValue', laterKey.id)
-    errorKeySelect.vm.$emit('change', laterKey.id)
-    await flushPromises()
-
-    expect(listMyErrorRequests).toHaveBeenCalledWith(
-      expect.objectContaining({ api_key_id: laterKey.id, page: 1 })
-    )
-    expect(list).toHaveBeenCalledTimes(2)
-    wrapper.unmount()
-  })
-
-  it('does not request another API key page when the user has no keys', async () => {
-    list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
-
-    const wrapper = mountUsageView()
-    await flushPromises()
-
-    expect(list.mock.calls).toEqual([[1, 100]])
-    const keySelect = wrapper.findAllComponents(Select).find((select) =>
-      select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
-    )!
-    expect(keySelect.props('options')).toEqual([{ value: null, label: 'All API Keys' }])
-    expect(getAvailable).toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('stops loading API keys when a later page is empty despite an outdated page count', async () => {
-    const firstPageKeys = Array.from({ length: 100 }, (_, index) => ({
-      id: index + 1,
-      name: `key-${index + 1}`,
-    }))
-    list
-      .mockResolvedValueOnce({ items: firstPageKeys, total: 201, page: 1, page_size: 100, pages: 3 })
-      .mockResolvedValueOnce({ items: [], total: 201, page: 2, page_size: 100, pages: 3 })
-
-    const wrapper = mountUsageView()
-    await flushPromises()
-
-    expect(list.mock.calls).toEqual([[1, 100], [2, 100]])
-    const keySelect = wrapper.findAllComponents(Select).find((select) =>
-      select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
-    )!
-    expect(keySelect.props('options')).toHaveLength(101)
-    expect(keySelect.props('options')).toContainEqual({ value: 100, label: 'key-100' })
-    wrapper.unmount()
-  })
-
-  it('propagates and resets the native compaction filter across page requests', async () => {
-    const wrapper = mountUsageView()
-    await flushPromises()
-
-    expect((wrapper.vm as any).compactionOptions).toEqual([
-      { value: null, label: 'All Requests' },
-      { value: true, label: 'Compaction Only' },
-    ])
-
-    query.mockClear()
-    getStats.mockClear()
-    getDashboardModels.mockClear()
-    getDashboardSnapshotV2.mockClear()
-
-    ;(wrapper.vm as any).filters.native_compaction_v2 = true
+    expect((wrapper.vm as any).billingModeOptions).toContainEqual({ value: 'video', label: 'Per-second video' })
+    ;(wrapper.vm as any).filters.billing_mode = 'video'
     ;(wrapper.vm as any).applyFilters()
     await flushPromises()
 
-    expect(query).toHaveBeenCalledWith(
-      expect.objectContaining({ native_compaction_v2: true }),
-      expect.anything()
-    )
-    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
-    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
-    expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ billing_mode: 'video' }), expect.anything())
+  })
 
-    query.mockClear()
-    getStats.mockClear()
-    getDashboardModels.mockClear()
-    getDashboardSnapshotV2.mockClear()
+  it('renders refunded video customer costs through the real user usage table without leaking account costs', async () => {
+    query.mockResolvedValue({
+      items: [{
+        ...usageLog,
+        request_id: 'req-user-refunded-video',
+        model: 'sora-2',
+        billing_mode: 'video',
+        video_count: 1,
+        video_resolution: '720p',
+        video_duration_seconds: 5,
+        input_tokens: 123,
+        output_tokens: 456,
+        actual_cost: 0.4,
+        total_cost: 0.4,
+        refunded_cost: 0.4,
+        refunded_total_cost: 0.4,
+        net_actual_cost: 0,
+        net_total_cost: 0,
+        refunded_at: '2026-07-12T00:00:00Z',
+        account_rate_multiplier: 1,
+        account_stats_cost: 0.3,
+        refunded_account_cost: 0.2,
+        net_account_cost: 0.1,
+      }],
+      total: 1,
+      pages: 1,
+    })
 
-    ;(wrapper.vm as any).resetFilters()
+    const wrapper = mountUsageView()
     await flushPromises()
 
-    expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
-    expect(query).toHaveBeenCalledWith(
-      expect.objectContaining({ native_compaction_v2: null }),
-      expect.anything()
-    )
-    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
-    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
-    expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+    expect(wrapper.text()).toContain('5s · 720p · 1 video')
+    expect(wrapper.text()).toContain('$0.000000')
+    expect(wrapper.text()).toContain('Refunded')
+    expect(wrapper.text()).not.toContain('123')
+    expect(wrapper.text()).not.toContain('456')
+
+    await wrapper.find('.group.relative').trigger('mouseenter')
+    await flushPromises()
+    const tooltip = document.body.querySelector('.cost-tooltip')
+    expect(tooltip).not.toBeNull()
+    expect(tooltip?.textContent).toContain('Customer gross')
+    expect(tooltip?.textContent).toContain('Customer refund')
+    expect(tooltip?.textContent).toContain('Customer net')
+    expect(tooltip?.textContent).toContain('$0.400000')
+    expect(tooltip?.textContent).not.toContain('$0.300000')
+    expect(tooltip?.textContent).not.toContain('$0.200000')
+    expect(tooltip?.textContent).not.toContain('$0.100000')
   })
 
   it('exports csv with current filters and without admin-only fields', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
-    ;(wrapper.vm as any).filters.native_compaction_v2 = true
 
     let exportedBlob: Blob | null = null
     let csvContent = ''
@@ -384,7 +325,6 @@ describe('user UsageView', () => {
       page_size: 100,
       sort_by: 'created_at',
       sort_order: 'desc',
-      native_compaction_v2: true,
     }))
     expect(clickSpy).toHaveBeenCalled()
     expect(showSuccess).toHaveBeenCalled()

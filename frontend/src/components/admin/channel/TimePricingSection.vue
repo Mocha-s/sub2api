@@ -131,7 +131,9 @@ import {
 
 const { t } = useI18n()
 
-const props = defineProps<{ modelValue: TimePricingFormEntry }>()
+const props = withDefaults(defineProps<{ modelValue?: TimePricingFormEntry }>(), {
+  modelValue: () => ({ timezone: 'Asia/Shanghai', weekdays_only: false, periods: [] }),
+})
 const emit = defineEmits<{ 'update:modelValue': [value: TimePricingFormEntry] }>()
 const inputIdPrefix = `time-pricing-${getCurrentInstance()?.uid}`
 

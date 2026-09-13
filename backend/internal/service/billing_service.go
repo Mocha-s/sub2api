@@ -35,16 +35,18 @@ type UserPlatformQuotaKey struct {
 //
 // SchemaVersion 用于向后兼容：
 //   - 0（旧 entry，无 SchemaVersion 字段）→ 视为 cache MISS，强制 refresh
-//   - 1（当前版本）→ 包含 limits 和 window_start，可免 DB 查询
+//   - 1（旧版）→ 没有 DB revision，必须强制 refresh
+//   - 2（当前版本）→ 包含 limits、window_start 和 DB revision
 //
 // limit 字段为 nil 表示"无限额"（DB 中对应列为 NULL）。
-const UserPlatformQuotaCacheSchemaV1 = int64(1)
+const UserPlatformQuotaCacheSchemaV1 = int64(2)
 
 type UserPlatformQuotaCacheEntry struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
 	Version         int64
+	Revision        int64
 	SchemaVersion   int64
 
 	// 以下字段仅在 SchemaVersion >= 1 时有效
@@ -1628,6 +1630,20 @@ func (s *BillingService) CalculateCost(model string, tokens UsageTokens, rateMul
 
 func (s *BillingService) CalculateCostWithServiceTier(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string) (*CostBreakdown, error) {
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
+}
+
+// CalculateCostWithLongContext preserves the legacy explicit-threshold entry
+// point used by the usage recorder while sharing the current token calculator.
+func (s *BillingService) CalculateCostWithLongContext(model string, tokens UsageTokens, rateMultiplier float64, threshold int, extraMultiplier float64) (*CostBreakdown, error) {
+	pricing, err := s.GetModelPricing(model)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *pricing
+	cloned.LongContextInputThreshold = threshold
+	cloned.LongContextInputMultiplier = extraMultiplier
+	cloned.LongContextOutputMultiplier = 1
+	return s.computeTokenBreakdown(&cloned, tokens, rateMultiplier, "", threshold > 0 && extraMultiplier > 1), nil
 }
 
 func (s *BillingService) calculateCostWithServiceTierPolicy(

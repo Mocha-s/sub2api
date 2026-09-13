@@ -68,6 +68,16 @@ const (
 	FieldTotalCost = "total_cost"
 	// FieldActualCost holds the string denoting the actual_cost field in the database.
 	FieldActualCost = "actual_cost"
+	// FieldRefundedCost holds the string denoting the refunded_cost field in the database.
+	FieldRefundedCost = "refunded_cost"
+	// FieldRefundedTotalCost holds the string denoting the refunded_total_cost field in the database.
+	FieldRefundedTotalCost = "refunded_total_cost"
+	// FieldRefundedAccountCost holds the string denoting the refunded_account_cost field in the database.
+	FieldRefundedAccountCost = "refunded_account_cost"
+	// FieldRefundReason holds the string denoting the refund_reason field in the database.
+	FieldRefundReason = "refund_reason"
+	// FieldRefundedAt holds the string denoting the refunded_at field in the database.
+	FieldRefundedAt = "refunded_at"
 	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
 	FieldRateMultiplier = "rate_multiplier"
 	// FieldLongContextBillingApplied holds the string denoting the long_context_billing_applied field in the database.
@@ -187,6 +197,11 @@ var Columns = []string{
 	FieldCacheReadCost,
 	FieldTotalCost,
 	FieldActualCost,
+	FieldRefundedCost,
+	FieldRefundedTotalCost,
+	FieldRefundedAccountCost,
+	FieldRefundReason,
+	FieldRefundedAt,
 	FieldRateMultiplier,
 	FieldLongContextBillingApplied,
 	FieldAccountRateMultiplier,
@@ -260,6 +275,12 @@ var (
 	DefaultTotalCost float64
 	// DefaultActualCost holds the default value on creation for the "actual_cost" field.
 	DefaultActualCost float64
+	// DefaultRefundedCost holds the default value on creation for the "refunded_cost" field.
+	DefaultRefundedCost float64
+	// DefaultRefundedTotalCost holds the default value on creation for the "refunded_total_cost" field.
+	DefaultRefundedTotalCost float64
+	// DefaultRefundedAccountCost holds the default value on creation for the "refunded_account_cost" field.
+	DefaultRefundedAccountCost float64
 	// DefaultRateMultiplier holds the default value on creation for the "rate_multiplier" field.
 	DefaultRateMultiplier float64
 	// DefaultLongContextBillingApplied holds the default value on creation for the "long_context_billing_applied" field.
@@ -433,6 +454,31 @@ func ByTotalCost(opts ...sql.OrderTermOption) OrderOption {
 // ByActualCost orders the results by the actual_cost field.
 func ByActualCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldActualCost, opts...).ToFunc()
+}
+
+// ByRefundedCost orders the results by the refunded_cost field.
+func ByRefundedCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundedCost, opts...).ToFunc()
+}
+
+// ByRefundedTotalCost orders the results by the refunded_total_cost field.
+func ByRefundedTotalCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundedTotalCost, opts...).ToFunc()
+}
+
+// ByRefundedAccountCost orders the results by the refunded_account_cost field.
+func ByRefundedAccountCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundedAccountCost, opts...).ToFunc()
+}
+
+// ByRefundReason orders the results by the refund_reason field.
+func ByRefundReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundReason, opts...).ToFunc()
+}
+
+// ByRefundedAt orders the results by the refunded_at field.
+func ByRefundedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundedAt, opts...).ToFunc()
 }
 
 // ByRateMultiplier orders the results by the rate_multiplier field.

@@ -373,6 +373,25 @@ func TestBuildSchedulerMetadataAccount_KeepsGrokMediaEligibility(t *testing.T) {
 	})
 }
 
+func TestBuildSchedulerMetadataAccount_KeepsPricingMarkerCredentials(t *testing.T) {
+	account := service.Account{
+		ID:       43,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pricing_managed_by":      "api-pricing-sync",
+			"pricing_markup_factor":   1.25,
+			"unused_large_credential": "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, "api-pricing-sync", got.Credentials["pricing_managed_by"])
+	require.Equal(t, 1.25, got.Credentials["pricing_markup_factor"])
+	require.Nil(t, got.Credentials["unused_large_credential"])
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsSlimGroupMembership(t *testing.T) {
 	account := service.Account{
 		ID:       42,

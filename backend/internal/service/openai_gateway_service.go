@@ -292,7 +292,8 @@ type OpenAIForwardResult struct {
 	// SearchCount is Grok-native web_search / tool search call count (per 1k pricing).
 	SearchCount int
 	// AudioUsage carries Voice billing units when present.
-	AudioUsage *AudioUsage
+	AudioUsage     *AudioUsage
+	videoTaskQuote *VideoTaskQuote
 
 	wsReplayInput                []json.RawMessage
 	wsReplayInputExists          bool

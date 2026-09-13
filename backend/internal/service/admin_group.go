@@ -311,6 +311,10 @@ func defaultAllowImageGenerationForPlatform(platform string) bool {
 	return platform == PlatformGrok
 }
 
+func platformSupportsVideoGenerationPermission(platform string) bool {
+	return platform == PlatformOpenAI || platform == PlatformGrok || platform == PlatformComposite
+}
+
 func compositeDefaultModelsListCandidateIDs() []string {
 	seen := make(map[string]struct{})
 	ids := make([]string, 0)
@@ -511,6 +515,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 
 	allowImageGeneration := input.AllowImageGeneration || defaultAllowImageGenerationForPlatform(platform)
 	allowBatchImageGeneration := input.AllowBatchImageGeneration && allowImageGeneration && platform == PlatformGemini
+	allowVideoGeneration := input.AllowVideoGeneration && platformSupportsVideoGenerationPermission(platform)
 
 	// 如果指定了复制账号的源分组，先获取账号 ID 列表
 	var accountIDsToCopy []int64
@@ -564,8 +569,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		LongContextPricingEnabled:       input.LongContextPricingEnabled,
 		ModelPricing:                    modelPricing,
 		AllowImageGeneration:            allowImageGeneration,
-		AllowVideoGeneration:            input.AllowVideoGeneration,
 		AllowBatchImageGeneration:       allowBatchImageGeneration,
+		AllowVideoGeneration:            allowVideoGeneration,
 		ImageRateIndependent:            input.ImageRateIndependent,
 		ImageRateMultiplier:             imageRateMultiplier,
 		BatchImageDiscountMultiplier:    batchImageDiscountMultiplier,
@@ -817,6 +822,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if !group.AllowImageGeneration || group.Platform != PlatformGemini {
 		group.AllowBatchImageGeneration = false
+	}
+	if input.AllowVideoGeneration != nil {
+		group.AllowVideoGeneration = *input.AllowVideoGeneration && platformSupportsVideoGenerationPermission(group.Platform)
+	} else if !platformSupportsVideoGenerationPermission(group.Platform) {
+		group.AllowVideoGeneration = false
 	}
 	if input.ImageRateIndependent != nil {
 		group.ImageRateIndependent = *input.ImageRateIndependent

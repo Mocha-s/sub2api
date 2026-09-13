@@ -876,6 +876,26 @@ func (_u *VideoTaskUpdate) AddPollAttempts(v int) *VideoTaskUpdate {
 	return _u
 }
 
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (_u *VideoTaskUpdate) SetUserDeletedAt(v time.Time) *VideoTaskUpdate {
+	_u.mutation.SetUserDeletedAt(v)
+	return _u
+}
+
+// SetNillableUserDeletedAt sets the "user_deleted_at" field if the given value is not nil.
+func (_u *VideoTaskUpdate) SetNillableUserDeletedAt(v *time.Time) *VideoTaskUpdate {
+	if v != nil {
+		_u.SetUserDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (_u *VideoTaskUpdate) ClearUserDeletedAt() *VideoTaskUpdate {
+	_u.mutation.ClearUserDeletedAt()
+	return _u
+}
+
 // Mutation returns the VideoTaskMutation object of the builder.
 func (_u *VideoTaskUpdate) Mutation() *VideoTaskMutation {
 	return _u.mutation
@@ -1296,6 +1316,12 @@ func (_u *VideoTaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedPollAttempts(); ok {
 		_spec.AddField(videotask.FieldPollAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.UserDeletedAt(); ok {
+		_spec.SetField(videotask.FieldUserDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UserDeletedAtCleared() {
+		_spec.ClearField(videotask.FieldUserDeletedAt, field.TypeTime)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -2165,6 +2191,26 @@ func (_u *VideoTaskUpdateOne) AddPollAttempts(v int) *VideoTaskUpdateOne {
 	return _u
 }
 
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (_u *VideoTaskUpdateOne) SetUserDeletedAt(v time.Time) *VideoTaskUpdateOne {
+	_u.mutation.SetUserDeletedAt(v)
+	return _u
+}
+
+// SetNillableUserDeletedAt sets the "user_deleted_at" field if the given value is not nil.
+func (_u *VideoTaskUpdateOne) SetNillableUserDeletedAt(v *time.Time) *VideoTaskUpdateOne {
+	if v != nil {
+		_u.SetUserDeletedAt(*v)
+	}
+	return _u
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (_u *VideoTaskUpdateOne) ClearUserDeletedAt() *VideoTaskUpdateOne {
+	_u.mutation.ClearUserDeletedAt()
+	return _u
+}
+
 // Mutation returns the VideoTaskMutation object of the builder.
 func (_u *VideoTaskUpdateOne) Mutation() *VideoTaskMutation {
 	return _u.mutation
@@ -2615,6 +2661,12 @@ func (_u *VideoTaskUpdateOne) sqlSave(ctx context.Context) (_node *VideoTask, er
 	}
 	if value, ok := _u.mutation.AddedPollAttempts(); ok {
 		_spec.AddField(videotask.FieldPollAttempts, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.UserDeletedAt(); ok {
+		_spec.SetField(videotask.FieldUserDeletedAt, field.TypeTime, value)
+	}
+	if _u.mutation.UserDeletedAtCleared() {
+		_spec.ClearField(videotask.FieldUserDeletedAt, field.TypeTime)
 	}
 	_node = &VideoTask{config: _u.config}
 	_spec.Assign = _node.assignValues

@@ -2,12 +2,29 @@
 package dto
 
 import (
+	"encoding/json"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+func AccountListItemFromAccount(account *Account) *AccountListItem {
+	if account == nil {
+		return nil
+	}
+	data, err := json.Marshal(account)
+	if err != nil {
+		return nil
+	}
+	var item AccountListItem
+	if err := json.Unmarshal(data, &item); err != nil {
+		return nil
+	}
+	return &item
+}
 
 func UserFromServiceShallow(u *service.User) *User {
 	if u == nil {
@@ -69,11 +86,10 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 		return nil
 	}
 	return &AdminUser{
-		User:                 *base,
-		Notes:                u.Notes,
-		LastUsedAt:           u.LastUsedAt,
-		GroupRates:           u.GroupRates,
-		RestrictPublicGroups: u.RestrictPublicGroups,
+		User:       *base,
+		Notes:      u.Notes,
+		LastUsedAt: u.LastUsedAt,
+		GroupRates: u.GroupRates,
 	}
 }
 
@@ -148,8 +164,6 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	}
 	out := &AdminGroup{
 		Group:                       groupFromServiceBase(g),
-		ForceOpenAIFast:             g.ForceOpenAIFast,
-		FreeOpenAIFast:              g.FreeOpenAIFast,
 		ProfitControlEnabled:        g.ProfitControlEnabled,
 		ProfitMinMargin:             g.ProfitMinMargin,
 		ProfitSafetyBuffer:          g.ProfitSafetyBuffer,
@@ -159,8 +173,7 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 		MCPXMLInject:                g.MCPXMLInject,
 		DefaultMappedModel:          g.DefaultMappedModel,
 		MessagesDispatchModelConfig: g.MessagesDispatchModelConfig,
-		ModelAllowlist:              g.ModelAllowlist,
-		CodexModelsManifestConfig:   g.CodexModelsManifestConfig,
+		ModelsListConfig:            g.ModelsListConfig,
 		SupportedModelScopes:        g.SupportedModelScopes,
 		AccountCount:                g.AccountCount,
 		ActiveAccountCount:          g.ActiveAccountCount,
@@ -225,7 +238,6 @@ func groupFromServiceBase(g *service.Group) Group {
 		RequirePrivacySet:               g.RequirePrivacySet,
 		RPMLimit:                        g.RPMLimit,
 		MaxReasoningEffort:              g.MaxReasoningEffort,
-		MaxReasoningEffortOverLimit:     g.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         g.ReasoningEffortMappings,
 		CreatedAt:                       g.CreatedAt,
 		UpdatedAt:                       g.UpdatedAt,
@@ -449,47 +461,6 @@ func AccountFromService(a *service.Account) *Account {
 	return out
 }
 
-// AccountListItemFromAccount projects a full account response into the
-// compact shape used by the paginated admin account list. Keeping this
-// projection separate from Account preserves the existing detail API.
-func AccountListItemFromAccount(a *Account) *AccountListItem {
-	if a == nil {
-		return nil
-	}
-	return &AccountListItem{
-		ID: a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
-		Credentials: a.Credentials, CredentialsStatus: a.CredentialsStatus, Extra: a.Extra,
-		OllamaCloudUsage: a.OllamaCloudUsage,
-		ProxyID:          a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,
-		Concurrency: a.Concurrency, LoadFactor: a.LoadFactor, Priority: a.Priority, RateMultiplier: a.RateMultiplier,
-		Status: a.Status, ErrorMessage: a.ErrorMessage, LastUsedAt: a.LastUsedAt, ExpiresAt: a.ExpiresAt,
-		AutoPauseOnExpired: a.AutoPauseOnExpired, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
-		Schedulable: a.Schedulable, RateLimitedAt: a.RateLimitedAt, RateLimitResetAt: a.RateLimitResetAt,
-		OverloadUntil: a.OverloadUntil, TempUnschedulableUntil: a.TempUnschedulableUntil,
-		TempUnschedulableReason: a.TempUnschedulableReason, SessionWindowStart: a.SessionWindowStart,
-		SessionWindowEnd: a.SessionWindowEnd, SessionWindowStatus: a.SessionWindowStatus,
-		WindowCostLimit: a.WindowCostLimit, WindowCostStickyReserve: a.WindowCostStickyReserve,
-		MaxSessions: a.MaxSessions, SessionIdleTimeoutMin: a.SessionIdleTimeoutMin, BaseRPM: a.BaseRPM,
-		RPMStrategy: a.RPMStrategy, RPMStickyBuffer: a.RPMStickyBuffer, UserMsgQueueMode: a.UserMsgQueueMode,
-		EnableTLSFingerprint: a.EnableTLSFingerprint, TLSFingerprintProfileID: a.TLSFingerprintProfileID,
-		EnableSessionIDMasking: a.EnableSessionIDMasking, CacheTTLOverrideEnabled: a.CacheTTLOverrideEnabled,
-		CacheTTLOverrideTarget: a.CacheTTLOverrideTarget, CustomBaseURLEnabled: a.CustomBaseURLEnabled,
-		CustomBaseURL: a.CustomBaseURL, QuotaLimit: a.QuotaLimit, QuotaUsed: a.QuotaUsed,
-		QuotaDailyLimit: a.QuotaDailyLimit, QuotaDailyUsed: a.QuotaDailyUsed, QuotaWeeklyLimit: a.QuotaWeeklyLimit,
-		QuotaWeeklyUsed: a.QuotaWeeklyUsed, QuotaDailyResetMode: a.QuotaDailyResetMode,
-		QuotaDailyResetHour: a.QuotaDailyResetHour, QuotaWeeklyResetMode: a.QuotaWeeklyResetMode,
-		QuotaWeeklyResetDay: a.QuotaWeeklyResetDay, QuotaWeeklyResetHour: a.QuotaWeeklyResetHour,
-		QuotaResetTimezone: a.QuotaResetTimezone, QuotaDailyResetAt: a.QuotaDailyResetAt,
-		QuotaWeeklyResetAt: a.QuotaWeeklyResetAt, QuotaNotifyDailyEnabled: a.QuotaNotifyDailyEnabled,
-		QuotaNotifyDailyThreshold: a.QuotaNotifyDailyThreshold, QuotaNotifyWeeklyEnabled: a.QuotaNotifyWeeklyEnabled,
-		QuotaNotifyWeeklyThreshold: a.QuotaNotifyWeeklyThreshold, QuotaNotifyTotalEnabled: a.QuotaNotifyTotalEnabled,
-		QuotaNotifyTotalThreshold: a.QuotaNotifyTotalThreshold, ParentAccountID: a.ParentAccountID,
-		QuotaDimension: a.QuotaDimension, ParentEmail: a.ParentEmail, ParentPlanType: a.ParentPlanType,
-		ParentPrivacyMode: a.ParentPrivacyMode, ParentSubscriptionExpiresAt: a.ParentSubscriptionExpiresAt,
-		ParentChatGPTAccountID: a.ParentChatGPTAccountID, Proxy: a.Proxy, GroupIDs: a.GroupIDs,
-	}
-}
-
 func timeToUnixSeconds(value *time.Time) *int64 {
 	if value == nil {
 		return nil
@@ -691,7 +662,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		RequestID:                 l.RequestID,
 		Model:                     requestedModel,
 		ServiceTier:               l.ServiceTier,
-		ReasoningEffort:           userFacingReasoningEffort(l),
+		ReasoningEffort:           l.ReasoningEffort,
 		InboundEndpoint:           l.InboundEndpoint,
 		GroupID:                   l.GroupID,
 		SubscriptionID:            l.SubscriptionID,
@@ -701,19 +672,24 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		CacheReadTokens:           l.CacheReadTokens,
 		CacheCreation5mTokens:     l.CacheCreation5mTokens,
 		CacheCreation1hTokens:     l.CacheCreation1hTokens,
-		InputCost:                 l.InputCost,
-		OutputCost:                l.OutputCost,
-		CacheCreationCost:         l.CacheCreationCost,
-		CacheReadCost:             l.CacheReadCost,
-		TotalCost:                 l.TotalCost,
-		ActualCost:                l.ActualCost,
+		InputCost:                 usageCostForDTO(l.InputCost),
+		OutputCost:                usageCostForDTO(l.OutputCost),
+		CacheCreationCost:         usageCostForDTO(l.CacheCreationCost),
+		CacheReadCost:             usageCostForDTO(l.CacheReadCost),
+		TotalCost:                 usageCostForDTO(l.TotalCost),
+		ActualCost:                usageCostForDTO(l.ActualCost),
+		RefundedCost:              usageCostForDTO(l.RefundedCost),
+		RefundedTotalCost:         usageCostForDTO(l.RefundedTotalCost),
+		NetActualCost:             usageCostForDTO(l.ActualCost - l.RefundedCost),
+		NetTotalCost:              usageCostForDTO(l.TotalCost - l.RefundedTotalCost),
+		RefundReason:              l.RefundReason,
+		RefundedAt:                l.RefundedAt,
 		RateMultiplier:            l.RateMultiplier,
 		LongContextBillingApplied: l.LongContextBillingApplied,
 		BillingType:               l.BillingType,
 		RequestType:               requestType.String(),
 		Stream:                    stream,
 		OpenAIWSMode:              openAIWSMode,
-		NativeCompactionV2:        l.NativeCompactionV2,
 		DurationMs:                l.DurationMs,
 		FirstTokenMs:              l.FirstTokenMs,
 		ImageCount:                l.ImageCount,
@@ -721,9 +697,9 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ImageInputSize:            l.ImageInputSize,
 		ImageOutputSize:           l.ImageOutputSize,
 		ImageInputTokens:          l.ImageInputTokens,
-		ImageInputCost:            l.ImageInputCost,
+		ImageInputCost:            usageCostForDTO(l.ImageInputCost),
 		ImageOutputTokens:         l.ImageOutputTokens,
-		ImageOutputCost:           l.ImageOutputCost,
+		ImageOutputCost:           usageCostForDTO(l.ImageOutputCost),
 		ImageSizeSource:           l.ImageSizeSource,
 		ImageSizeBreakdown:        l.ImageSizeBreakdown,
 		MediaType:                 l.MediaType,
@@ -732,6 +708,9 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		SessionID:                 l.SessionID,
 		CacheTTLOverridden:        l.CacheTTLOverridden,
 		BillingMode:               l.BillingMode,
+		VideoCount:                l.VideoCount,
+		VideoResolution:           l.VideoResolution,
+		VideoDurationSeconds:      l.VideoDurationSeconds,
 		CreatedAt:                 l.CreatedAt,
 		User:                      UserFromServiceShallow(l.User),
 		APIKey:                    APIKeyFromService(l.APIKey),
@@ -759,52 +738,35 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	usageLog := usageLogFromServiceUser(l)
 	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
 	return &AdminUsageLog{
-		UsageLog:                usageLog,
-		UpstreamModel:           l.UpstreamModel,
-		UpstreamReasoningEffort: adminUpstreamReasoningEffort(l),
-		UpstreamResponseModel:   l.UpstreamResponseModel,
-		UpstreamModelMismatch:   l.UpstreamModelMismatch,
-		ChannelID:               l.ChannelID,
-		ModelMappingChain:       l.ModelMappingChain,
-		UpstreamRequestID:       l.UpstreamRequestID,
-		BillingTier:             l.BillingTier,
-		AccountRateMultiplier:   l.AccountRateMultiplier,
-		AccountStatsCost:        l.AccountStatsCost,
-		IPAddress:               l.IPAddress,
-		Account:                 AccountSummaryFromService(l.Account),
+		UsageLog:              usageLog,
+		UpstreamModel:         l.UpstreamModel,
+		UpstreamResponseModel: l.UpstreamResponseModel,
+		UpstreamModelMismatch: l.UpstreamModelMismatch,
+		ChannelID:             l.ChannelID,
+		ModelMappingChain:     l.ModelMappingChain,
+		BillingTier:           l.BillingTier,
+		AccountRateMultiplier: l.AccountRateMultiplier,
+		AccountStatsCost:      l.AccountStatsCost,
+		RefundedAccountCost:   usageCostForDTO(l.RefundedAccountCost),
+		NetAccountCost:        usageCostForDTO(usageLogAccountCost(l) - l.RefundedAccountCost),
+		IPAddress:             l.IPAddress,
+		Account:               AccountSummaryFromService(l.Account),
 	}
 }
 
-func userFacingReasoningEffort(l *service.UsageLog) *string {
-	if l == nil {
-		return nil
-	}
-	if requested := strings.TrimSpace(derefString(l.RequestedReasoningEffort)); requested != "" {
-		return &requested
-	}
-	return l.ReasoningEffort
+func usageCostForDTO(value float64) float64 {
+	return decimal.NewFromFloat(value).Round(10).InexactFloat64()
 }
 
-func adminUpstreamReasoningEffort(l *service.UsageLog) *string {
-	if l == nil {
-		return nil
+func usageLogAccountCost(l *service.UsageLog) float64 {
+	if l.AccountStatsCost != nil {
+		return *l.AccountStatsCost
 	}
-	forwarded := strings.TrimSpace(derefString(l.ReasoningEffort))
-	if forwarded == "" {
-		return nil
+	multiplier := 1.0
+	if l.AccountRateMultiplier != nil {
+		multiplier = *l.AccountRateMultiplier
 	}
-	requested := userFacingReasoningEffort(l)
-	if requested != nil && service.NormalizeMaxReasoningEffort(*requested) == service.NormalizeMaxReasoningEffort(forwarded) {
-		return nil
-	}
-	return &forwarded
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return l.TotalCost * multiplier
 }
 
 func UsageCleanupTaskFromService(task *service.UsageCleanupTask) *UsageCleanupTask {

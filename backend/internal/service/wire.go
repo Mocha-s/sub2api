@@ -26,12 +26,6 @@ func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthCli
 	return svc
 }
 
-func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService) *VideoTaskPoller {
-	poller := NewVideoTaskPoller(repo, accountRepo, NewOpenAICompatibleVideoProviderForGateway(openai))
-	poller.Start()
-	return poller
-}
-
 // BuildInfo contains build information
 type BuildInfo struct {
 	Version   string
@@ -95,6 +89,18 @@ func ProvideAuthService(
 	svc.SetTencentCaptchaService(tencentCaptchaService)
 	svc.SetAliyunCaptchaService(aliyunCaptchaService)
 	return svc
+}
+
+func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskPoller {
+	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai), settlement)
+	poller.Start()
+	return poller
+}
+
+func ProvideVideoTaskSettlementReconciler(repo VideoTaskSettlementRepository, settlement *VideoTaskSettlementService) *VideoTaskSettlementReconciler {
+	reconciler := NewVideoTaskSettlementReconciler(repo, settlement)
+	reconciler.Start()
+	return reconciler
 }
 
 // ProvideOAuthRefreshAPI creates OAuthRefreshAPI with the default lock TTL.
@@ -848,8 +854,6 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
-	NewVideoTaskService,
-	ProvideVideoTaskPoller,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,
@@ -857,6 +861,10 @@ var ProviderSet = wire.NewSet(
 	NewBatchImageDownloadService,
 	ProvideBatchImageCleanupService,
 	ProvideBatchImageWorkerRuntime,
+	NewVideoTaskSettlementService,
+	ProvideVideoTaskSettlementReconciler,
+	NewVideoTaskService,
+	ProvideVideoTaskPoller,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideOpenAIOAuthService,

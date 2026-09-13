@@ -831,6 +831,15 @@ export default {
       accountsRateLimited: 'Limited:',
       accountsTotal: 'Total:',
       accountsUnit: 'accounts',
+      modelsList: {
+        title: 'Custom model list',
+        hint: 'Choose which models this group exposes in the model list.',
+        selectedSummary: '{count} models selected',
+        selectAll: 'Select all',
+        invertSelection: 'Invert selection',
+        loading: 'Loading models...',
+        empty: 'No models available',
+      },
       rateAndAccounts: '{rate}x rate · {count} accounts',
       accountsCount: '{count} accounts',
       rateLabel: 'rate',
@@ -1012,6 +1021,7 @@ export default {
         finalPricePreview: 'Final per-image price preview',
         notConfigured: 'Not configured'
       },
+      allowVideoGeneration: 'Allow video generation for this group',
       videoPricing: {
         title: 'Video Generation Pricing',
         description:
@@ -1142,6 +1152,7 @@ export default {
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',
           images: 'Images',
+          video: 'Video',
           gemini: 'Gemini Native'
         },
         match: {

@@ -139,6 +139,8 @@ export interface ReasoningEffortMappingRow {
   match_type: ReasoningEffortMatchType | "";
   model: string;
   pairs: ReasoningEffortMappingPair[];
+  from?: string;
+  to?: string;
 }
 
 export type ReasoningEffortMappingErrorCode =

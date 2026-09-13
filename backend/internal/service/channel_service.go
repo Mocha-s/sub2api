@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -111,6 +112,11 @@ type ChannelMappingResult struct {
 	BillingModelSource string // 计费模型来源（"requested" / "upstream" / "channel_mapped" / "response_model"）
 }
 
+type ChannelCachePubSub interface {
+	NotifyUpdate(ctx context.Context) error
+	SubscribeUpdates(ctx context.Context, handler func())
+}
+
 // BuildModelMappingChain 根据映射结果和上游实际模型构建映射链描述。
 // reqModel: 客户端请求的原始模型名。
 // upstreamModel: 上游实际使用的模型名（ForwardResult.UpstreamModel）。
@@ -147,14 +153,7 @@ const (
 	channelCacheTTL       = 10 * time.Minute
 	channelErrorTTL       = 5 * time.Second // DB 错误时的短缓存
 	channelCacheDBTimeout = 10 * time.Second
-	channelCacheNotifyTTL = 3 * time.Second
 )
-
-// ChannelCachePubSub broadcasts channel cache invalidations between instances.
-type ChannelCachePubSub interface {
-	NotifyUpdate(ctx context.Context) error
-	SubscribeUpdates(ctx context.Context, handler func())
-}
 
 // ChannelService 渠道管理服务
 type ChannelService struct {
@@ -179,7 +178,6 @@ func NewChannelService(repo ChannelRepository, groupRepo GroupRepository, authCa
 		pricingService:       pricingService,
 		cachePubSub:          cachePubSub,
 	}
-	s.subscribeCacheUpdates(context.Background())
 	return s
 }
 
@@ -367,7 +365,7 @@ func isPlatformPricingMatch(groupPlatform, pricingPlatform string) bool {
 // fallback used before a request target has been resolved.
 func matchingPlatforms(groupPlatform string) []string {
 	if groupPlatform == PlatformComposite {
-		return []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax}
+		return []string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok}
 	}
 	return []string{groupPlatform}
 }
@@ -393,41 +391,13 @@ func (s *ChannelService) InvalidateCache() {
 }
 
 func (s *ChannelService) invalidateCache() {
-	s.clearCache()
+	s.cache.Store((*channelCache)(nil))
+	s.cacheSF.Forget("channel_cache")
 
 	// 主动重建缓存，确保 CRUD 后立即生效
 	if _, err := s.buildCache(context.Background()); err != nil {
 		slog.Warn("failed to rebuild channel cache after invalidation", "error", err)
 	}
-
-	s.notifyCacheUpdate()
-}
-
-// clearCache clears only the in-process snapshot. Keeping this separate from
-// invalidateCache prevents notifications received from Redis from being
-// published again in a loop.
-func (s *ChannelService) clearCache() {
-	s.cache.Store((*channelCache)(nil))
-	s.cacheSF.Forget("channel_cache")
-}
-
-func (s *ChannelService) notifyCacheUpdate() {
-	if s.cachePubSub == nil {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), channelCacheNotifyTTL)
-	defer cancel()
-	if err := s.cachePubSub.NotifyUpdate(ctx); err != nil {
-		slog.Warn("failed to publish channel cache invalidation", "error", err)
-	}
-}
-
-func (s *ChannelService) subscribeCacheUpdates(ctx context.Context) {
-	if s.cachePubSub == nil {
-		return
-	}
-	s.cachePubSub.SubscribeUpdates(ctx, s.clearCache)
 }
 
 // matchWildcard 在通配符定价中查找匹配项（最先匹配到优先）
@@ -744,12 +714,51 @@ func validatePricingBillingMode(pricing []ChannelModelPricing) error {
 }
 
 func checkBillingModeRequirements(p ChannelModelPricing) error {
-	if p.BillingMode == BillingModePerRequest || p.BillingMode == BillingModeImage || p.BillingMode == BillingModeVideo {
+	if !p.BillingMode.IsValid() {
+		return infraerrors.BadRequest("INVALID_BILLING_MODE", "billing_mode must be token, per_request, image, or video")
+	}
+	if p.BillingMode == BillingModePerRequest || p.BillingMode == BillingModeImage {
 		if p.PerRequestPrice == nil && len(p.Intervals) == 0 {
 			return infraerrors.BadRequest(
 				"BILLING_MODE_MISSING_PRICE",
 				"per-request price or intervals required for per_request/image billing mode",
 			)
+		}
+	}
+	if p.BillingMode == BillingModeVideo {
+		if p.VideoDefaultSeconds == nil || *p.VideoDefaultSeconds < 1 || *p.VideoDefaultSeconds > 3600 {
+			return infraerrors.BadRequest(
+				"INVALID_VIDEO_DEFAULT_SECONDS",
+				"video_default_seconds must be between 1 and 3600 for video billing mode",
+			)
+		}
+		hasIntervalPrice := false
+		for _, iv := range p.Intervals {
+			if iv.VideoPricePerSecond != nil {
+				hasIntervalPrice = true
+				break
+			}
+		}
+		if p.VideoPricePerSecond == nil && !hasIntervalPrice {
+			return infraerrors.BadRequest(
+				"BILLING_MODE_MISSING_PRICE",
+				"default video price or at least one interval video price required for video billing mode",
+			)
+		}
+		seen := make(map[int]struct{}, len(p.VideoAllowedSeconds))
+		for _, seconds := range p.VideoAllowedSeconds {
+			if seconds < 1 || seconds > 3600 {
+				return infraerrors.BadRequest("INVALID_VIDEO_ALLOWED_SECONDS", "video_allowed_seconds values must be between 1 and 3600")
+			}
+			if _, ok := seen[seconds]; ok {
+				return infraerrors.BadRequest("INVALID_VIDEO_ALLOWED_SECONDS", "video_allowed_seconds values must be unique")
+			}
+			seen[seconds] = struct{}{}
+		}
+		if len(seen) > 0 {
+			if _, ok := seen[*p.VideoDefaultSeconds]; !ok {
+				return infraerrors.BadRequest("INVALID_VIDEO_DEFAULT_SECONDS", "video_default_seconds must belong to video_allowed_seconds")
+			}
 		}
 	}
 	return nil
@@ -763,26 +772,20 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"input_price", p.InputPrice},
 		{"output_price", p.OutputPrice},
 		{"cache_write_price", p.CacheWritePrice},
-		{"cache_write_1h_price", p.CacheWrite1hPrice},
 		{"cache_read_price", p.CacheReadPrice},
 		{"image_input_price", p.ImageInputPrice},
 		{"image_output_price", p.ImageOutputPrice},
 		{"per_request_price", p.PerRequestPrice},
+		{"video_price_per_second", p.VideoPricePerSecond},
 	}
 	for _, c := range checks {
-		if c.val != nil && *c.val < 0 {
-			return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
-		}
-	}
-	for _, c := range []struct {
-		field string
-		val   *float64
-	}{
-		{"fast_multiplier", p.FastMultiplier},
-		{"flex_multiplier", p.FlexMultiplier},
-	} {
-		if c.val != nil && *c.val <= 0 {
-			return infraerrors.BadRequest("INVALID_MULTIPLIER", fmt.Sprintf("%s must be > 0", c.field))
+		if c.val != nil {
+			if math.IsNaN(*c.val) || math.IsInf(*c.val, 0) {
+				return infraerrors.BadRequest("NONFINITE_PRICE", fmt.Sprintf("%s must be finite", c.field))
+			}
+			if *c.val < 0 {
+				return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
+			}
 		}
 	}
 	return nil
@@ -791,10 +794,8 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 func checkIntervalsHavePrices(p ChannelModelPricing) error {
 	for _, iv := range p.Intervals {
 		if iv.InputPrice == nil && iv.OutputPrice == nil &&
-			iv.CacheWritePrice == nil && iv.CacheWrite1hPrice == nil && iv.CacheReadPrice == nil &&
-			iv.PerRequestPrice == nil && iv.InputMultiplier == nil &&
-			iv.OutputMultiplier == nil && iv.CacheWriteMultiplier == nil &&
-			iv.CacheReadMultiplier == nil {
+			iv.CacheWritePrice == nil && iv.CacheReadPrice == nil &&
+			iv.PerRequestPrice == nil && iv.VideoPricePerSecond == nil {
 			return infraerrors.BadRequest(
 				"INTERVAL_MISSING_PRICE",
 				fmt.Sprintf("interval [%d, %s] has no price fields set for model %v",

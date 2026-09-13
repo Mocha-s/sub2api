@@ -2443,6 +2443,44 @@ func TestGrokVideoBillingUsesSeparateVideoRateMultiplier(t *testing.T) {
 	require.Equal(t, 1, *usageRepo.lastLog.VideoDurationSeconds)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_SeedanceQuoteUsesExactCostAndUnclampedMetadata(t *testing.T) {
+	groupID := int64(12601)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	quote := VideoTaskQuote{
+		BillingMode: BillingModeVideo, BillingModel: "seedance-2.0-fast-720p",
+		Effective:    VideoTaskEffectiveParams{Seconds: 60, Resolution: "720p", VideoCount: 1},
+		UnitPriceUSD: 0.08, GrossCostUSD: 4.8, ActualCostUSD: 2.4,
+		AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 4.8, AccountCostUSD: 6.0,
+		RateMultiplier: 0.5, AccountRateMultiplier: 1.25,
+	}
+	result := &OpenAIForwardResult{
+		RequestID: "seedance-quoted-60", Model: "seedance-2.0-fast-720p", BillingModel: quote.BillingModel,
+		VideoCount: 1, VideoResolution: "720p", VideoDurationSeconds: 60, videoTaskQuote: &quote,
+	}
+
+	liveAccountRate := 7.0
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: result,
+		APIKey: &APIKey{ID: 1012601, GroupID: i64p(groupID), Group: &Group{ID: groupID, Platform: PlatformOpenAI, RateMultiplier: 9}},
+		User:   &User{ID: 2012601}, Account: &Account{ID: 3012601, Platform: PlatformOpenAI, RateMultiplier: &liveAccountRate},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 4.8, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 2.4, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 1, usageRepo.lastLog.VideoCount)
+	require.Equal(t, "720p", *usageRepo.lastLog.VideoResolution)
+	require.Equal(t, 60, *usageRepo.lastLog.VideoDurationSeconds)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.InDelta(t, 0.5, usageRepo.lastLog.RateMultiplier, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.AccountRateMultiplier)
+	require.InDelta(t, 1.25, *usageRepo.lastLog.AccountRateMultiplier, 1e-12)
+	require.NotNil(t, usageRepo.lastLog.AccountStatsCost)
+	require.InDelta(t, 6.0, *usageRepo.lastLog.AccountStatsCost, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_GrokVideoUsesDefaultRateCard(t *testing.T) {
 	groupID := int64(1261)
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}

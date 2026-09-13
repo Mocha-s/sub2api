@@ -18,11 +18,12 @@ export interface PricingInterval {
   cache_write_price: number | null
   cache_write_1h_price?: number | null
   cache_read_price: number | null
-  input_multiplier: number | null
-  output_multiplier: number | null
-  cache_write_multiplier: number | null
-  cache_read_multiplier: number | null
+  input_multiplier?: number | null
+  output_multiplier?: number | null
+  cache_write_multiplier?: number | null
+  cache_read_multiplier?: number | null
   per_request_price: number | null
+  video_price_per_second: number | null
   sort_order: number
 }
 
@@ -42,6 +43,7 @@ export interface ChannelModelPricing {
   id?: number
   platform: string
   models: string[]
+  description: string
   billing_mode: BillingMode
   input_price: number | null
   output_price: number | null
@@ -54,16 +56,21 @@ export interface ChannelModelPricing {
   image_input_price: number | null
   image_output_price: number | null
   per_request_price: number | null
+  video_price_per_second: number | null
+  video_default_seconds: number | null
+  video_allowed_seconds: number[]
   intervals: PricingInterval[]
   time_pricing: ChannelTimePricing | null
 }
+
+export type AccountStatsModelPricing = Omit<ChannelModelPricing, 'description'>
 
 export interface AccountStatsPricingRule {
   id?: number
   name: string
   group_ids: number[]
   account_ids: number[]
-  pricing: ChannelModelPricing[]
+  pricing: AccountStatsModelPricing[]
 }
 
 export interface Channel {

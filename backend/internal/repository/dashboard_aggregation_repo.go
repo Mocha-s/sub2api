@@ -259,17 +259,8 @@ func (r *dashboardAggregationRepository) cleanupUsageLogsBatches(ctx context.Con
 			continue
 		}
 
-		res, err := r.sql.ExecContext(ctx, `
-			WITH victims AS (
-				SELECT ctid
-				FROM usage_logs
-				WHERE created_at < $1
-				ORDER BY created_at ASC, id ASC
-				LIMIT $2
-			)
-			DELETE FROM usage_logs
-			WHERE ctid IN (SELECT ctid FROM victims)
-		`, cutoff.UTC(), usageLogsCleanupBatchSize)
+		query := buildUsageLogsCleanupBatchSQL("usage_logs", "video_task_refund_reporting_jobs")
+		res, err := r.sql.ExecContext(ctx, query, cutoff.UTC(), usageLogsCleanupBatchSize)
 		if err != nil {
 			return err
 		}
@@ -298,11 +289,20 @@ func cleanupUsageLogsBatchWithRollupInvalidation(ctx context.Context, db *sql.DB
 	}
 	rows, err := tx.QueryContext(ctx, `
 		WITH victims AS (
-			SELECT ctid
+			SELECT ctid, id, created_at
 			FROM usage_logs
 			WHERE created_at < $1
+			AND NOT EXISTS (
+				SELECT 1 FROM video_task_refund_reporting_jobs j
+				WHERE j.usage_log_id = usage_logs.id AND j.completed_at IS NULL
+			)
 			ORDER BY created_at ASC, id ASC
 			LIMIT $2
+		), deleted_jobs AS (
+			DELETE FROM video_task_refund_reporting_jobs j
+			USING victims v
+			WHERE j.usage_log_id = v.id AND j.completed_at IS NOT NULL
+			RETURNING j.id
 		)
 		DELETE FROM usage_logs
 		WHERE ctid IN (SELECT ctid FROM victims)
@@ -341,6 +341,36 @@ func cleanupUsageLogsBatchWithRollupInvalidation(ctx context.Context, db *sql.DB
 		return 0, err
 	}
 	return affected, nil
+}
+
+func buildUsageLogsCleanupBatchSQL(usageTable, reportingJobsTable string) string {
+	usageTable = pq.QuoteIdentifier(usageTable)
+	reportingJobsTable = pq.QuoteIdentifier(reportingJobsTable)
+	return fmt.Sprintf(`
+			WITH victims AS (
+				SELECT ul.id, ul.ctid
+				FROM %s ul
+				WHERE ul.created_at < $1
+				AND NOT EXISTS (
+					SELECT 1 FROM %s j
+					WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+				)
+				FOR UPDATE OF ul SKIP LOCKED
+				LIMIT $2
+			), deleted_jobs AS (
+				DELETE FROM %s j
+				USING victims v
+				WHERE j.usage_log_id=v.id AND j.completed_at IS NOT NULL
+				RETURNING j.id
+			)
+			DELETE FROM %s ul
+			USING victims v
+			WHERE ul.id=v.id AND ul.ctid=v.ctid
+			AND NOT EXISTS (
+				SELECT 1 FROM %s j
+				WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+			)
+	`, usageTable, reportingJobsTable, reportingJobsTable, usageTable, reportingJobsTable)
 }
 
 func (r *dashboardAggregationRepository) CleanupUsageBillingDedup(ctx context.Context, cutoff time.Time) error {
@@ -433,7 +463,10 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 				COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
 				COALESCE(SUM(total_cost), 0) AS total_cost,
 				COALESCE(SUM(actual_cost), 0) AS actual_cost,
-				COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) AS account_cost,
+				COALESCE(SUM(` + usageLogGrossAccountCostExpr("") + `), 0) AS account_cost,
+				COALESCE(SUM(refunded_total_cost), 0) AS refunded_total_cost,
+				COALESCE(SUM(refunded_cost), 0) AS refunded_cost,
+				COALESCE(SUM(refunded_account_cost), 0) AS refunded_account_cost,
 				COALESCE(SUM(COALESCE(duration_ms, 0)), 0) AS total_duration_ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
@@ -455,6 +488,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			total_cost,
 			actual_cost,
 			account_cost,
+			refunded_total_cost,
+			refunded_cost,
+			refunded_account_cost,
 			total_duration_ms,
 			active_users,
 			computed_at
@@ -469,6 +505,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			hourly.total_cost,
 			hourly.actual_cost,
 			hourly.account_cost,
+			hourly.refunded_total_cost,
+			hourly.refunded_cost,
+			hourly.refunded_account_cost,
 			hourly.total_duration_ms,
 			COALESCE(user_counts.active_users, 0) AS active_users,
 			NOW()
@@ -484,6 +523,9 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 			total_cost = EXCLUDED.total_cost,
 			actual_cost = EXCLUDED.actual_cost,
 			account_cost = EXCLUDED.account_cost,
+			refunded_total_cost = EXCLUDED.refunded_total_cost,
+			refunded_cost = EXCLUDED.refunded_cost,
+			refunded_account_cost = EXCLUDED.refunded_account_cost,
 			total_duration_ms = EXCLUDED.total_duration_ms,
 			active_users = EXCLUDED.active_users,
 			computed_at = EXCLUDED.computed_at
@@ -506,6 +548,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 				COALESCE(SUM(total_cost), 0) AS total_cost,
 				COALESCE(SUM(actual_cost), 0) AS actual_cost,
 				COALESCE(SUM(account_cost), 0) AS account_cost,
+				COALESCE(SUM(refunded_total_cost), 0) AS refunded_total_cost,
+				COALESCE(SUM(refunded_cost), 0) AS refunded_cost,
+				COALESCE(SUM(refunded_account_cost), 0) AS refunded_account_cost,
 				COALESCE(SUM(total_duration_ms), 0) AS total_duration_ms
 			FROM usage_dashboard_hourly
 			WHERE bucket_start >= $1 AND bucket_start < $2
@@ -527,6 +572,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			total_cost,
 			actual_cost,
 			account_cost,
+			refunded_total_cost,
+			refunded_cost,
+			refunded_account_cost,
 			total_duration_ms,
 			active_users,
 			computed_at
@@ -541,6 +589,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			daily.total_cost,
 			daily.actual_cost,
 			daily.account_cost,
+			daily.refunded_total_cost,
+			daily.refunded_cost,
+			daily.refunded_account_cost,
 			daily.total_duration_ms,
 			COALESCE(user_counts.active_users, 0) AS active_users,
 			NOW()
@@ -556,6 +607,9 @@ func (r *dashboardAggregationRepository) upsertDailyAggregates(ctx context.Conte
 			total_cost = EXCLUDED.total_cost,
 			actual_cost = EXCLUDED.actual_cost,
 			account_cost = EXCLUDED.account_cost,
+			refunded_total_cost = EXCLUDED.refunded_total_cost,
+			refunded_cost = EXCLUDED.refunded_cost,
+			refunded_account_cost = EXCLUDED.refunded_account_cost,
 			total_duration_ms = EXCLUDED.total_duration_ms,
 			active_users = EXCLUDED.active_users,
 			computed_at = EXCLUDED.computed_at
@@ -664,7 +718,6 @@ func dropUsageLogsPartitionWithRollupInvalidation(ctx context.Context, db *sql.D
 	}
 	return tx.Commit()
 }
-
 func (r *dashboardAggregationRepository) createUsageLogsPartition(ctx context.Context, month time.Time) error {
 	monthStart := truncateToMonthUTC(month)
 	nextMonth := monthStart.AddDate(0, 1, 0)

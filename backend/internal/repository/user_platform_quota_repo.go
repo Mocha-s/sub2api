@@ -27,6 +27,7 @@ type UserPlatformQuotaRecord struct {
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time
 	MonthlyWindowStart *time.Time
+	Revision           int64
 }
 
 // ErrUserPlatformQuotaNotFound 用于 ResetExpiredWindow 等需要"必须命中已有记录"的方法。
@@ -46,6 +47,13 @@ type UserPlatformQuotaSnapshot struct {
 	DailyWindowStart   time.Time
 	WeeklyWindowStart  time.Time
 	MonthlyWindowStart time.Time
+	Revision           int64
+}
+
+type UserPlatformQuotaSnapshotResult struct {
+	UserID, Revision int64
+	Platform         string
+	Applied          bool
 }
 
 // UserPlatformQuotaRepository 定义用户平台配额的数据访问接口。
@@ -123,6 +131,7 @@ func (r *userPlatformQuotaRepository) BulkInsertInitial(ctx context.Context, rec
 			daily_limit_usd   = COALESCE(user_platform_quotas.daily_limit_usd, EXCLUDED.daily_limit_usd),
 			weekly_limit_usd  = COALESCE(user_platform_quotas.weekly_limit_usd, EXCLUDED.weekly_limit_usd),
 			monthly_limit_usd = COALESCE(user_platform_quotas.monthly_limit_usd, EXCLUDED.monthly_limit_usd),
+			revision          = user_platform_quotas.revision + 1,
 			updated_at        = EXCLUDED.updated_at`)
 
 	_, err := client.ExecContext(ctx, sb.String(), args...)
@@ -200,6 +209,7 @@ func (r *userPlatformQuotaRepository) IncrementUsageWithReset(ctx context.Contex
 					daily_usage_usd   = user_platform_quotas.daily_usage_usd   + EXCLUDED.daily_usage_usd,
 					weekly_usage_usd  = user_platform_quotas.weekly_usage_usd  + EXCLUDED.weekly_usage_usd,
 					monthly_usage_usd = user_platform_quotas.monthly_usage_usd + EXCLUDED.monthly_usage_usd,
+					revision          = user_platform_quotas.revision + 1,
 					updated_at        = EXCLUDED.updated_at`
 			// $6 = now：30 天滚动月度窗口以当前时刻为起始
 			_, e := txClient.ExecContext(txCtx, insertSQL,
@@ -223,6 +233,7 @@ func (r *userPlatformQuotaRepository) IncrementUsageWithReset(ctx context.Contex
 			SetDailyWindowStart(timezone.StartOfDay(now)).
 			SetWeeklyWindowStart(timezone.StartOfWeek(now)).
 			SetMonthlyWindowStart(newMonthlyStart). // 30 天滚动：仅过期时更新起始
+			AddRevision(1).
 			Save(txCtx)
 		return e
 	})
@@ -251,11 +262,11 @@ func (r *userPlatformQuotaRepository) ResetExpiredWindow(ctx context.Context, us
 		)
 	switch window {
 	case "daily":
-		upd = upd.SetDailyUsageUsd(0).SetDailyWindowStart(newStart)
+		upd = upd.SetDailyUsageUsd(0).SetDailyWindowStart(newStart).AddRevision(1)
 	case "weekly":
-		upd = upd.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newStart)
+		upd = upd.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(newStart).AddRevision(1)
 	case "monthly":
-		upd = upd.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newStart)
+		upd = upd.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(newStart).AddRevision(1)
 	default:
 		return fmt.Errorf("unknown window %q", window)
 	}
@@ -307,7 +318,43 @@ func entQuotaToRecord(e *dbent.UserPlatformQuota) *UserPlatformQuotaRecord {
 		DailyWindowStart:   e.DailyWindowStart,
 		WeeklyWindowStart:  e.WeeklyWindowStart,
 		MonthlyWindowStart: e.MonthlyWindowStart,
+		Revision:           e.Revision,
 	}
+}
+
+func (r *userPlatformQuotaRepository) CompareAndSwapUsageSnapshots(ctx context.Context, snapshots []UserPlatformQuotaSnapshot) ([]UserPlatformQuotaSnapshotResult, error) {
+	results := make([]UserPlatformQuotaSnapshotResult, 0, len(snapshots))
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		for _, snapshot := range snapshots {
+			result := UserPlatformQuotaSnapshotResult{UserID: snapshot.UserID, Platform: snapshot.Platform, Revision: snapshot.Revision}
+			affected, err := txClient.UserPlatformQuota.Update().Where(
+				userplatformquota.UserIDEQ(snapshot.UserID), userplatformquota.PlatformEQ(snapshot.Platform),
+				userplatformquota.DeletedAtIsNil(), userplatformquota.RevisionEQ(snapshot.Revision),
+			).SetDailyUsageUsd(snapshot.DailyUsageUSD).SetWeeklyUsageUsd(snapshot.WeeklyUsageUSD).
+				SetMonthlyUsageUsd(snapshot.MonthlyUsageUSD).SetDailyWindowStart(snapshot.DailyWindowStart).
+				SetWeeklyWindowStart(snapshot.WeeklyWindowStart).SetMonthlyWindowStart(snapshot.MonthlyWindowStart).
+				AddRevision(1).Save(txCtx)
+			if err != nil {
+				return err
+			}
+			if affected == 0 {
+				current, queryErr := txClient.UserPlatformQuota.Query().Where(userplatformquota.UserIDEQ(snapshot.UserID), userplatformquota.PlatformEQ(snapshot.Platform), userplatformquota.DeletedAtIsNil()).Only(txCtx)
+				if queryErr != nil && !dbent.IsNotFound(queryErr) {
+					return queryErr
+				}
+				if current != nil {
+					result.Revision = current.Revision
+				}
+				results = append(results, result)
+				continue
+			}
+			result.Revision = snapshot.Revision + 1
+			result.Applied = true
+			results = append(results, result)
+		}
+		return nil
+	})
+	return results, err
 }
 
 // maybeReset 判断是否需要重置窗口用量：
@@ -371,7 +418,7 @@ func softDeleteMissingPlatforms(ctx context.Context, client *dbent.Client, userI
 		args  []any
 	)
 	if len(keepPlatforms) == 0 {
-		query = `UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2
+		query = `UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2, revision = revision + 1
 		         WHERE user_id = $1 AND deleted_at IS NULL`
 		args = []any{userID, now}
 	} else {
@@ -382,7 +429,7 @@ func softDeleteMissingPlatforms(ctx context.Context, client *dbent.Client, userI
 			placeholders[i] = fmt.Sprintf("$%d", i+3)
 			args = append(args, p)
 		}
-		query = fmt.Sprintf(`UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2
+		query = fmt.Sprintf(`UPDATE user_platform_quotas SET deleted_at = $2, updated_at = $2, revision = revision + 1
 		         WHERE user_id = $1 AND deleted_at IS NULL AND platform NOT IN (%s)`,
 			strings.Join(placeholders, ","))
 	}
@@ -397,7 +444,7 @@ func softDeleteMissingPlatforms(ctx context.Context, client *dbent.Client, userI
 func updateLimitsRow(ctx context.Context, client *dbent.Client, userID int64, rec UserPlatformQuotaRecord, now time.Time) (int64, error) {
 	const query = `UPDATE user_platform_quotas
 		SET daily_limit_usd = $1, weekly_limit_usd = $2, monthly_limit_usd = $3,
-		    deleted_at = NULL, updated_at = $4
+		    deleted_at = NULL, updated_at = $4, revision = revision + 1
 		WHERE user_id = $5 AND platform = $6 AND deleted_at IS NULL`
 	res, err := client.ExecContext(ctx, query,
 		rec.DailyLimitUSD, rec.WeeklyLimitUSD, rec.MonthlyLimitUSD, now,
@@ -467,7 +514,7 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 		_, _ = sb.WriteString(
 			"INSERT INTO user_platform_quotas" +
 				" (user_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd," +
-				" daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)" +
+				" daily_window_start, weekly_window_start, monthly_window_start, revision, created_at, updated_at)" +
 				" VALUES ")
 
 		// $1 = now（共用）；每行 8 个 per-row 参，从 $2 起连续编号。
@@ -477,12 +524,12 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				_, _ = sb.WriteString(",")
 			}
 			b := len(args) // 当前 per-row 第一个参数的 0-based 索引，实际占位符 = b+1
-			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$1,$1)",
-				b+1, b+2, b+3, b+4, b+5, b+6, b+7, b+8)
+			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$%d,$1,$1)",
+				b+1, b+2, b+3, b+4, b+5, b+6, b+7, b+8, b+9)
 			args = append(args,
 				s.UserID, s.Platform,
 				s.DailyUsageUSD, s.WeeklyUsageUSD, s.MonthlyUsageUSD,
-				s.DailyWindowStart, s.WeeklyWindowStart, s.MonthlyWindowStart,
+				s.DailyWindowStart, s.WeeklyWindowStart, s.MonthlyWindowStart, s.Revision,
 			)
 		}
 
@@ -494,7 +541,9 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				"  daily_window_start   = EXCLUDED.daily_window_start," +
 				"  weekly_window_start  = EXCLUDED.weekly_window_start," +
 				"  monthly_window_start = EXCLUDED.monthly_window_start," +
-				"  updated_at           = EXCLUDED.updated_at")
+				"  revision              = user_platform_quotas.revision + 1," +
+				"  updated_at             = EXCLUDED.updated_at" +
+				" WHERE user_platform_quotas.revision = EXCLUDED.revision")
 
 		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {
 			var pqErr *pq.Error

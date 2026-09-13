@@ -530,6 +530,12 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			"/health",
 			"/responses",
 			"/responses/compact",
+			"/chat/completions",
+			"/embeddings",
+			"/video/generations",
+			"/video/generations/task-123",
+			"/videos",
+			"/videos/task-123/content",
 		}
 
 		for _, path := range apiPaths {
@@ -792,6 +798,12 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 			"/health",
 			"/responses",
 			"/responses/compact",
+			"/chat/completions",
+			"/embeddings",
+			"/video/generations",
+			"/video/generations/task-123",
+			"/videos",
+			"/videos/task-123/content",
 		}
 
 		for _, path := range apiPaths {

@@ -1,6 +1,9 @@
 package service
 
-import "context"
+import (
+	"context"
+	"net/url"
+)
 
 // HTTPUpstreamProfile marks HTTP upstream requests that need provider-specific
 // transport policy.
@@ -15,7 +18,10 @@ const (
 
 type httpUpstreamProfileContextKey struct{}
 type httpUpstreamDisableRedirectsContextKey struct{}
+type httpRedirectValidatorContextKey struct{}
 type httpUpstreamPublicHostsOnlyContextKey struct{}
+
+type HTTPRedirectValidator func(*url.URL) error
 
 // WithHTTPUpstreamProfile injects an upstream transport profile into ctx.
 func WithHTTPUpstreamProfile(ctx context.Context, profile HTTPUpstreamProfile) context.Context {
@@ -28,6 +34,27 @@ func WithHTTPUpstreamProfile(ctx context.Context, profile HTTPUpstreamProfile) c
 	return context.WithValue(ctx, httpUpstreamProfileContextKey{}, profile)
 }
 
+func WithHTTPRedirectValidator(ctx context.Context, validator HTTPRedirectValidator) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if validator == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, httpRedirectValidatorContextKey{}, validator)
+}
+
+func ValidateHTTPRedirect(ctx context.Context, target *url.URL) error {
+	if ctx == nil {
+		return nil
+	}
+	validator, _ := ctx.Value(httpRedirectValidatorContextKey{}).(HTTPRedirectValidator)
+	if validator == nil {
+		return nil
+	}
+	return validator(target)
+}
+
 // HTTPUpstreamProfileFromContext resolves the upstream transport profile from ctx.
 func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 	if ctx == nil {
@@ -38,7 +65,11 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 		return HTTPUpstreamProfileDefault
 	}
 	switch profile {
-	case HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileGrok, HTTPUpstreamProfileLongStream:
+	case HTTPUpstreamProfileOpenAI:
+		return profile
+	case HTTPUpstreamProfileGrok:
+		return profile
+	case HTTPUpstreamProfileLongStream:
 		return profile
 	default:
 		return HTTPUpstreamProfileDefault
@@ -58,10 +89,6 @@ func HTTPUpstreamRedirectsDisabled(ctx context.Context) bool {
 	return ctx != nil && ctx.Value(httpUpstreamDisableRedirectsContextKey{}) == true
 }
 
-// WithHTTPUpstreamPublicHostsOnly marks a request whose destination, and every
-// redirect hop after it, must resolve to a public address. The shared upstream
-// client enforces it regardless of the security.url_allowlist configuration;
-// use it for fetches whose URL comes from an untrusted upstream response.
 func WithHTTPUpstreamPublicHostsOnly(ctx context.Context) context.Context {
 	if ctx == nil {
 		ctx = context.Background()

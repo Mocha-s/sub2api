@@ -51,6 +51,11 @@ var usageLogInsertArgTypes = [...]string{
 	"numeric",     // cache_read_cost
 	"numeric",     // total_cost
 	"numeric",     // actual_cost
+	"numeric",     // refunded_cost
+	"numeric",     // refunded_total_cost
+	"numeric",     // refunded_account_cost
+	"text",        // refund_reason
+	"timestamptz", // refunded_at
 	"numeric",     // rate_multiplier
 	"numeric",     // account_rate_multiplier
 	"smallint",    // billing_type
@@ -72,7 +77,6 @@ var usageLogInsertArgTypes = [...]string{
 	"integer",     // video_duration_seconds
 	"text",        // service_tier
 	"text",        // reasoning_effort
-	"text",        // requested_reasoning_effort
 	"text",        // inbound_endpoint
 	"text",        // upstream_endpoint
 	"boolean",     // cache_ttl_overridden
@@ -82,9 +86,7 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // billing_tier
 	"text",        // billing_mode
 	"numeric",     // account_stats_cost
-	"text",        // upstream_request_id
 	"text",        // session_id
-	"boolean",     // native_compaction_v2
 	"timestamptz", // created_at
 }
 
@@ -252,6 +254,11 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -273,7 +280,6 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -283,9 +289,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
@@ -293,7 +297,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -712,6 +716,11 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -733,7 +742,6 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -743,15 +751,13 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		) AS (VALUES `)
 
-	// Each batch row prepends the synthetic input_index before the 60
+	// Each batch row prepends the synthetic input_index before the 64
 	// usage-log column values.
-	args := make([]any, 0, len(keys)*61)
+	args := make([]any, 0, len(keys)*65)
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -807,6 +813,11 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_read_cost,
 				total_cost,
 				actual_cost,
+				refunded_cost,
+				refunded_total_cost,
+				refunded_account_cost,
+				refund_reason,
+				refunded_at,
 				rate_multiplier,
 				account_rate_multiplier,
 				billing_type,
@@ -828,7 +839,6 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				video_duration_seconds,
 				service_tier,
 				reasoning_effort,
-				requested_reasoning_effort,
 				inbound_endpoint,
 				upstream_endpoint,
 				cache_ttl_overridden,
@@ -838,9 +848,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
-				upstream_request_id,
 				session_id,
-				native_compaction_v2,
 				created_at
 			)
 			SELECT
@@ -871,6 +879,11 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_read_cost,
 				total_cost,
 				actual_cost,
+				refunded_cost,
+				refunded_total_cost,
+				refunded_account_cost,
+				refund_reason,
+				refunded_at,
 				rate_multiplier,
 				account_rate_multiplier,
 				billing_type,
@@ -892,7 +905,6 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				video_duration_seconds,
 				service_tier,
 				reasoning_effort,
-				requested_reasoning_effort,
 				inbound_endpoint,
 				upstream_endpoint,
 				cache_ttl_overridden,
@@ -902,9 +914,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
-				upstream_request_id,
 				session_id,
-				native_compaction_v2,
 				created_at
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
@@ -975,6 +985,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -996,7 +1011,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -1006,13 +1020,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*60)
+	args := make([]any, 0, len(preparedList)*64)
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -1065,6 +1077,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -1086,7 +1103,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -1096,9 +1112,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		)
 		SELECT
@@ -1129,6 +1143,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -1150,7 +1169,6 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -1160,9 +1178,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
@@ -1201,6 +1217,11 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			cache_read_cost,
 			total_cost,
 			actual_cost,
+			refunded_cost,
+			refunded_total_cost,
+			refunded_account_cost,
+			refund_reason,
+			refunded_at,
 			rate_multiplier,
 			account_rate_multiplier,
 			billing_type,
@@ -1222,7 +1243,6 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			video_duration_seconds,
 			service_tier,
 			reasoning_effort,
-			requested_reasoning_effort,
 			inbound_endpoint,
 			upstream_endpoint,
 			cache_ttl_overridden,
@@ -1232,9 +1252,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			upstream_request_id,
 			session_id,
-			native_compaction_v2,
 			created_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
@@ -1242,7 +1260,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1277,14 +1295,12 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	videoDurationSeconds := nullInt(log.VideoDurationSeconds)
 	serviceTier := nullString(log.ServiceTier)
 	reasoningEffort := nullString(log.ReasoningEffort)
-	requestedReasoningEffort := nullString(log.RequestedReasoningEffort)
 	inboundEndpoint := nullString(log.InboundEndpoint)
 	upstreamEndpoint := nullString(log.UpstreamEndpoint)
 	channelID := nullInt64(log.ChannelID)
 	modelMappingChain := nullString(log.ModelMappingChain)
 	billingTier := nullString(log.BillingTier)
 	billingMode := nullString(log.BillingMode)
-	upstreamRequestID := nullString(log.UpstreamRequestID)
 	sessionID := nullString(log.SessionID)
 	requestedModel := strings.TrimSpace(log.RequestedModel)
 	if requestedModel == "" {
@@ -1293,6 +1309,8 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	upstreamModel := nullString(log.UpstreamModel)
 	upstreamResponseModel := nullString(log.UpstreamResponseModel)
 	upstreamModelMismatch := nullBool(log.UpstreamModelMismatch)
+	refundReason := nullString(log.RefundReason)
+	refundedAt := nullTime(log.RefundedAt)
 
 	var requestIDArg any
 	if requestID != "" {
@@ -1332,6 +1350,11 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			log.CacheReadCost,
 			log.TotalCost,
 			log.ActualCost,
+			log.RefundedCost,
+			log.RefundedTotalCost,
+			log.RefundedAccountCost,
+			refundReason,
+			refundedAt,
 			rateMultiplier,
 			log.AccountRateMultiplier,
 			log.BillingType,
@@ -1353,7 +1376,6 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			videoDurationSeconds,
 			serviceTier,
 			reasoningEffort,
-			requestedReasoningEffort,
 			inboundEndpoint,
 			upstreamEndpoint,
 			log.CacheTTLOverridden,
@@ -1363,9 +1385,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			billingTier,
 			billingMode,
 			log.AccountStatsCost, // account_stats_cost
-			upstreamRequestID,    // upstream_request_id
 			sessionID,            // session_id
-			log.NativeCompactionV2,
 			createdAt,
 		},
 	}
