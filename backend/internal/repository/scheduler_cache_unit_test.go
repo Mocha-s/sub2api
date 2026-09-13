@@ -344,6 +344,23 @@ func TestBuildSchedulerMetadataAccount_KeepsPricingMarkerCredentials(t *testing.
 	require.Nil(t, got.Credentials["unused_large_credential"])
 }
 
+func TestBuildSchedulerMetadataAccount_KeepsVideoAdapterCredential(t *testing.T) {
+	account := service.Account{
+		ID:       44,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			service.VideoAdapterMetadataKey: service.VideoAdapterOpenAIVideosDuration,
+			"unused_large_credential":      "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, service.VideoAdapterOpenAIVideosDuration, got.Credentials[service.VideoAdapterMetadataKey])
+	require.Nil(t, got.Credentials["unused_large_credential"])
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsGrokMediaEligibility(t *testing.T) {
 	t.Run("explicit override", func(t *testing.T) {
 		account := service.Account{

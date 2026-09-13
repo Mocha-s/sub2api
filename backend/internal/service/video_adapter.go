@@ -17,6 +17,8 @@ const (
 )
 
 type videoTaskEndpointContextKey struct{}
+type videoTaskRequestIDContextKey struct{}
+type videoTaskContentMethodContextKey struct{}
 
 func withVideoTaskEndpoint(ctx context.Context, endpoint string) context.Context {
 	if endpoint == "" {
@@ -33,6 +35,44 @@ func videoTaskEndpointFromContext(ctx context.Context) string {
 		return value
 	}
 	return VideoTaskEndpointVideos
+}
+
+func withVideoTaskRequestID(ctx context.Context, requestID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, videoTaskRequestIDContextKey{}, requestID)
+}
+
+func videoTaskRequestIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	requestID, _ := ctx.Value(videoTaskRequestIDContextKey{}).(string)
+	return strings.TrimSpace(requestID)
+}
+
+func withVideoTaskContentMethod(ctx context.Context, method string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if strings.EqualFold(method, http.MethodHead) {
+		return context.WithValue(ctx, videoTaskContentMethodContextKey{}, http.MethodHead)
+	}
+	return context.WithValue(ctx, videoTaskContentMethodContextKey{}, http.MethodGet)
+}
+
+func videoTaskContentMethodFromContext(ctx context.Context) string {
+	if ctx != nil {
+		if method, ok := ctx.Value(videoTaskContentMethodContextKey{}).(string); ok && strings.EqualFold(method, http.MethodHead) {
+			return http.MethodHead
+		}
+	}
+	return http.MethodGet
 }
 
 type VideoTaskAdapter interface {

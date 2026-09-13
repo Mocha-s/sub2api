@@ -26,6 +26,12 @@ func (a *openAIVideosDurationAdapter) ValidateCreate(ctx context.Context, accoun
 	if _, err := openAIDurationCreateBody(body, upstreamModel); err != nil {
 		return err
 	}
+	if err := validateUnifiedVideoGenerationFields(ctx, body,
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"content", "images", "videos", "audios",
+	); err != nil {
+		return err
+	}
 	provider, err := a.openAIProvider()
 	if err != nil {
 		return err
@@ -35,6 +41,9 @@ func (a *openAIVideosDurationAdapter) ValidateCreate(ctx context.Context, accoun
 }
 
 func (a *openAIVideosDurationAdapter) Create(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) (*VideoProviderCreateResult, error) {
+	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
+		return nil, err
+	}
 	provider, err := a.openAIProvider()
 	if err != nil {
 		return nil, err
@@ -156,6 +165,14 @@ func openAIDurationCreateBody(body []byte, upstreamModel string) ([]byte, error)
 			return nil, err
 		}
 		out["duration"] = encoded
+	} else if durationSeconds, ok, err := openAIDurationRawNumericField(payload, "duration_seconds"); err != nil {
+		return nil, err
+	} else if ok {
+		encoded, err := json.Marshal(durationSeconds)
+		if err != nil {
+			return nil, err
+		}
+		out["duration"] = encoded
 	}
 	if _, ok := out["aspect_ratio"]; !ok {
 		if ratio := rawStringField(payload, "ratio"); ratio != "" {
@@ -219,7 +236,11 @@ func openAIDurationRawNumericField(payload map[string]json.RawMessage, key strin
 }
 
 func openAIDurationMetadata(metadata map[string]any, raw []byte) map[string]any {
-	metadata = stampVideoAdapterMetadata(metadata, VideoAdapterOpenAIVideosDuration)
+	return stampVideoResultMetadata(metadata, raw, VideoAdapterOpenAIVideosDuration)
+}
+
+func stampVideoResultMetadata(metadata map[string]any, raw []byte, adapterName string) map[string]any {
+	metadata = stampVideoAdapterMetadata(metadata, adapterName)
 	if videoTaskMetadataString(metadata, "result_url") == "" {
 		if resultURL := openAIDurationResultURL(raw); resultURL != "" {
 			metadata["result_url"] = resultURL
@@ -263,16 +284,7 @@ func openAIDurationResultURL(raw []byte) string {
 }
 
 func openAIDurationDataURL(value any) string {
-	items, ok := value.([]any)
-	if !ok || len(items) == 0 {
-		return ""
-	}
-	for _, item := range items {
-		if resultURL := openAIDurationURLFromValue(item); resultURL != "" {
-			return resultURL
-		}
-	}
-	return ""
+	return openAIDurationURLFromValue(value)
 }
 
 func openAIDurationURLFromValue(value any) string {

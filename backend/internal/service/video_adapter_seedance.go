@@ -29,11 +29,20 @@ func (a *seedanceAPIV1VideoAdapter) ValidateCreate(ctx context.Context, account 
 	if _, err := seedanceCreateBody(body, upstreamModel); err != nil {
 		return err
 	}
+	if err := validateUnifiedVideoGenerationFields(ctx, body,
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"return_last_frame", "web_search", "content", "images", "videos", "audios",
+	); err != nil {
+		return err
+	}
 	_, err := a.seedanceEndpoint(account, "/video-generations")
 	return err
 }
 
 func (a *seedanceAPIV1VideoAdapter) Create(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) (*VideoProviderCreateResult, error) {
+	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
+		return nil, err
+	}
 	token, err := a.openAIVideoToken(ctx, account)
 	if err != nil {
 		return nil, err
@@ -52,6 +61,9 @@ func (a *seedanceAPIV1VideoAdapter) Create(ctx context.Context, account *Account
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	if requestID := videoTaskRequestIDFromContext(ctx); requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
 
 	resp, err := a.do(req, account)
 	if err != nil {
@@ -236,6 +248,10 @@ func seedanceCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, err
 	} else if ok {
 		out["duration"] = seconds
+	} else if durationSeconds, ok, err := seedanceRawNumericField(payload, "duration_seconds"); err != nil {
+		return nil, err
+	} else if ok {
+		out["duration"] = durationSeconds
 	}
 	if ratio := rawStringField(payload, "ratio"); ratio != "" {
 		out["ratio"] = ratio
@@ -486,7 +502,7 @@ func fetchVideoResultURLWithDo(ctx context.Context, resultURL string, headers ht
 	if resultURL == "" {
 		return nil, errors.New("video result_url is required")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resultURL, nil)
+	req, err := http.NewRequestWithContext(ctx, videoTaskContentMethodFromContext(ctx), resultURL, nil)
 	if err != nil {
 		return nil, err
 	}

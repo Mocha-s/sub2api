@@ -211,6 +211,23 @@ func TestOpenAIVideosDurationAdapterValidateCreateRejectsInvalidBodyBeforeHTTPCa
 	require.False(t, called, "non-finite numeric strings should not call upstream")
 }
 
+func TestOpenAIVideosDurationAdapterRejectsUnsupportedUnifiedField(t *testing.T) {
+	adapter := NewOpenAIVideosDurationAdapter(nil)
+	validator, ok := adapter.(VideoTaskCreateValidator)
+	require.True(t, ok)
+
+	err := validator.ValidateCreate(
+		withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations),
+		&Account{Credentials: map[string]any{"base_url": "https://upstream.example", "api_key": "sk-duration"}},
+		[]byte(`{"model":"seedance-2.0","prompt":"city","return_last_frame":true}`),
+		"application/json",
+		"seedance-2.0",
+	)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "return_last_frame is not supported")
+}
+
 type openAIDurationHTTPUpstreamSequence struct {
 	responses              []*http.Response
 	requests               []*http.Request

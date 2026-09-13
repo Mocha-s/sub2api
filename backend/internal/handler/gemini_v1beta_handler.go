@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -238,7 +240,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		googleError(c, status, message)
 		return
 	}
-
+	if action == "generateContent" && service.IsGeminiBananaBridgeModel(modelName) {
+		h.handleGeminiBananaBridge(c, apiKey, authSubject, subscription, reqLog, reqModel, modelName, body, channelMapping)
+		return
+	}
 	// 3) select account (sticky session based on request body)
 	// 优先使用 Gemini CLI 的会话标识（privileged-user-id + tmp 目录哈希）
 	sessionHash := extractGeminiCLISessionHash(c, body)
@@ -659,6 +664,206 @@ func googleError(c *gin.Context, status int, message string) {
 			"status":  googleapi.HTTPStatusToGoogleStatus(status),
 		},
 	})
+}
+
+func (h *GatewayHandler) handleGeminiBananaBridge(
+	c *gin.Context,
+	apiKey *service.APIKey,
+	authSubject middleware.AuthSubject,
+	subscription *service.UserSubscription,
+	reqLog *zap.Logger,
+	requestModel string,
+	modelName string,
+	body []byte,
+	channelMapping service.ChannelMappingResult,
+) {
+	if h.openAIGatewayService == nil {
+		googleError(c, http.StatusServiceUnavailable, "OpenAI image gateway is not configured")
+		return
+	}
+	if !service.GroupAllowsImageGeneration(apiKey.Group) {
+		googleError(c, http.StatusForbidden, service.ImageGenerationPermissionMessage())
+		return
+	}
+	openAIBody, openAIContentType, openAIEndpoint, err := service.BuildOpenAIImagesRequestFromGeminiBanana(modelName, body)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	openAIReq := c.Request.Clone(c.Request.Context())
+	openAIReq.URL.Path = openAIEndpoint
+	openAIReq.Body = io.NopCloser(bytes.NewReader(openAIBody))
+	openAIReq.ContentLength = int64(len(openAIBody))
+	openAIReq.Header = openAIReq.Header.Clone()
+	openAIReq.Header.Set("Content-Type", openAIContentType)
+	openAICtx := *c
+	openAICtx.Request = openAIReq
+
+	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(&openAICtx, openAIBody)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	sessionHash := h.openAIGatewayService.GenerateExplicitSessionHash(c, openAIBody)
+	sessionKey := sessionHash
+	if sessionKey != "" {
+		sessionKey = "gemini:" + sessionKey
+	}
+	requestCtx := service.WithOpenAIImageGenerationIntent(c.Request.Context())
+	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionKey, modelName, nil, "", int64(0))
+	if err != nil || selection == nil || selection.Account == nil {
+		if err == nil {
+			err = service.ErrNoAvailableAccounts
+		}
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
+		return
+	}
+	account := selection.Account
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+	accountReleaseFunc := selection.ReleaseFunc
+	if !selection.Acquired {
+		if selection.WaitPlan == nil {
+			markOpsRoutingCapacityLimited(c)
+			googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
+			return
+		}
+		if h.concurrencyHelper == nil {
+			markOpsRoutingCapacityLimited(c)
+			googleError(c, http.StatusServiceUnavailable, "Gateway concurrency service is not configured")
+			return
+		}
+		accountWaitCounted := false
+		canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
+		if waitErr != nil {
+			reqLog.Warn("gemini.banana_bridge_account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(waitErr))
+		} else if !canWait {
+			googleError(c, http.StatusTooManyRequests, "Too many pending requests, please retry later")
+			return
+		} else {
+			accountWaitCounted = true
+		}
+		defer func() {
+			if accountWaitCounted {
+				h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+			}
+		}()
+
+		streamStarted := false
+		accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(c, account.ID, selection.WaitPlan.MaxConcurrency, selection.WaitPlan.Timeout, false, &streamStarted)
+		if err != nil {
+			reqLog.Warn("gemini.banana_bridge_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			googleError(c, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		if accountWaitCounted {
+			h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+			accountWaitCounted = false
+		}
+		if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
+			reqLog.Warn("gemini.banana_bridge_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		}
+	}
+	accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+	if accountReleaseFunc != nil {
+		defer accountReleaseFunc()
+	}
+	upstreamAccount := account
+	if account.Type == service.AccountTypeAPIKey && account.Platform != service.PlatformOpenAI {
+		adapted := *account
+		adapted.Platform = service.PlatformOpenAI
+		upstreamAccount = &adapted
+	}
+
+	stopJSONKeepalive := service.StartOpenAIImagesJSONKeepalive(c, h.openAIImagesJSONKeepaliveInterval())
+	defer stopJSONKeepalive()
+	raw, err := h.openAIGatewayService.ForwardImagesRaw(requestCtx, c, upstreamAccount, openAIBody, parsed, channelMapping.MappedModel)
+	if err != nil {
+		reqLog.Error("gemini.banana_bridge_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if !c.Writer.Written() {
+			googleError(c, http.StatusBadGateway, err.Error())
+		}
+		return
+	}
+	geminiBody, usage, imageCount, err := service.BuildGeminiBananaResponseFromOpenAIImagesContext(c.Request.Context(), modelName, raw.Body)
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", geminiBody)
+
+	result := geminiBananaForwardResult(modelName, raw.ForwardResult, usage, imageCount)
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	requestPayloadHash := service.HashUsageRequestPayload(body)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
+			Result:                result,
+			QuotaPlatform:         quotaPlatform,
+			APIKey:                apiKey,
+			User:                  apiKey.User,
+			Account:               account,
+			Subscription:          subscription,
+			InboundEndpoint:       inboundEndpoint,
+			UpstreamEndpoint:      upstreamEndpoint,
+			UserAgent:             userAgent,
+			IPAddress:             clientIP,
+			RequestPayloadHash:    requestPayloadHash,
+			LongContextThreshold:  200000,
+			LongContextMultiplier: 2.0,
+			APIKeyService:         h.apiKeyService,
+			ChannelUsageFields:    clientRequestedUsageFields(c, channelMapping, requestModel, result.UpstreamModel),
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", "handler.gemini_v1beta.models"),
+				zap.Int64("user_id", authSubject.UserID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Any("group_id", apiKey.GroupID),
+				zap.String("model", modelName),
+				zap.Int64("account_id", account.ID),
+			).Error("gemini.banana_bridge_record_usage_failed", zap.Error(err))
+		}
+	})
+}
+
+func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, imageCount int) *service.ForwardResult {
+	result := &service.ForwardResult{
+		Usage:      usage,
+		Model:      strings.TrimSpace(modelName),
+		Stream:     false,
+		ImageCount: imageCount,
+	}
+	if raw == nil {
+		return result
+	}
+	result.RequestID = raw.RequestID
+	result.UpstreamModel = raw.UpstreamModel
+	result.Duration = raw.Duration
+	result.FirstTokenMs = raw.FirstTokenMs
+	result.ImageSize = raw.ImageSize
+	result.ImageInputSize = raw.ImageInputSize
+	result.ImageOutputSize = raw.ImageOutputSize
+	result.ImageOutputSizes = raw.ImageOutputSizes
+	result.ImageSizeSource = raw.ImageSizeSource
+	result.ImageSizeBreakdown = raw.ImageSizeBreakdown
+	if result.ImageCount <= 0 {
+		result.ImageCount = raw.ImageCount
+	}
+	if result.UpstreamModel == "" {
+		result.UpstreamModel = raw.Model
+	}
+	return result
+}
+
+func (h *GatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration {
+	if h.cfg == nil || h.cfg.Gateway.ImageNonstreamKeepaliveInterval <= 0 {
+		return 0
+	}
+	return time.Duration(h.cfg.Gateway.ImageNonstreamKeepaliveInterval) * time.Second
 }
 
 func writeUpstreamResponse(c *gin.Context, res *service.UpstreamHTTPResult) {

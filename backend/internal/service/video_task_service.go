@@ -42,6 +42,10 @@ type videoTaskAccountSelector interface {
 	SelectVideoTaskAccount(ctx context.Context, groupID *int64, sessionHash string, model string) (*AccountSelectionResult, error)
 }
 
+type videoTaskAccountSelectorWithExcludedIDs interface {
+	SelectVideoTaskAccountWithExcludedIDs(ctx context.Context, groupID *int64, sessionHash string, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error)
+}
+
 type videoTaskSubmissionUsageRecorder interface {
 	RecordVideoTaskSubmission(ctx context.Context, params VideoTaskCreateParams, account *Account, task *VideoTask, result *VideoProviderCreateResult, upstreamModel string)
 }
@@ -100,13 +104,18 @@ type VideoTaskContentParams struct {
 	UserID       int64
 	PublicTaskID string
 	Header       http.Header
+	Method       string
 }
 
 func (s *OpenAIGatewayService) SelectVideoTaskAccount(ctx context.Context, groupID *int64, sessionHash string, requestedModel string) (*AccountSelectionResult, error) {
+	return s.SelectVideoTaskAccountWithExcludedIDs(ctx, groupID, sessionHash, requestedModel, nil)
+}
+
+func (s *OpenAIGatewayService) SelectVideoTaskAccountWithExcludedIDs(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
 	if s == nil {
 		return nil, errors.New("openai gateway service is nil")
 	}
-	selection, _, err := s.SelectAccountWithSchedulerForCapability(ctx, groupID, "", sessionHash, requestedModel, nil, OpenAIUpstreamTransportHTTPSSE, "", false, false, false)
+	selection, _, err := s.SelectAccountWithSchedulerForCapability(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", false, false, false)
 	return selection, err
 }
 
@@ -221,59 +230,94 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	if err != nil {
 		return nil, err
 	}
-	selection, err := s.selector.SelectVideoTaskAccount(ctx, &groupID, "", req.Model)
-	if err != nil {
-		if errors.Is(err, ErrNoAvailableAccounts) {
-			return nil, errors.Join(ErrVideoTaskAccountUnavailable, err)
-		}
-		return nil, err
-	}
-	if selection == nil || selection.Account == nil {
-		return nil, fmt.Errorf("%w: no available video task account", ErrVideoTaskAccountUnavailable)
-	}
-	if selection.ReleaseFunc != nil {
-		defer selection.ReleaseFunc()
-	}
-	account := selection.Account
-	upstreamModel := strings.TrimSpace(account.GetMappedModel(req.Model))
-	if upstreamModel == "" {
-		upstreamModel = req.Model
-	}
-	forwardBody := req.RawBody
-	var quote *VideoTaskQuote
-	pricingSelection := VideoTaskPricingSelection{}
-	if s.pricingResolver != nil {
-		pricingSelection = s.pricingResolver.ResolveVideoTaskPricing(ctx, VideoTaskPricingResolveInput{
-			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
-			RequestedModel: requestedModel, UpstreamModel: upstreamModel,
-		})
-		if pricingSelection.Pricing != nil && (pricingSelection.Pricing.BillingMode == BillingModeVideo || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
-			resolved, err := ResolveVideoTaskQuote(req.RawBody, pricingSelection.BillingModel, pricingSelection.Pricing, pricingSelection.RateMultiplier, pricingSelection.AccountRateMultiplier)
-			if err != nil {
-				return nil, err
-			}
-			applyVideoAccountStatsPricing(&resolved, pricingSelection.AccountStatsPricing)
-			quote = &resolved
-			if pricingSelection.Pricing.BillingMode == BillingModeVideo {
-				forwardBody, err = applyEffectiveVideoDuration(req.RawBody, resolved.Effective.Seconds)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-	adapterName, err := resolveVideoAdapterName(account, nil)
-	if err != nil {
-		return nil, errors.Join(ErrVideoTaskAccountUnavailable, err)
-	}
 	if s.provider == nil {
 		return nil, fmt.Errorf("%w: video task provider is required", ErrVideoTaskAccountUnavailable)
 	}
 	providerCtx := withVideoTaskEndpoint(ctx, endpoint)
-	if validator, ok := s.provider.(VideoTaskCreateValidator); ok {
-		if err := validator.ValidateCreate(providerCtx, account, forwardBody, params.ContentType, upstreamModel); err != nil {
+	providerCtx = withVideoTaskRequestID(providerCtx, idempotencyKey)
+	var (
+		selection        *AccountSelectionResult
+		account          *Account
+		upstreamModel    string
+		forwardBody      []byte
+		quote            *VideoTaskQuote
+		pricingSelection VideoTaskPricingSelection
+		adapterName      string
+	)
+	excludedIDs := make(map[int64]struct{})
+	for {
+		selection, err = selectVideoTaskAccount(ctx, s.selector, &groupID, req.Model, excludedIDs)
+		if err != nil {
+			logger.LegacyPrintf("service.video_task", "video task account selection failed: group_id=%d model=%q err=%v", groupID, req.Model, err)
+			if errors.Is(err, ErrNoAvailableAccounts) {
+				return nil, errors.Join(ErrVideoTaskAccountUnavailable, err)
+			}
 			return nil, err
 		}
+		if selection == nil || selection.Account == nil {
+			logger.LegacyPrintf("service.video_task", "video task account selection returned no account: group_id=%d model=%q", groupID, req.Model)
+			return nil, fmt.Errorf("%w: no available video task account", ErrVideoTaskAccountUnavailable)
+		}
+		account = selection.Account
+		upstreamModel = strings.TrimSpace(account.GetMappedModel(req.Model))
+		if upstreamModel == "" {
+			upstreamModel = req.Model
+		}
+		forwardBody = req.RawBody
+		quote = nil
+		pricingSelection = VideoTaskPricingSelection{}
+		if s.pricingResolver != nil {
+			pricingSelection = s.pricingResolver.ResolveVideoTaskPricing(ctx, VideoTaskPricingResolveInput{
+				GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
+				RequestedModel: requestedModel, UpstreamModel: upstreamModel,
+			})
+			if pricingSelection.Pricing != nil && (pricingSelection.Pricing.BillingMode == BillingModeVideo || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
+				resolved, err := ResolveVideoTaskQuote(req.RawBody, pricingSelection.BillingModel, pricingSelection.Pricing, pricingSelection.RateMultiplier, pricingSelection.AccountRateMultiplier)
+				if err != nil {
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+					return nil, err
+				}
+				applyVideoAccountStatsPricing(&resolved, pricingSelection.AccountStatsPricing)
+				quote = &resolved
+				if pricingSelection.Pricing.BillingMode == BillingModeVideo {
+					forwardBody, err = applyEffectiveVideoDuration(req.RawBody, resolved.Effective.Seconds)
+					if err != nil {
+						if selection.ReleaseFunc != nil {
+							selection.ReleaseFunc()
+						}
+						return nil, err
+					}
+				}
+			}
+		}
+		adapterName, err = resolveVideoAdapterName(account, nil)
+		if err != nil {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			return nil, errors.Join(ErrVideoTaskAccountUnavailable, err)
+		}
+		if validator, ok := s.provider.(VideoTaskCreateValidator); ok {
+			if err := validator.ValidateCreate(providerCtx, account, forwardBody, params.ContentType, upstreamModel); err != nil {
+				if !isVideoTaskPreSubmitAdapterMismatch(err) || !supportsVideoTaskAccountExclusion(s.selector) {
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+					return nil, err
+				}
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				excludedIDs[account.ID] = struct{}{}
+				continue
+			}
+		}
+		if selection.ReleaseFunc != nil {
+			defer selection.ReleaseFunc()
+		}
+		break
 	}
 
 	publicTaskID, err := GenerateVideoPublicTaskID()
@@ -350,6 +394,22 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 	}
 
 	return s.submitVideoTask(ctx, providerCtx, params, created, account, forwardBody, upstreamModel, quote)
+}
+
+func selectVideoTaskAccount(ctx context.Context, selector videoTaskAccountSelector, groupID *int64, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+	if selectorWithExcluded, ok := selector.(videoTaskAccountSelectorWithExcludedIDs); ok {
+		return selectorWithExcluded.SelectVideoTaskAccountWithExcludedIDs(ctx, groupID, "", model, excludedIDs)
+	}
+	return selector.SelectVideoTaskAccount(ctx, groupID, "", model)
+}
+
+func supportsVideoTaskAccountExclusion(selector videoTaskAccountSelector) bool {
+	_, ok := selector.(videoTaskAccountSelectorWithExcludedIDs)
+	return ok
+}
+
+func isVideoTaskPreSubmitAdapterMismatch(err error) bool {
+	return strings.Contains(err.Error(), "duration is not supported by /v1/videos")
 }
 
 func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, params VideoTaskCreateParams, created *VideoTask, account *Account, forwardBody []byte, upstreamModel string, quote *VideoTaskQuote) (*VideoTaskCreateResult, error) {
@@ -577,7 +637,7 @@ func (s *VideoTaskService) Content(ctx context.Context, params VideoTaskContentP
 	if s.provider == nil {
 		return nil, fmt.Errorf("%w: video task provider is required", ErrVideoTaskAccountUnavailable)
 	}
-	return s.provider.Content(ctx, account, task, params.Header)
+	return s.provider.Content(withVideoTaskContentMethod(ctx, params.Method), account, task, params.Header)
 }
 
 func (s *VideoTaskService) Refresh(ctx context.Context, params VideoTaskActionParams) (*VideoTaskFetchResult, error) {
@@ -626,6 +686,41 @@ func (s *VideoTaskService) Cancel(ctx context.Context, params VideoTaskActionPar
 	persistCtx, cancelPersist := videoTaskPersistenceContext(ctx)
 	defer cancelPersist()
 	return s.updateVideoTaskFromProviderResult(persistCtx, task, providerResult)
+}
+
+func (s *VideoTaskService) Delete(ctx context.Context, params VideoTaskActionParams) (*VideoTaskFetchResult, error) {
+	if s == nil {
+		return nil, errors.New("video task service is nil")
+	}
+	if s.repo == nil {
+		return nil, errors.New("video task repository is required")
+	}
+	task, err := s.repo.GetByPublicTaskIDForUser(ctx, params.PublicTaskID, params.UserID)
+	if err != nil {
+		if isVideoTaskNotFound(err) {
+			return nil, ErrVideoTaskNotFound.WithCause(err)
+		}
+		return nil, err
+	}
+	if task == nil {
+		return nil, ErrVideoTaskNotFound
+	}
+	if !task.Status.Terminal() {
+		return nil, ErrVideoTaskDeleteNotReady
+	}
+	deletedAt := time.Now()
+	if err := s.repo.MarkUserDeleted(ctx, task.PublicTaskID, params.UserID, deletedAt); err != nil {
+		if isVideoTaskNotFound(err) {
+			return nil, ErrVideoTaskNotFound.WithCause(err)
+		}
+		return nil, err
+	}
+	task.UserDeletedAt = &deletedAt
+	body, err := rewriteVideoTaskResponseBody(task)
+	if err != nil {
+		return nil, err
+	}
+	return &VideoTaskFetchResult{Task: task, ResponseBody: body}, nil
 }
 
 func (s *VideoTaskService) List(ctx context.Context, params VideoTaskListParams) (*VideoTaskListResult, error) {
@@ -1051,6 +1146,7 @@ func (s *VideoTaskService) resumePristineVideoTask(ctx context.Context, task *Vi
 		upstreamModel = task.Model
 	}
 	providerCtx := withVideoTaskEndpoint(ctx, normalizeVideoTaskEndpoint(params.Endpoint))
+	providerCtx = withVideoTaskRequestID(providerCtx, params.IdempotencyKey)
 	return s.submitVideoTask(ctx, providerCtx, params, task, account, forwardBody, upstreamModel, &quote)
 }
 

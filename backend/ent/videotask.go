@@ -114,7 +114,9 @@ type VideoTask struct {
 	LockedBy *string `json:"locked_by,omitempty"`
 	// PollAttempts holds the value of the "poll_attempts" field.
 	PollAttempts int `json:"poll_attempts,omitempty"`
-	selectValues sql.SelectValues
+	// UserDeletedAt holds the value of the "user_deleted_at" field.
+	UserDeletedAt *time.Time `json:"user_deleted_at,omitempty"`
+	selectValues  sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -130,7 +132,7 @@ func (*VideoTask) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case videotask.FieldPublicTaskID, videotask.FieldUpstreamTaskID, videotask.FieldProvider, videotask.FieldPlatform, videotask.FieldRequestedModel, videotask.FieldUpstreamModel, videotask.FieldBillingModel, videotask.FieldModelMappingChain, videotask.FieldStatus, videotask.FieldProviderStatus, videotask.FieldPrompt, videotask.FieldRequestHash, videotask.FieldPromptHash, videotask.FieldUpstreamBaseURL, videotask.FieldResultURL, videotask.FieldResultContentType, videotask.FieldErrorCode, videotask.FieldErrorMessage, videotask.FieldIdempotencyKey, videotask.FieldIdempotencyKeyHash, videotask.FieldLockedBy:
 			values[i] = new(sql.NullString)
-		case videotask.FieldCreatedAt, videotask.FieldUpdatedAt, videotask.FieldSubmittedAt, videotask.FieldStartedAt, videotask.FieldCompletedAt, videotask.FieldExpiresAt, videotask.FieldNextPollAt, videotask.FieldLastPolledAt, videotask.FieldLockedUntil:
+		case videotask.FieldCreatedAt, videotask.FieldUpdatedAt, videotask.FieldSubmittedAt, videotask.FieldStartedAt, videotask.FieldCompletedAt, videotask.FieldExpiresAt, videotask.FieldNextPollAt, videotask.FieldLastPolledAt, videotask.FieldLockedUntil, videotask.FieldUserDeletedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -471,6 +473,13 @@ func (_m *VideoTask) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.PollAttempts = int(value.Int64)
 			}
+		case videotask.FieldUserDeletedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field user_deleted_at", values[i])
+			} else if value.Valid {
+				_m.UserDeletedAt = new(time.Time)
+				*_m.UserDeletedAt = value.Time
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -698,6 +707,11 @@ func (_m *VideoTask) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("poll_attempts=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PollAttempts))
+	builder.WriteString(", ")
+	if v := _m.UserDeletedAt; v != nil {
+		builder.WriteString("user_deleted_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

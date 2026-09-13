@@ -45,6 +45,22 @@ func TestMatchWildcard(t *testing.T) {
 	}
 }
 
+func TestAccountModelMappingTreatsSeedanceHyphenAliasesAsEquivalent(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"seedance-2.0-mini": "seedance-upstream"},
+		},
+	}
+
+	if !account.IsModelSupported("seedance2.0-mini") {
+		t.Fatal("seedance2.0-mini should match seedance-2.0-mini")
+	}
+	if got := account.GetMappedModel("seedance2.0-mini"); got != "seedance-upstream" {
+		t.Fatalf("GetMappedModel() = %q, want seedance-upstream", got)
+	}
+}
+
 func TestMatchWildcardMappingResult(t *testing.T) {
 	tests := []struct {
 		name           string

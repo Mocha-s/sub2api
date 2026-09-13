@@ -773,6 +773,16 @@ func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	return trimmed
 }
 
+func alternateSeedanceVideoModelAlias(model string) string {
+	if strings.HasPrefix(model, "seedance2.0") {
+		return "seedance-2.0" + strings.TrimPrefix(model, "seedance2.0")
+	}
+	if strings.HasPrefix(model, "seedance-2.0") {
+		return "seedance2.0" + strings.TrimPrefix(model, "seedance-2.0")
+	}
+	return ""
+}
+
 func mappingSupportsRequestedModel(mapping map[string]string, requestedModel string) bool {
 	if requestedModel == "" {
 		return false
@@ -818,7 +828,10 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 		return true
 	}
 	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
-	return normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized)
+	if normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized) {
+		return true
+	}
+	return a.Platform == PlatformOpenAI && mappingSupportsRequestedModel(mapping, alternateSeedanceVideoModelAlias(requestedModel))
 }
 
 // GetMappedModel 获取映射后的模型名（支持通配符，最长优先匹配）
@@ -841,6 +854,11 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
+			return mappedModel, true
+		}
+	}
+	if a.Platform == PlatformOpenAI {
+		if mappedModel, matched := resolveRequestedModelInMapping(mapping, alternateSeedanceVideoModelAlias(requestedModel)); matched {
 			return mappedModel, true
 		}
 	}

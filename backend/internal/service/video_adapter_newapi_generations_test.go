@@ -37,6 +37,23 @@ func TestNewAPIVideoGenerationsAdapterCreateUsesVideoGenerationsPath(t *testing.
 	require.Equal(t, VideoAdapterNewAPIVideoGenerations, result.Metadata[VideoAdapterMetadataKey])
 }
 
+func TestNewAPIVideoGenerationsAdapterRejectsUnsupportedUnifiedField(t *testing.T) {
+	adapter := NewNewAPIVideoGenerationsAdapter(nil)
+	validator, ok := adapter.(VideoTaskCreateValidator)
+	require.True(t, ok)
+
+	err := validator.ValidateCreate(
+		withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations),
+		&Account{Credentials: map[string]any{"base_url": "https://upstream.example", "api_key": "sk-newapi"}},
+		[]byte(`{"model":"seedance-2.0","prompt":"city","priority":1}`),
+		"application/json",
+		"seedance-2.0",
+	)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "priority is not supported")
+}
+
 func TestNewAPIVideoGenerationsAdapterFetchUsesVideoGenerationsPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)

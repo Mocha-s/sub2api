@@ -81,6 +81,23 @@ func TestSeedanceAPIV1AdapterValidateCreateRejectsMissingBaseURLBeforeHTTPCall(t
 	require.False(t, called, "missing base_url should fail before HTTP request")
 }
 
+func TestSeedanceAPIV1AdapterRejectsUnsupportedUnifiedField(t *testing.T) {
+	adapter := NewSeedanceAPIV1VideoAdapter(nil)
+	validator, ok := adapter.(VideoTaskCreateValidator)
+	require.True(t, ok)
+
+	err := validator.ValidateCreate(
+		withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations),
+		&Account{Credentials: map[string]any{"base_url": "https://upstream.example", "api_key": "sk-seedance"}},
+		[]byte(`{"model":"seedance-2.0","prompt":"city","task_mode":"fast"}`),
+		"application/json",
+		"seedance-2.0",
+	)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "task_mode is not supported")
+}
+
 func TestSeedanceAPIV1AdapterCreatePreservesInboundMediaFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodPost, r.Method)

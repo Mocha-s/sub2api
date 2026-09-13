@@ -2118,6 +2118,7 @@ var (
 		{Name: "locked_until", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "locked_by", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "poll_attempts", Type: field.TypeInt, Default: 0},
+		{Name: "user_deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 	}
 	// VideoTasksTable holds the schema information for the "video_tasks" table.
 	VideoTasksTable = &schema.Table{
@@ -2157,6 +2158,11 @@ var (
 				Name:    "videotask_request_hash",
 				Unique:  false,
 				Columns: []*schema.Column{VideoTasksColumns[21]},
+			},
+			{
+				Name:    "videotask_user_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{VideoTasksColumns[49]},
 			},
 		},
 	}

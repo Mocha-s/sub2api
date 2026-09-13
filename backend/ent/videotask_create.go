@@ -550,6 +550,20 @@ func (_c *VideoTaskCreate) SetNillablePollAttempts(v *int) *VideoTaskCreate {
 	return _c
 }
 
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (_c *VideoTaskCreate) SetUserDeletedAt(v time.Time) *VideoTaskCreate {
+	_c.mutation.SetUserDeletedAt(v)
+	return _c
+}
+
+// SetNillableUserDeletedAt sets the "user_deleted_at" field if the given value is not nil.
+func (_c *VideoTaskCreate) SetNillableUserDeletedAt(v *time.Time) *VideoTaskCreate {
+	if v != nil {
+		_c.SetUserDeletedAt(*v)
+	}
+	return _c
+}
+
 // Mutation returns the VideoTaskMutation object of the builder.
 func (_c *VideoTaskCreate) Mutation() *VideoTaskMutation {
 	return _c.mutation
@@ -1011,6 +1025,10 @@ func (_c *VideoTaskCreate) createSpec() (*VideoTask, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.PollAttempts(); ok {
 		_spec.SetField(videotask.FieldPollAttempts, field.TypeInt, value)
 		_node.PollAttempts = value
+	}
+	if value, ok := _c.mutation.UserDeletedAt(); ok {
+		_spec.SetField(videotask.FieldUserDeletedAt, field.TypeTime, value)
+		_node.UserDeletedAt = &value
 	}
 	return _node, _spec
 }
@@ -1859,6 +1877,24 @@ func (u *VideoTaskUpsert) UpdatePollAttempts() *VideoTaskUpsert {
 // AddPollAttempts adds v to the "poll_attempts" field.
 func (u *VideoTaskUpsert) AddPollAttempts(v int) *VideoTaskUpsert {
 	u.Add(videotask.FieldPollAttempts, v)
+	return u
+}
+
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (u *VideoTaskUpsert) SetUserDeletedAt(v time.Time) *VideoTaskUpsert {
+	u.Set(videotask.FieldUserDeletedAt, v)
+	return u
+}
+
+// UpdateUserDeletedAt sets the "user_deleted_at" field to the value that was provided on create.
+func (u *VideoTaskUpsert) UpdateUserDeletedAt() *VideoTaskUpsert {
+	u.SetExcluded(videotask.FieldUserDeletedAt)
+	return u
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (u *VideoTaskUpsert) ClearUserDeletedAt() *VideoTaskUpsert {
+	u.SetNull(videotask.FieldUserDeletedAt)
 	return u
 }
 
@@ -2835,6 +2871,27 @@ func (u *VideoTaskUpsertOne) AddPollAttempts(v int) *VideoTaskUpsertOne {
 func (u *VideoTaskUpsertOne) UpdatePollAttempts() *VideoTaskUpsertOne {
 	return u.Update(func(s *VideoTaskUpsert) {
 		s.UpdatePollAttempts()
+	})
+}
+
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (u *VideoTaskUpsertOne) SetUserDeletedAt(v time.Time) *VideoTaskUpsertOne {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.SetUserDeletedAt(v)
+	})
+}
+
+// UpdateUserDeletedAt sets the "user_deleted_at" field to the value that was provided on create.
+func (u *VideoTaskUpsertOne) UpdateUserDeletedAt() *VideoTaskUpsertOne {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.UpdateUserDeletedAt()
+	})
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (u *VideoTaskUpsertOne) ClearUserDeletedAt() *VideoTaskUpsertOne {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.ClearUserDeletedAt()
 	})
 }
 
@@ -3977,6 +4034,27 @@ func (u *VideoTaskUpsertBulk) AddPollAttempts(v int) *VideoTaskUpsertBulk {
 func (u *VideoTaskUpsertBulk) UpdatePollAttempts() *VideoTaskUpsertBulk {
 	return u.Update(func(s *VideoTaskUpsert) {
 		s.UpdatePollAttempts()
+	})
+}
+
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (u *VideoTaskUpsertBulk) SetUserDeletedAt(v time.Time) *VideoTaskUpsertBulk {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.SetUserDeletedAt(v)
+	})
+}
+
+// UpdateUserDeletedAt sets the "user_deleted_at" field to the value that was provided on create.
+func (u *VideoTaskUpsertBulk) UpdateUserDeletedAt() *VideoTaskUpsertBulk {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.UpdateUserDeletedAt()
+	})
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (u *VideoTaskUpsertBulk) ClearUserDeletedAt() *VideoTaskUpsertBulk {
+	return u.Update(func(s *VideoTaskUpsert) {
+		s.ClearUserDeletedAt()
 	})
 }
 

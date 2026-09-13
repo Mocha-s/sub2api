@@ -37,6 +37,9 @@ func TestOpenAICompatibleVideoProviderCreateSendsRequestAndParsesResponse(t *tes
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", got)
 		}
+		if got := r.Header.Get("X-Request-ID"); got != "client_request_123" {
+			t.Errorf("X-Request-ID = %q, want client request ID", got)
+		}
 		gotBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("ReadAll request body: %v", err)
@@ -54,7 +57,7 @@ func TestOpenAICompatibleVideoProviderCreateSendsRequestAndParsesResponse(t *tes
 	provider := NewOpenAICompatibleVideoProvider(server.Client())
 	account := &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "sk-video"}}
 
-	result, err := provider.Create(context.Background(), account, body, contentType, "")
+	result, err := provider.Create(withVideoTaskRequestID(context.Background(), "client_request_123"), account, body, contentType, "")
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -345,6 +348,26 @@ func TestOpenAICompatibleVideoProviderContentForwardsRangeAndStreamsBody(t *test
 	if string(buf) != "frame-" {
 		t.Fatalf("body prefix = %q, want frame-", buf)
 	}
+}
+
+func TestOpenAICompatibleVideoProviderContentUsesHeadForHeaderProbe(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodHead, r.Method)
+		require.Equal(t, "/v1/videos/video_789/content", r.URL.Path)
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Length", "10")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	provider := NewOpenAICompatibleVideoProvider(server.Client())
+	account := &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "sk-video"}}
+	stream, err := provider.Content(withVideoTaskContentMethod(context.Background(), http.MethodHead), account, &VideoTask{ProviderTaskID: "video_789"}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, stream)
+	defer func() { _ = stream.Body.Close() }()
+	require.Equal(t, int64(10), stream.ContentLength)
 }
 
 func TestValidateVideoResultURLUsesConfiguredUpstreamAllowlist(t *testing.T) {

@@ -171,6 +171,9 @@ func (p *openAICompatibleVideoProvider) Create(ctx context.Context, account *Acc
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	if requestID := videoTaskRequestIDFromContext(ctx); requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
 
 	resp, err := p.do(req, account)
 	if err != nil {
@@ -266,7 +269,7 @@ func (p *openAICompatibleVideoProvider) Content(ctx context.Context, account *Ac
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, videoTaskContentMethodFromContext(ctx), endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -561,8 +564,11 @@ func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account
 	if a == nil || a.provider == nil {
 		return nil, errors.New("video adapter provider is required")
 	}
+	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
+		return nil, err
+	}
 	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, err := normalizeJimengOpenAIVideoGenerationsBody(body)
+		adapted, _, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
 		if err != nil {
 			return nil, err
 		}
@@ -570,16 +576,22 @@ func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account
 	}
 	result, err := a.provider.Create(ctx, account, body, contentType, upstreamModel)
 	if result != nil {
-		result.Metadata = stampVideoAdapterMetadata(result.Metadata, a.Name())
+		result.Metadata = stampVideoResultMetadata(result.Metadata, result.RawBody, a.Name())
 	}
 	return result, err
 }
 
 func (a *jimengOpenAIVideosAdapter) ValidateCreate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) error {
 	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, err := normalizeJimengOpenAIVideoGenerationsBody(body)
+		adapted, legacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
 		if err != nil {
 			return err
+		}
+		if err := validateJimengOpenAIVideoGenerationsFields(ctx, body, legacy); err != nil {
+			return err
+		}
+		if !legacy {
+			return nil
 		}
 		body = adapted
 	}
@@ -592,7 +604,7 @@ func (a *jimengOpenAIVideosAdapter) Fetch(ctx context.Context, account *Account,
 	}
 	result, err := a.provider.Fetch(ctx, account, task)
 	if result != nil {
-		result.Metadata = stampVideoAdapterMetadata(result.Metadata, a.Name())
+		result.Metadata = stampVideoResultMetadata(result.Metadata, result.RawBody, a.Name())
 	}
 	return result, err
 }
@@ -606,15 +618,19 @@ func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Accou
 	if err != nil {
 		return nil, err
 	}
+	legacy := true
 	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, err := normalizeJimengOpenAIVideoGenerationsBody(body)
+		adapted, normalizedLegacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
 		if err != nil {
 			return nil, err
 		}
 		body = adapted
+		legacy = normalizedLegacy
 	}
-	if err := validateOpenAIVideoCreateShape(body); err != nil {
-		return nil, err
+	if legacy {
+		if err := validateOpenAIVideoCreateShape(body); err != nil {
+			return nil, err
+		}
 	}
 	return localVideoEstimateResult(a.Name(), videoTaskEndpointFromContext(ctx), req.Model, body, upstreamModel)
 }
@@ -626,12 +642,46 @@ func (a *jimengOpenAIVideosAdapter) Content(ctx context.Context, account *Accoun
 	return a.provider.Content(ctx, account, task, headers)
 }
 
-func normalizeJimengOpenAIVideoGenerationsBody(body []byte) ([]byte, error) {
+func normalizeJimengOpenAIVideoGenerationsBody(body []byte, upstreamModel string) ([]byte, bool, error) {
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+	}
+
+	_, legacyUpstreamModel := supportedOpenAIVideoModels[strings.TrimSpace(upstreamModel)]
+	_, legacyRequestedModel := supportedOpenAIVideoModels[strings.TrimSpace(payload.Model)]
+	if !legacyUpstreamModel && !legacyRequestedModel && (isSeedance2VideoModel(upstreamModel) || isSeedance2VideoModel(payload.Model)) {
+		adapted, err := openAIDurationCreateBody(body, upstreamModel)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+		}
+		return adapted, false, nil
+	}
+
 	adapted, err := adaptJimengVideoGenerationsCompatBody(body, true)
 	if err != nil {
-		return nil, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
+		return nil, true, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
 	}
-	return adapted, nil
+	return adapted, true, nil
+}
+
+func isSeedance2VideoModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "seedance2.")
+}
+
+func validateJimengOpenAIVideoGenerationsFields(ctx context.Context, body []byte, legacy bool) error {
+	if legacy {
+		return validateUnifiedVideoGenerationFields(ctx, body,
+			"ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "images", "videos", "audios",
+		)
+	}
+	return validateUnifiedVideoGenerationFields(ctx, body,
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"content", "images", "videos", "audios",
+	)
 }
 
 func validateOpenAIVideoCreateShape(body []byte) error {
@@ -700,10 +750,11 @@ func adaptJimengVideoGenerationsCompatBody(body []byte, includeDurationSeconds b
 	}
 	if duration, ok := payload["duration"]; ok {
 		if _, hasSeconds := payload["seconds"]; !hasSeconds {
-			if _, err := jimengVideoGenerationDurationAsSeconds(duration); err != nil {
+			seconds, err := jimengVideoGenerationDurationAsSeconds(duration)
+			if err != nil {
 				return nil, err
 			}
-			encodedSeconds, err := json.Marshal("15")
+			encodedSeconds, err := json.Marshal(seconds)
 			if err != nil {
 				return nil, err
 			}
@@ -714,10 +765,11 @@ func adaptJimengVideoGenerationsCompatBody(body []byte, includeDurationSeconds b
 	if duration, ok := payload["duration_seconds"]; ok {
 		if includeDurationSeconds {
 			if _, hasSeconds := payload["seconds"]; !hasSeconds {
-				if _, err := jimengVideoGenerationDurationAsSeconds(duration); err != nil {
+				seconds, err := jimengVideoGenerationDurationAsSeconds(duration)
+				if err != nil {
 					return nil, err
 				}
-				encodedSeconds, err := json.Marshal("15")
+				encodedSeconds, err := json.Marshal(seconds)
 				if err != nil {
 					return nil, err
 				}
@@ -725,6 +777,12 @@ func adaptJimengVideoGenerationsCompatBody(body []byte, includeDurationSeconds b
 			}
 		}
 		delete(payload, "duration_seconds")
+	}
+	if ratio, ok := payload["ratio"]; ok {
+		if _, hasAspectRatio := payload["aspect_ratio"]; !hasAspectRatio {
+			payload["aspect_ratio"] = ratio
+		}
+		delete(payload, "ratio")
 	}
 	allowed := map[string]struct{}{
 		"model":        {},

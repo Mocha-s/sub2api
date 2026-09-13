@@ -187,12 +187,36 @@ func (r *videoTaskRepository) GetByPublicTaskID(ctx context.Context, publicTaskI
 
 func (r *videoTaskRepository) GetByPublicTaskIDForUser(ctx context.Context, publicTaskID string, userID int64) (*service.VideoTask, error) {
 	row, err := r.client.VideoTask.Query().
-		Where(videotask.PublicTaskIDEQ(publicTaskID), videotask.UserIDEQ(userID)).
+		Where(videotask.PublicTaskIDEQ(publicTaskID), videotask.UserIDEQ(userID), videotask.UserDeletedAtIsNil()).
 		Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, errVideoTaskNotFound, nil)
 	}
 	return videoTaskEntToService(row), nil
+}
+
+func (r *videoTaskRepository) MarkUserDeleted(ctx context.Context, publicTaskID string, userID int64, deletedAt time.Time) error {
+	affected, err := clientFromContext(ctx, r.client).VideoTask.Update().
+		Where(
+			videotask.PublicTaskIDEQ(publicTaskID),
+			videotask.UserIDEQ(userID),
+			videotask.UserDeletedAtIsNil(),
+			videotask.StatusIn(
+				string(service.VideoTaskStatusCompleted),
+				string(service.VideoTaskStatusFailed),
+				string(service.VideoTaskStatusCancelled),
+				string(service.VideoTaskStatusExpired),
+			),
+		).
+		SetUserDeletedAt(deletedAt).
+		Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, errVideoTaskNotFound, nil)
+	}
+	if affected == 0 {
+		return errVideoTaskNotFound
+	}
+	return nil
 }
 
 func (r *videoTaskRepository) GetByProviderTaskID(ctx context.Context, provider, providerTaskID string) (*service.VideoTask, error) {
@@ -223,7 +247,7 @@ func (r *videoTaskRepository) ListForUser(ctx context.Context, params service.Vi
 	if limit > 100 {
 		limit = 100
 	}
-	predicates := []predicate.VideoTask{videotask.UserIDEQ(params.UserID)}
+	predicates := []predicate.VideoTask{videotask.UserIDEQ(params.UserID), videotask.UserDeletedAtIsNil()}
 	if params.Status != "" {
 		predicates = append(predicates, videotask.StatusEQ(params.Status))
 	}
@@ -488,6 +512,7 @@ func videoTaskEntToService(row *dbent.VideoTask) *service.VideoTask {
 		LockedBy:       cloneString(row.LockedBy),
 		LockedUntil:    cloneTime(row.LockedUntil),
 		PollAttempts:   row.PollAttempts,
+		UserDeletedAt:  cloneTime(row.UserDeletedAt),
 	}
 }
 

@@ -88,6 +88,79 @@ func TestVideoTaskServiceCreatePersistsUpstreamBeforeReturning(t *testing.T) {
 	require.NotEqual(t, "upstream_task_123", response["id"])
 }
 
+func TestVideoTaskServiceCreateRetriesNextAccountOnPreSubmitAdapterMismatch(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	firstProvider := &fakeVideoTaskProvider{events: events}
+	secondProvider := &fakeVideoTaskProvider{
+		events: events,
+		createResult: &VideoProviderCreateResult{
+			ProviderTaskID: "upstream_second",
+			Status:         VideoTaskStatusQueued,
+			ProviderStatus: "queued",
+			RawBody:        []byte(`{"id":"upstream_second","status":"queued"}`),
+		},
+	}
+	provider := &accountVideoTaskProvider{registry: videoAdapterRegistry{
+		VideoAdapterJimengOpenAIVideos:   &jimengOpenAIVideosAdapter{provider: firstProvider},
+		VideoAdapterOpenAIVideosDuration: &fakeVideoTaskAdapter{name: VideoAdapterOpenAIVideosDuration, fakeVideoTaskProvider: secondProvider},
+	}}
+	firstReleased := false
+	selector := &fakeVideoTaskSelector{
+		events: events,
+		selections: []*AccountSelectionResult{
+			{
+				Account:     &Account{ID: 101, Platform: PlatformOpenAI},
+				ReleaseFunc: func() { firstReleased = true },
+			},
+			{Account: &Account{
+				ID:       202,
+				Platform: PlatformOpenAI,
+				Credentials: map[string]any{
+					VideoAdapterMetadataKey: VideoAdapterOpenAIVideosDuration,
+					"model_mapping":         map[string]any{"video-ds-2.0-fast": "video-ds-2.0-fast"},
+				},
+			}},
+		},
+	}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{
+		APIKey:      videoTaskTestAPIKey(),
+		User:        &User{ID: 7},
+		Body:        []byte(`{"model":"video-ds-2.0-fast","prompt":"city","duration":8}`),
+		ContentType: "application/json",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, int64(202), repo.lastCreate.AccountID)
+	require.Equal(t, int64(202), result.Task.AccountID)
+	require.Equal(t, 0, firstProvider.createCalls)
+	require.Equal(t, 1, secondProvider.createCalls)
+	require.True(t, firstReleased)
+	require.Equal(t, 2, selector.selectCalls)
+	require.Equal(t, []map[int64]struct{}{
+		nil,
+		{101: {}},
+	}, selector.excludedIDs)
+}
+
+func TestVideoTaskServiceCreateDoesNotRetryUserBadRequest(t *testing.T) {
+	selector := &fakeVideoTaskSelector{selection: &AccountSelectionResult{Account: &Account{ID: 101, Platform: PlatformOpenAI}}}
+	svc := newVideoTaskServiceForTest(newFakeVideoTaskRepository(nil), nil, selector, &fakeVideoTaskProvider{}, nil)
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{
+		APIKey: videoTaskTestAPIKey(),
+		User:   &User{ID: 7},
+		Body:   []byte(`{"model":`),
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Zero(t, selector.selectCalls)
+}
+
 func TestVideoTaskInboundEndpoint(t *testing.T) {
 	require.Equal(t, "/v1/videos", videoTaskInboundEndpoint(""))
 	require.Equal(t, "/v1/videos", videoTaskInboundEndpoint(VideoTaskEndpointVideos))
@@ -282,7 +355,7 @@ func TestVideoTaskServiceCreateVideoGenerationsAllowsDurationBodyThroughJimengAd
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, delegate.createCalls)
-	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"15","aspect_ratio":"9:16"}`, string(delegate.createBody))
+	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"8","aspect_ratio":"9:16"}`, string(delegate.createBody))
 	require.Equal(t, "jimeng-upstream-model", delegate.createUpstreamModel)
 	require.Equal(t, "video-ds-2.0-fast", repo.lastCreate.Model)
 	require.Equal(t, "city", repo.lastCreate.Prompt)
@@ -343,13 +416,13 @@ func TestVideoTaskServiceCreateVideoPricingStoresQuoteAndNormalizesOnlyForwarded
 	require.Equal(t, 1, pricing.calls)
 }
 
-func TestVideoTaskServiceCreateWithoutVideoPricingKeepsLegacyDurationAndExplicitSecondsBehavior(t *testing.T) {
+func TestVideoTaskServiceCreateWithoutVideoPricingNormalizesDurationAndExplicitSeconds(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
 		want string
 	}{
-		{name: "duration remains fixed fifteen", body: `{"model":"video-ds-2.0-fast","prompt":"city","duration":5}`, want: `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"15"}`},
+		{name: "duration maps to seconds", body: `{"model":"video-ds-2.0-fast","prompt":"city","duration":5}`, want: `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"5"}`},
 		{name: "explicit seconds preserved", body: `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"5"}`, want: `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"5"}`},
 	}
 	for _, tt := range tests {
@@ -564,6 +637,42 @@ func TestVideoTaskServiceCancelPersistsCancelledResultAfterUpstreamCancelsCaller
 	require.Equal(t, VideoTaskStatusCancelled, persisted.Status)
 	require.Nil(t, persisted.NextPollAt)
 	require.Equal(t, persisted, result.Task)
+}
+
+func TestVideoTaskServiceDeleteHidesTerminalTask(t *testing.T) {
+	repo := newFakeVideoTaskRepository(nil)
+	repo.seedTask(&VideoTask{
+		PublicTaskID: "task_delete",
+		UserID:       7,
+		Model:        "seedance-2.0",
+		Status:       VideoTaskStatusCompleted,
+		ResponseBody: []byte(`{"id":"upstream_task","status":"completed"}`),
+	})
+	svc := newVideoTaskServiceForTest(repo, nil, nil, nil, nil)
+
+	result, err := svc.Delete(context.Background(), VideoTaskActionParams{UserID: 7, PublicTaskID: "task_delete"})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Task.UserDeletedAt)
+	require.NotNil(t, repo.tasks["task_delete"].UserDeletedAt)
+	_, err = svc.Fetch(context.Background(), VideoTaskFetchParams{UserID: 7, PublicTaskID: "task_delete"})
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
+	list, err := svc.List(context.Background(), VideoTaskListParams{UserID: 7})
+	require.NoError(t, err)
+	require.Empty(t, list.Tasks)
+}
+
+func TestVideoTaskServiceDeleteRejectsActiveTask(t *testing.T) {
+	repo := newFakeVideoTaskRepository(nil)
+	repo.seedTask(&VideoTask{PublicTaskID: "task_active", UserID: 7, Status: VideoTaskStatusQueued})
+	svc := newVideoTaskServiceForTest(repo, nil, nil, nil, nil)
+
+	result, err := svc.Delete(context.Background(), VideoTaskActionParams{UserID: 7, PublicTaskID: "task_active"})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrVideoTaskDeleteNotReady)
+	require.Nil(t, repo.tasks["task_active"].UserDeletedAt)
 }
 
 func TestVideoTaskServiceFetchAndRefreshPersistTerminalResultAfterProviderCancelsCaller(t *testing.T) {
@@ -1717,7 +1826,7 @@ func TestVideoTaskServiceEstimateSelectsAccountButDoesNotCreateTask(t *testing.T
 	result, err := svc.Estimate(ctx, VideoTaskEstimateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"seedance-2.0","prompt":"city","duration":5}`), Endpoint: VideoTaskEndpointVideoGenerations, ContentType: "application/json"})
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"object":"video.estimate","model":"seedance-2.0","upstream_model":"video-ds-2.0","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"15"}}`, string(result.ResponseBody))
+	require.JSONEq(t, `{"object":"video.estimate","model":"seedance-2.0","upstream_model":"video-ds-2.0","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"5"}}`, string(result.ResponseBody))
 	require.False(t, repo.createdBeforeProvider)
 }
 
@@ -1826,7 +1935,7 @@ func TestVideoTaskServiceEstimateWithoutVideoPricingPreservesLegacyContract(t *t
 	result, err := svc.Estimate(context.Background(), VideoTaskEstimateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, Endpoint: VideoTaskEndpointVideoGenerations})
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"object":"video.estimate","model":"seedance","upstream_model":"upstream","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"15"}}`, string(result.ResponseBody))
+	require.JSONEq(t, `{"object":"video.estimate","model":"seedance","upstream_model":"upstream","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"5"}}`, string(result.ResponseBody))
 	require.Equal(t, []byte(`{"model":"seedance","prompt":"city","duration":5}`), body)
 }
 
@@ -2121,7 +2230,25 @@ func (r *fakeVideoTaskRepository) GetByPublicTaskIDForUser(ctx context.Context, 
 	if task.UserID != userID {
 		return nil, infraerrors.NotFound("VIDEO_TASK_NOT_FOUND", "video task not found")
 	}
+	if task.UserDeletedAt != nil {
+		return nil, infraerrors.NotFound("VIDEO_TASK_NOT_FOUND", "video task not found")
+	}
 	return task, nil
+}
+
+func (r *fakeVideoTaskRepository) MarkUserDeleted(_ context.Context, publicTaskID string, userID int64, deletedAt time.Time) error {
+	task := r.tasks[publicTaskID]
+	if task == nil {
+		return errors.New("task not found")
+	}
+	if task.UserID != userID || task.UserDeletedAt != nil {
+		return infraerrors.NotFound("VIDEO_TASK_NOT_FOUND", "video task not found")
+	}
+	if !task.Status.Terminal() {
+		return ErrVideoTaskDeleteNotReady
+	}
+	task.UserDeletedAt = &deletedAt
+	return nil
 }
 
 func (r *fakeVideoTaskRepository) GetByProviderTaskID(ctx context.Context, provider, providerTaskID string) (*VideoTask, error) {
@@ -2161,6 +2288,9 @@ func (r *fakeVideoTaskRepository) ListForUser(ctx context.Context, params VideoT
 	items := make([]*VideoTask, 0, len(r.tasks))
 	for _, task := range r.tasks {
 		if task.UserID != params.UserID {
+			continue
+		}
+		if task.UserDeletedAt != nil {
 			continue
 		}
 		if params.Status != "" && string(task.Status) != params.Status {
@@ -2274,15 +2404,32 @@ func (r *fakeVideoTaskRepository) task(publicTaskID string) (*VideoTask, error) 
 type fakeVideoTaskSelector struct {
 	events      *videoTaskServiceTestEvents
 	selection   *AccountSelectionResult
+	selections  []*AccountSelectionResult
 	err         error
 	selectCalls int
 	lastModel   string
+	excludedIDs []map[int64]struct{}
 }
 
 func (s *fakeVideoTaskSelector) SelectVideoTaskAccount(ctx context.Context, groupID *int64, sessionHash string, model string) (*AccountSelectionResult, error) {
+	return s.selectVideoTaskAccount(model, nil)
+}
+
+func (s *fakeVideoTaskSelector) SelectVideoTaskAccountWithExcludedIDs(ctx context.Context, groupID *int64, sessionHash string, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+	return s.selectVideoTaskAccount(model, excludedIDs)
+}
+
+func (s *fakeVideoTaskSelector) selectVideoTaskAccount(model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
 	s.selectCalls++
 	s.lastModel = model
+	s.excludedIDs = append(s.excludedIDs, cloneExcludedAccountIDs(excludedIDs))
 	s.events.add("selector_select")
+	if len(s.selections) > 0 {
+		if s.selectCalls > len(s.selections) {
+			return nil, ErrNoAvailableAccounts
+		}
+		return s.selections[s.selectCalls-1], s.err
+	}
 	return s.selection, s.err
 }
 

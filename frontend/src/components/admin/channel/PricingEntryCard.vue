@@ -87,7 +87,7 @@
             </label>
             <Select
               :modelValue="entry.billing_mode"
-              @update:modelValue="emit('update', { ...entry, billing_mode: $event as BillingMode, intervals: [] })"
+              @update:modelValue="updateBillingMode($event as BillingMode)"
               :options="billingModeOptions"
               class="mt-1"
             />
@@ -310,7 +310,7 @@ import Icon from '@/components/icons/Icon.vue'
 import IntervalRow from './IntervalRow.vue'
 import ModelTagInput from './ModelTagInput.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
-import { perTokenToMTok, getPlatformTagClass } from './types'
+import { getPlatformTagClass, normalizeVideoDefaultSeconds, perTokenToMTok } from './types'
 import type { BillingMode } from '@/api/admin/channels'
 import channelsAPI from '@/api/admin/channels'
 
@@ -359,6 +359,17 @@ const billingModeLabel = computed(() => {
 
 function emitField(field: keyof PricingFormEntry, value: string) {
   emit('update', { ...props.entry, [field]: value === '' ? null : value })
+}
+
+function updateBillingMode(mode: BillingMode) {
+  const updated = { ...props.entry, billing_mode: mode, intervals: [] }
+  if (mode === 'video') {
+    updated.video_default_seconds = normalizeVideoDefaultSeconds(
+      props.entry.video_default_seconds,
+      props.entry.video_allowed_seconds,
+    )
+  }
+  emit('update', updated)
 }
 
 function addInterval() {

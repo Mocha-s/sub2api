@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -26,6 +26,7 @@ type videoTaskService interface {
 	Content(ctx context.Context, params service.VideoTaskContentParams) (*service.VideoContentStream, error)
 	Refresh(ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)
 	Cancel(ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)
+	Delete(ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)
 	List(ctx context.Context, params service.VideoTaskListParams) (*service.VideoTaskListResult, error)
 	Estimate(ctx context.Context, params service.VideoTaskEstimateParams) (*service.VideoTaskEstimateResult, error)
 	References(ctx context.Context, params service.VideoTaskAssetParams) (*service.VideoTaskAssetResult, error)
@@ -66,7 +67,7 @@ func (h *VideoTaskHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideos)
+	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideos, false)
 }
 
 func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
@@ -84,16 +85,18 @@ func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
 		return
 	}
 
-	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideoGenerations)
+	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideoGenerations, true)
 }
 
-func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, apiKey *service.APIKey, body []byte, endpoint string) {
+func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, apiKey *service.APIKey, body []byte, endpoint string, unified bool) {
 	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, body) {
 		return
 	}
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if idempotencyKey == "" {
+	if endpoint == service.VideoTaskEndpointVideoGenerations {
+		idempotencyKey = strings.TrimSpace(c.GetHeader("X-Request-ID"))
+	} else if idempotencyKey == "" {
 		idempotencyKey = strings.TrimSpace(c.GetHeader("X-Request-ID"))
 	}
 	result, err := svc.Create(c.Request.Context(), service.VideoTaskCreateParams{
@@ -113,6 +116,14 @@ func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, 
 	}
 	if result == nil {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	if unified {
+		if result.Task == nil {
+			videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty task")
+			return
+		}
+		videoTaskControlPlaneResponse(c, http.StatusAccepted, "accepted", videoTaskPublicData(result.Task))
 		return
 	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
@@ -197,22 +208,36 @@ func (h *VideoTaskHandler) Fetch(c *gin.Context) {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
 		return
 	}
+	if isUnifiedVideoGenerationsRequest(c) {
+		if result.Task == nil {
+			videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty task")
+			return
+		}
+		videoTaskControlPlaneResponse(c, http.StatusOK, "success", videoTaskPublicData(result.Task))
+		return
+	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
 }
 
 func (h *VideoTaskHandler) Refresh(c *gin.Context) {
-	h.taskAction(c, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+	h.taskAction(c, false, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
 		return svc.Refresh(ctx, params)
 	})
 }
 
 func (h *VideoTaskHandler) Cancel(c *gin.Context) {
-	h.taskAction(c, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+	h.taskAction(c, false, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
 		return svc.Cancel(ctx, params)
 	})
 }
 
-func (h *VideoTaskHandler) taskAction(c *gin.Context, fn func(videoTaskService, context.Context, service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)) {
+func (h *VideoTaskHandler) Delete(c *gin.Context) {
+	h.taskAction(c, true, func(svc videoTaskService, ctx context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+		return svc.Delete(ctx, params)
+	})
+}
+
+func (h *VideoTaskHandler) taskAction(c *gin.Context, deleted bool, fn func(videoTaskService, context.Context, service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error)) {
 	_, subject, ok := videoTaskAuthContext(c)
 	if !ok {
 		return
@@ -236,6 +261,18 @@ func (h *VideoTaskHandler) taskAction(c *gin.Context, fn func(videoTaskService, 
 	}
 	if result == nil {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	if isUnifiedVideoGenerationsRequest(c) {
+		if result.Task == nil {
+			videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty task")
+			return
+		}
+		data := videoTaskPublicData(result.Task)
+		if deleted {
+			data["deleted"] = true
+		}
+		videoTaskControlPlaneResponse(c, http.StatusOK, "success", data)
 		return
 	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
@@ -269,6 +306,18 @@ func (h *VideoTaskHandler) List(c *gin.Context) {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
 		return
 	}
+	if isUnifiedVideoGenerationsRequest(c) {
+		items := make([]gin.H, 0, len(result.Tasks))
+		for _, task := range result.Tasks {
+			if task == nil {
+				videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty task")
+				return
+			}
+			items = append(items, videoTaskPublicData(task))
+		}
+		videoTaskControlPlaneResponse(c, http.StatusOK, "success", gin.H{"object": "list", "data": items, "has_more": result.HasMore})
+		return
+	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
 }
 
@@ -300,6 +349,15 @@ func (h *VideoTaskHandler) bodyAction(c *gin.Context, endpoint string) {
 	}
 	if result == nil {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty response")
+		return
+	}
+	if endpoint == service.VideoTaskEndpointVideoGenerations {
+		data, err := videoTaskPublicEstimateData(result.ResponseBody)
+		if err != nil {
+			videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned invalid estimate response")
+			return
+		}
+		videoTaskControlPlaneResponse(c, http.StatusOK, "success", data)
 		return
 	}
 	videoTaskRawJSON(c, http.StatusOK, result.ResponseBody)
@@ -377,6 +435,7 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 		UserID:       subject.UserID,
 		PublicTaskID: taskID,
 		Header:       c.Request.Header.Clone(),
+		Method:       c.Request.Method,
 	})
 	if err != nil {
 		videoTaskServiceError(c, err)
@@ -394,6 +453,9 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 	}
 	copyVideoTaskContentHeaders(c, stream)
 	c.Status(status)
+	if c.Request.Method == http.MethodHead {
+		return
+	}
 	if _, err := io.Copy(c.Writer, stream.Body); err != nil {
 		_ = c.Error(err)
 	}
@@ -446,6 +508,148 @@ func videoTaskRawJSON(c *gin.Context, status int, body []byte) {
 	c.Data(status, "application/json", body)
 }
 
+func videoTaskControlPlaneResponse(c *gin.Context, status int, message string, data any) {
+	c.JSON(status, gin.H{"code": 0, "message": message, "data": data})
+}
+
+func videoTaskPublicData(task *service.VideoTask) gin.H {
+	if task == nil {
+		return nil
+	}
+	status := string(task.Status)
+	if status == "" {
+		status = string(service.VideoTaskStatusUnknown)
+	}
+	progress := any(0)
+	if task.Status.Terminal() {
+		progress = 100
+	}
+	if value, ok := task.Metadata["progress"]; ok {
+		progress = value
+	}
+	data := gin.H{
+		"id":       task.PublicTaskID,
+		"task_id":  task.PublicTaskID,
+		"object":   "video",
+		"status":   status,
+		"model":    task.Model,
+		"progress": progress,
+	}
+	if value, ok := videoTaskPublicMetadataValue(task.Metadata, "duration", "seconds", "duration_seconds"); ok {
+		data["duration"] = value
+	}
+	if value, ok := videoTaskPublicMetadataValue(task.Metadata, "ratio", "aspect_ratio"); ok {
+		data["ratio"] = value
+	}
+	if value, ok := videoTaskPublicMetadataValue(task.Metadata, "resolution"); ok {
+		data["resolution"] = value
+	}
+	if resultURL := strings.TrimSpace(videoTaskPublicString(task.Metadata, "result_url")); resultURL != "" {
+		data["result_url"] = resultURL
+	}
+	if errorData := videoTaskPublicError(task); errorData != nil {
+		data["error"] = errorData
+	}
+	for key, value := range videoTaskPublicPricing(task.Metadata) {
+		data[key] = value
+	}
+	if task.BilledUSD != 0 {
+		data["billed_usd"] = task.BilledUSD
+	}
+	return data
+}
+
+func videoTaskPublicMetadataValue(metadata map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		if value, ok := metadata[key]; ok && value != nil {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func videoTaskPublicString(metadata map[string]any, key string) string {
+	value, _ := metadata[key].(string)
+	return value
+}
+
+func videoTaskPublicError(task *service.VideoTask) gin.H {
+	if task == nil {
+		return nil
+	}
+	message := strings.TrimSpace(task.ErrorMessage)
+	if message == "" {
+		message = strings.TrimSpace(videoTaskPublicString(task.Metadata, "error_message"))
+	}
+	code := strings.TrimSpace(videoTaskPublicString(task.Metadata, "error_code"))
+	if message == "" && code == "" && task.Status != service.VideoTaskStatusFailed && task.Status != service.VideoTaskStatusExpired {
+		return nil
+	}
+	return gin.H{
+		"code":    "VIDEO_GENERATION_FAILED",
+		"message": "Video generation failed",
+	}
+}
+
+func videoTaskPublicPricing(metadata map[string]any) gin.H {
+	requestMetadata, ok := videoTaskPublicMap(metadata["request_metadata"])
+	if !ok {
+		return nil
+	}
+	snapshot, ok := videoTaskPublicMap(requestMetadata["video_pricing_snapshot"])
+	if !ok {
+		return nil
+	}
+	pricing := gin.H{}
+	for _, key := range []string{"billing_mode", "billing_model", "effective", "unit_price_usd", "gross_cost_usd", "actual_cost_usd", "rate_multiplier"} {
+		if value, ok := snapshot[key]; ok {
+			pricing[key] = value
+		}
+	}
+	return pricing
+}
+
+func videoTaskPublicMap(value any) (map[string]any, bool) {
+	if values, ok := value.(map[string]any); ok {
+		return values, true
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var values map[string]any
+	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+		return nil, false
+	}
+	return values, true
+}
+
+func videoTaskPublicEstimateData(body []byte) (map[string]any, error) {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil || data == nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("video estimate response must be an object")
+	}
+	delete(data, "adapter")
+	delete(data, "endpoint")
+	delete(data, "upstream_model")
+	return data, nil
+}
+
+func isUnifiedVideoGenerationsRequest(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	path := c.FullPath()
+	if path == "" && c.Request != nil && c.Request.URL != nil {
+		path = c.Request.URL.Path
+	}
+	path = strings.TrimPrefix(path, "/v1")
+	return path == "/video/generations" || strings.HasPrefix(path, "/video/generations/")
+}
+
 func videoTaskServiceError(c *gin.Context, err error) {
 	var upstreamErr *service.OpenAIVideoUpstreamError
 	if errors.As(err, &upstreamErr) {
@@ -462,12 +666,14 @@ func videoTaskServiceError(c *gin.Context, err error) {
 		videoTaskErrorResponse(c, http.StatusConflict, "idempotency_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskNotCompleted):
 		videoTaskErrorResponse(c, http.StatusConflict, "invalid_request_error", videoTaskErrorMessage(err))
+	case errors.Is(err, service.ErrVideoTaskDeleteNotReady):
+		videoTaskErrorResponse(c, http.StatusConflict, "invalid_request_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrNoAvailableAccounts):
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskAccountUnavailable):
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskActionUnsupported):
-		videoTaskErrorResponse(c, http.StatusNotImplemented, "not_supported_error", videoTaskErrorMessage(err))
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", videoTaskErrorMessage(err))
 	case isVideoTaskBadRequestError(err):
 		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	default:
@@ -483,6 +689,8 @@ func videoTaskUpstreamErrorStatus(upstreamStatus int) (int, string) {
 		return http.StatusForbidden, "permission_error"
 	case http.StatusTooManyRequests:
 		return http.StatusTooManyRequests, "rate_limit_error"
+	case http.StatusPaymentRequired:
+		return http.StatusBadGateway, "server_error"
 	case http.StatusBadRequest, http.StatusUnprocessableEntity:
 		return upstreamStatus, "invalid_request_error"
 	default:
@@ -495,12 +703,85 @@ func videoTaskUpstreamErrorStatus(upstreamStatus int) (int, string) {
 
 func videoTaskUpstreamErrorMessage(err *service.OpenAIVideoUpstreamError) string {
 	if err == nil {
-		return "Upstream video request failed"
+		return "Video generation request failed"
 	}
-	if body := strings.TrimSpace(err.Body); body != "" {
-		return body
+	if message := safeVideoTaskUpstreamMessage(err.Body); message != "" {
+		return message
 	}
-	return fmt.Sprintf("Upstream video request failed with status %d", err.StatusCode)
+	switch err.StatusCode {
+	case http.StatusUnauthorized:
+		return "Video generation authentication failed"
+	case http.StatusForbidden:
+		return "Video generation request was rejected"
+	case http.StatusTooManyRequests:
+		return "Video generation is temporarily rate limited"
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return "Video generation request is invalid"
+	default:
+		return "Video generation service is temporarily unavailable"
+	}
+}
+
+var videoTaskUpstreamURLPattern = regexp.MustCompile(`(?i)https?://\S+`)
+
+func safeVideoTaskUpstreamMessage(body string) string {
+	message, markers := videoTaskUpstreamMessage(body)
+	if message == "" || containsBlockedVideoTaskUpstreamDetail(message) {
+		return ""
+	}
+	for _, marker := range markers {
+		if containsBlockedVideoTaskUpstreamDetail(marker) {
+			return ""
+		}
+	}
+	return message
+}
+
+func videoTaskUpstreamMessage(body string) (string, []string) {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return "", nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return body, nil
+	}
+	markers := videoTaskUpstreamMarkers(payload)
+	if message, ok := payload["message"].(string); ok {
+		return strings.TrimSpace(message), markers
+	}
+	if errorValue, ok := payload["error"].(map[string]any); ok {
+		if message, ok := errorValue["message"].(string); ok {
+			return strings.TrimSpace(message), markers
+		}
+	}
+	if message, ok := payload["error"].(string); ok {
+		return strings.TrimSpace(message), markers
+	}
+	return "", markers
+}
+
+func videoTaskUpstreamMarkers(payload map[string]any) []string {
+	markers := make([]string, 0, 2)
+	if code, ok := payload["code"].(string); ok {
+		markers = append(markers, code)
+	}
+	if errorValue, ok := payload["error"].(map[string]any); ok {
+		if code, ok := errorValue["code"].(string); ok {
+			markers = append(markers, code)
+		}
+	}
+	return markers
+}
+
+func containsBlockedVideoTaskUpstreamDetail(message string) bool {
+	lower := strings.ToLower(message)
+	for _, token := range []string{"欠费", "余额", "额度", "insufficient balance", "insufficient_quota", "quota", "balance"} {
+		if strings.Contains(lower, token) {
+			return true
+		}
+	}
+	return videoTaskUpstreamURLPattern.MatchString(message)
 }
 
 func videoTaskErrorMessage(err error) string {

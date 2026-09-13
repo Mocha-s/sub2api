@@ -24,6 +24,12 @@ func (a *newAPIVideoGenerationsAdapter) ValidateCreate(ctx context.Context, acco
 	if _, err := seedanceCreateBody(body, upstreamModel); err != nil {
 		return err
 	}
+	if err := validateUnifiedVideoGenerationFields(ctx, body,
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"return_last_frame", "web_search", "content", "images", "videos", "audios",
+	); err != nil {
+		return err
+	}
 	provider, err := a.openAIProvider()
 	if err != nil {
 		return err
@@ -33,6 +39,9 @@ func (a *newAPIVideoGenerationsAdapter) ValidateCreate(ctx context.Context, acco
 }
 
 func (a *newAPIVideoGenerationsAdapter) Create(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) (*VideoProviderCreateResult, error) {
+	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
+		return nil, err
+	}
 	provider, err := a.openAIProvider()
 	if err != nil {
 		return nil, err
@@ -55,6 +64,9 @@ func (a *newAPIVideoGenerationsAdapter) Create(ctx context.Context, account *Acc
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	if requestID := videoTaskRequestIDFromContext(ctx); requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
 
 	resp, err := provider.do(req, account)
 	if err != nil {

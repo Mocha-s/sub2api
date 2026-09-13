@@ -636,7 +636,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
-import { apiIntervalsToForm, apiVideoPricingToForm, findModelConflict, formAccountStatsPricingToAPI, formPricingToAPI, perTokenToMTok, validatePricingEntry } from '@/components/admin/channel/types'
+import { apiIntervalsToForm, apiVideoPricingToForm, DEFAULT_VIDEO_SECONDS, findModelConflict, formAccountStatsPricingToAPI, formPricingToAPI, perTokenToMTok, validatePricingEntry } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -864,7 +864,7 @@ function createPricingEntry(models: string[] = []): PricingFormEntry {
     image_output_price: null,
     per_request_price: null,
     video_price_per_second: null,
-    video_default_seconds: null,
+    video_default_seconds: DEFAULT_VIDEO_SECONDS,
     video_allowed_seconds: [],
     intervals: []
   }

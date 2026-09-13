@@ -55971,6 +55971,7 @@ type VideoTaskMutation struct {
 	locked_by              *string
 	poll_attempts          *int
 	addpoll_attempts       *int
+	user_deleted_at        *time.Time
 	clearedFields          map[string]struct{}
 	done                   bool
 	oldValue               func(context.Context) (*VideoTask, error)
@@ -58397,6 +58398,55 @@ func (m *VideoTaskMutation) ResetPollAttempts() {
 	m.addpoll_attempts = nil
 }
 
+// SetUserDeletedAt sets the "user_deleted_at" field.
+func (m *VideoTaskMutation) SetUserDeletedAt(t time.Time) {
+	m.user_deleted_at = &t
+}
+
+// UserDeletedAt returns the value of the "user_deleted_at" field in the mutation.
+func (m *VideoTaskMutation) UserDeletedAt() (r time.Time, exists bool) {
+	v := m.user_deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserDeletedAt returns the old "user_deleted_at" field's value of the VideoTask entity.
+// If the VideoTask object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *VideoTaskMutation) OldUserDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserDeletedAt: %w", err)
+	}
+	return oldValue.UserDeletedAt, nil
+}
+
+// ClearUserDeletedAt clears the value of the "user_deleted_at" field.
+func (m *VideoTaskMutation) ClearUserDeletedAt() {
+	m.user_deleted_at = nil
+	m.clearedFields[videotask.FieldUserDeletedAt] = struct{}{}
+}
+
+// UserDeletedAtCleared returns if the "user_deleted_at" field was cleared in this mutation.
+func (m *VideoTaskMutation) UserDeletedAtCleared() bool {
+	_, ok := m.clearedFields[videotask.FieldUserDeletedAt]
+	return ok
+}
+
+// ResetUserDeletedAt resets all changes to the "user_deleted_at" field.
+func (m *VideoTaskMutation) ResetUserDeletedAt() {
+	m.user_deleted_at = nil
+	delete(m.clearedFields, videotask.FieldUserDeletedAt)
+}
+
 // Where appends a list predicates to the VideoTaskMutation builder.
 func (m *VideoTaskMutation) Where(ps ...predicate.VideoTask) {
 	m.predicates = append(m.predicates, ps...)
@@ -58431,7 +58481,7 @@ func (m *VideoTaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *VideoTaskMutation) Fields() []string {
-	fields := make([]string, 0, 48)
+	fields := make([]string, 0, 49)
 	if m.created_at != nil {
 		fields = append(fields, videotask.FieldCreatedAt)
 	}
@@ -58576,6 +58626,9 @@ func (m *VideoTaskMutation) Fields() []string {
 	if m.poll_attempts != nil {
 		fields = append(fields, videotask.FieldPollAttempts)
 	}
+	if m.user_deleted_at != nil {
+		fields = append(fields, videotask.FieldUserDeletedAt)
+	}
 	return fields
 }
 
@@ -58680,6 +58733,8 @@ func (m *VideoTaskMutation) Field(name string) (ent.Value, bool) {
 		return m.LockedBy()
 	case videotask.FieldPollAttempts:
 		return m.PollAttempts()
+	case videotask.FieldUserDeletedAt:
+		return m.UserDeletedAt()
 	}
 	return nil, false
 }
@@ -58785,6 +58840,8 @@ func (m *VideoTaskMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldLockedBy(ctx)
 	case videotask.FieldPollAttempts:
 		return m.OldPollAttempts(ctx)
+	case videotask.FieldUserDeletedAt:
+		return m.OldUserDeletedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown VideoTask field %s", name)
 }
@@ -59130,6 +59187,13 @@ func (m *VideoTaskMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPollAttempts(v)
 		return nil
+	case videotask.FieldUserDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserDeletedAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown VideoTask field %s", name)
 }
@@ -59388,6 +59452,9 @@ func (m *VideoTaskMutation) ClearedFields() []string {
 	if m.FieldCleared(videotask.FieldLockedBy) {
 		fields = append(fields, videotask.FieldLockedBy)
 	}
+	if m.FieldCleared(videotask.FieldUserDeletedAt) {
+		fields = append(fields, videotask.FieldUserDeletedAt)
+	}
 	return fields
 }
 
@@ -59482,6 +59549,9 @@ func (m *VideoTaskMutation) ClearField(name string) error {
 		return nil
 	case videotask.FieldLockedBy:
 		m.ClearLockedBy()
+		return nil
+	case videotask.FieldUserDeletedAt:
+		m.ClearUserDeletedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown VideoTask nullable field %s", name)
@@ -59634,6 +59704,9 @@ func (m *VideoTaskMutation) ResetField(name string) error {
 		return nil
 	case videotask.FieldPollAttempts:
 		m.ResetPollAttempts()
+		return nil
+	case videotask.FieldUserDeletedAt:
+		m.ResetUserDeletedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown VideoTask field %s", name)

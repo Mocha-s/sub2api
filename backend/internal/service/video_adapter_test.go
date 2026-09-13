@@ -192,17 +192,68 @@ func TestNamedVideoAdapterStampsFetchMetadata(t *testing.T) {
 	require.Equal(t, VideoAdapterOpenAIVideosDuration, result.Metadata[VideoAdapterMetadataKey])
 }
 
-func TestJimengOpenAIVideosAdapterVideoGenerationsFiltersDurationAndExtraFields(t *testing.T) {
+func TestJimengOpenAIVideosAdapterVideoGenerationsRejectsUnsupportedFieldsOnCreate(t *testing.T) {
 	provider := &fakeNamedVideoProvider{createResult: &VideoProviderCreateResult{Metadata: map[string]any{"existing": "kept"}}}
 	adapter := &jimengOpenAIVideosAdapter{provider: provider}
 	body := []byte(`{"model":"video-ds-2.0-fast","prompt":"city","duration":8,"aspect_ratio":"9:16","resolution":"720p","generate_audio":true,"generation_mode":"reference"}`)
 
 	result, err := adapter.Create(withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations), nil, body, "application/json", "video-ds-2.0-fast")
 
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "resolution is not supported")
+	require.Zero(t, provider.createCalls)
+}
+
+func TestAdaptJimengVideoGenerationsCompatBodyNormalizesDurationAndRatio(t *testing.T) {
+	adapted, err := adaptJimengVideoGenerationsCompatBody([]byte(`{"model":"video-ds-2.0-fast","prompt":"city","duration":8,"ratio":"9:16"}`), true)
+
 	require.NoError(t, err)
-	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"15","aspect_ratio":"9:16"}`, string(provider.createBody))
-	require.Equal(t, "kept", result.Metadata["existing"])
-	require.Equal(t, VideoAdapterJimengOpenAIVideos, result.Metadata[VideoAdapterMetadataKey])
+	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"8","aspect_ratio":"9:16"}`, string(adapted))
+}
+
+func TestVideoAdaptersNormalizeDurationSecondsAlias(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		fn   func([]byte) ([]byte, error)
+	}{
+		{name: "seedance", fn: func(body []byte) ([]byte, error) { return seedanceCreateBody(body, "seedance-2.0") }},
+		{name: "openai duration", fn: func(body []byte) ([]byte, error) { return openAIDurationCreateBody(body, "video-ds-2.0") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			adapted, err := tt.fn([]byte(`{"model":"requested","prompt":"city","duration_seconds":8}`))
+
+			require.NoError(t, err)
+			require.JSONEq(t, `{"model":"`+map[string]string{"seedance": "seedance-2.0", "openai duration": "video-ds-2.0"}[tt.name]+`","prompt":"city","duration":8}`, string(adapted))
+		})
+	}
+}
+
+func TestJimengOpenAIVideosAdapterPreservesSeedance2VideoFields(t *testing.T) {
+	provider := &fakeNamedVideoProvider{createResult: &VideoProviderCreateResult{}}
+	adapter := &jimengOpenAIVideosAdapter{provider: provider}
+	body := []byte(`{"model":"seedance2.0-413-mini","prompt":"classroom","duration":11,"aspect_ratio":"3:4","resolution":"480p","generate_audio":true,"generation_mode":"reference"}`)
+
+	_, err := adapter.Create(withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations), nil, body, "application/json", "seedance2.0-413-mini")
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"seedance2.0-413-mini","prompt":"classroom","duration":11,"aspect_ratio":"3:4","resolution":"480p","generate_audio":true}`, string(provider.createBody))
+}
+
+func TestIsSeedance2VideoModelRecognizesUnhyphenatedVersions(t *testing.T) {
+	for _, tt := range []struct {
+		model string
+		want  bool
+	}{
+		{model: "seedance2.0-413-mini", want: true},
+		{model: "seedance2.5-480p", want: true},
+		{model: "seedance2.5-720p", want: true},
+		{model: "video-ds-2.0-fast", want: false},
+		{model: "seedance-2.5", want: false},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			require.Equal(t, tt.want, isSeedance2VideoModel(tt.model))
+		})
+	}
 }
 
 func TestJimengOpenAIVideosAdapterVideoGenerationsConvertsDurationSecondsCompatibly(t *testing.T) {
@@ -213,7 +264,7 @@ func TestJimengOpenAIVideosAdapterVideoGenerationsConvertsDurationSecondsCompati
 	_, err := adapter.Create(withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations), nil, body, "application/json", "video-ds-2.0-fast")
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"15","aspect_ratio":"9:16"}`, string(provider.createBody))
+	require.JSONEq(t, `{"model":"video-ds-2.0-fast","prompt":"city","seconds":"8","aspect_ratio":"9:16"}`, string(provider.createBody))
 }
 
 func TestJimengOpenAIVideosAdapterVideoGenerationsNormalizesBeforeMappedModelReplacement(t *testing.T) {
@@ -222,7 +273,7 @@ func TestJimengOpenAIVideosAdapterVideoGenerationsNormalizesBeforeMappedModelRep
 		require.Equal(t, "/v1/videos", r.URL.Path)
 		gotBody, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"model":"upstream-video","prompt":"city","seconds":"15","aspect_ratio":"9:16"}`, string(gotBody))
+		require.JSONEq(t, `{"model":"upstream-video","prompt":"city","seconds":"8","aspect_ratio":"9:16"}`, string(gotBody))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"video_jimeng_mapped","status":"queued"}`)
 	}))
@@ -255,7 +306,7 @@ func TestJimengOpenAIVideosAdapterEstimateReturnsLocalMetadata(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.JSONEq(t, `{"object":"video.estimate","model":"seedance-2.0","upstream_model":"video-ds-2.0","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"15","aspect_ratio":"16:9"}}`, string(result.ResponseBody))
+	require.JSONEq(t, `{"object":"video.estimate","model":"seedance-2.0","upstream_model":"video-ds-2.0","adapter":"jimeng_openai_videos","endpoint":"video_generations","metadata":{"seconds":"5","aspect_ratio":"16:9"}}`, string(result.ResponseBody))
 }
 
 func TestJimengOpenAIVideosAdapterValidateCreateAllowsMappedNonJimengUpstreamModel(t *testing.T) {
@@ -265,6 +316,21 @@ func TestJimengOpenAIVideosAdapterValidateCreateAllowsMappedNonJimengUpstreamMod
 	err := adapter.ValidateCreate(withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations), nil, body, "application/json", "seedance-2.0")
 
 	require.NoError(t, err)
+}
+
+func TestJimengOpenAIVideosAdapterRejectsUnsupportedUnifiedField(t *testing.T) {
+	adapter := &jimengOpenAIVideosAdapter{provider: &fakeNamedVideoProvider{}}
+
+	err := adapter.ValidateCreate(
+		withVideoTaskEndpoint(context.Background(), VideoTaskEndpointVideoGenerations),
+		nil,
+		[]byte(`{"model":"video-ds-2.0-fast","prompt":"city","return_last_frame":true}`),
+		"application/json",
+		"video-ds-2.0-fast",
+	)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "return_last_frame is not supported")
 }
 
 func TestJimengOpenAIVideosAdapterVideosPreservesDurationSeconds(t *testing.T) {
@@ -304,12 +370,16 @@ func TestJimengOpenAIVideosAdapterInvalidJSONReturnsError(t *testing.T) {
 }
 
 func TestJimengOpenAIVideosAdapterStampsFetchMetadata(t *testing.T) {
-	provider := &fakeNamedVideoProvider{fetchResult: &VideoProviderFetchResult{Metadata: map[string]any{"existing": "kept"}}}
+	provider := &fakeNamedVideoProvider{fetchResult: &VideoProviderFetchResult{
+		Metadata: map[string]any{"existing": "kept"},
+		RawBody:  []byte(`{"status":"completed","data":{"url":"https://cdn.example/jimeng.mp4"}}`),
+	}}
 	adapter := &jimengOpenAIVideosAdapter{provider: provider}
 
 	result, err := adapter.Fetch(context.Background(), nil, &VideoTask{})
 
 	require.NoError(t, err)
 	require.Equal(t, "kept", result.Metadata["existing"])
+	require.Equal(t, "https://cdn.example/jimeng.mp4", result.Metadata["result_url"])
 	require.Equal(t, VideoAdapterJimengOpenAIVideos, result.Metadata[VideoAdapterMetadataKey])
 }

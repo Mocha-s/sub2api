@@ -65,6 +65,25 @@ function mountCard(entry = makeEntry()) {
 }
 
 describe('PricingEntryCard video billing', () => {
+  it('fills a default duration when switching into video billing', async () => {
+    const SelectStub = defineComponent({
+      props: { modelValue: String },
+      emits: ['update:modelValue'],
+      template: '<button data-test="billing-mode" @click="$emit(\'update:modelValue\', \'video\')">{{ modelValue }}</button>',
+    })
+    const wrapper = mount(PricingEntryCard, {
+      props: { entry: makeEntry({ billing_mode: 'token', video_default_seconds: null }), inputIdPrefix: 'test-entry', showDescription: false },
+      global: { stubs: { Icon: true, ModelTagInput: true, Select: SelectStub } },
+    })
+
+    await wrapper.get('[data-test="billing-mode"]').trigger('click')
+
+    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({
+      billing_mode: 'video',
+      video_default_seconds: 10,
+    })
+  })
+
   it('preserves active raw text through prop feedback and accepts external replacement', async () => {
     const Harness = defineComponent({
       components: { PricingEntryCard },

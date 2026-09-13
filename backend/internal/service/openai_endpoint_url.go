@@ -8,8 +8,15 @@ import (
 func buildOpenAIEndpointURL(base string, endpoint string) string {
 	normalized := strings.TrimSpace(base)
 	endpoint = "/" + strings.TrimLeft(strings.TrimSpace(endpoint), "/")
-	relative := strings.TrimPrefix(endpoint, "/v1")
 	parsed, err := url.Parse(normalized)
+	if err == nil && strings.EqualFold(parsed.Hostname(), "sub2api.0x0.fan") && strings.TrimRight(parsed.Path, "/") == "" {
+		parsed.Path = "/api/v1"
+		parsed.RawPath = ""
+		parsed.Fragment = ""
+		normalized = parsed.String()
+	}
+	relative := strings.TrimPrefix(endpoint, "/v1")
+	parsed, err = url.Parse(normalized)
 	if err != nil {
 		return strings.TrimRight(normalized, "/") + endpoint
 	}

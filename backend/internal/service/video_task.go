@@ -30,9 +30,16 @@ var (
 		"video-ds-2.0":      {},
 		"video-ds-2.0-fast": {},
 	}
+	unifiedVideoGenerationSemanticFields = []string{
+		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"task_mode", "priority", "return_last_frame", "web_search",
+		"content", "images", "videos", "audios", "storage_object_id",
+	}
 
 	// ErrVideoTaskActionUnsupported marks an action the selected video adapter does not implement.
 	ErrVideoTaskActionUnsupported = infraerrors.New(http.StatusNotImplemented, "VIDEO_TASK_ACTION_UNSUPPORTED", "video task action is not supported")
+	// ErrVideoTaskDeleteNotReady marks deletion before a task reaches a terminal state.
+	ErrVideoTaskDeleteNotReady = infraerrors.Conflict("VIDEO_TASK_DELETE_NOT_READY", "video task can be deleted only after it reaches a terminal status")
 )
 
 func GroupAllowsVideoGeneration(group *Group) bool {
@@ -141,6 +148,32 @@ func ParseVideoTaskCreateEnvelope(body []byte) (*VideoTaskCreateEnvelope, error)
 		PromptHash:  hex.EncodeToString(promptHash[:]),
 		RawBody:     append([]byte(nil), body...),
 	}, nil
+}
+
+func validateUnifiedVideoGenerationFields(ctx context.Context, body []byte, supportedFields ...string) error {
+	if videoTaskEndpointFromContext(ctx) != VideoTaskEndpointVideoGenerations {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+	if payload == nil {
+		return errors.New("video create JSON body must be an object")
+	}
+	supported := make(map[string]struct{}, len(supportedFields))
+	for _, field := range supportedFields {
+		supported[field] = struct{}{}
+	}
+	for _, field := range unifiedVideoGenerationSemanticFields {
+		if _, present := payload[field]; !present {
+			continue
+		}
+		if _, ok := supported[field]; !ok {
+			return invalidVideoTaskRequest("%s is not supported by the selected video provider", field)
+		}
+	}
+	return nil
 }
 
 func parseVideoTaskModelOnly(body []byte) (string, error) {
@@ -356,6 +389,7 @@ type VideoTask struct {
 	LockedBy       *string
 	LockedUntil    *time.Time
 	PollAttempts   int
+	UserDeletedAt  *time.Time
 }
 
 type VideoTaskActionParams struct {
@@ -496,6 +530,7 @@ type VideoTaskRepository interface {
 	GetByProviderTaskID(ctx context.Context, provider, providerTaskID string) (*VideoTask, error)
 	GetByIdempotencyKey(ctx context.Context, apiKeyID int64, idempotencyKey string) (*VideoTask, error)
 	ListForUser(ctx context.Context, params VideoTaskListParams) ([]*VideoTask, bool, error)
+	MarkUserDeleted(ctx context.Context, publicTaskID string, userID int64, deletedAt time.Time) error
 	UpdateSubmit(ctx context.Context, publicTaskID string, update VideoTaskSubmitUpdate) error
 	UpdateFromProvider(ctx context.Context, publicTaskID string, update VideoTaskProviderUpdate) (applied bool, err error)
 	UpdateFromProviderWithPollLease(ctx context.Context, publicTaskID, leaseToken string, validAt time.Time, update VideoTaskProviderUpdate) (applied bool, err error)

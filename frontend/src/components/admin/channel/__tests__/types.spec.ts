@@ -191,6 +191,20 @@ describe('video pricing helpers', () => {
     })
   })
 
+  it.each([
+    { allowed: [30], expected: 30 },
+    { allowed: [], expected: 10 },
+  ])('hydrates a usable default duration when the server value is missing', ({ allowed, expected }) => {
+    const hydrated = apiVideoPricingToForm({
+      video_price_per_second: 0.03,
+      video_default_seconds: null,
+      video_allowed_seconds: allowed,
+    })
+
+    expect(hydrated.video_default_seconds).toBe(expected)
+    expect(validateVideoPricing(makeVideoPricing(hydrated), t)).toBeNull()
+  })
+
   it('rejects a default duration missing from allowed durations', () => {
     expect(validateVideoPricing(makeVideoPricing({ video_allowed_seconds: [5, 15] }), t)).toContain('defaultNotAllowed')
   })

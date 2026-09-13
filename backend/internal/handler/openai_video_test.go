@@ -33,6 +33,9 @@ type fakeVideoTaskService struct {
 	cancelParams         service.VideoTaskActionParams
 	cancelResult         *service.VideoTaskFetchResult
 	cancelErr            error
+	deleteParams         service.VideoTaskActionParams
+	deleteResult         *service.VideoTaskFetchResult
+	deleteErr            error
 	listParams           service.VideoTaskListParams
 	listResult           *service.VideoTaskListResult
 	listErr              error
@@ -70,6 +73,11 @@ func (s *fakeVideoTaskService) Refresh(_ context.Context, params service.VideoTa
 func (s *fakeVideoTaskService) Cancel(_ context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
 	s.cancelParams = params
 	return s.cancelResult, s.cancelErr
+}
+
+func (s *fakeVideoTaskService) Delete(_ context.Context, params service.VideoTaskActionParams) (*service.VideoTaskFetchResult, error) {
+	s.deleteParams = params
+	return s.deleteResult, s.deleteErr
 }
 
 func (s *fakeVideoTaskService) List(_ context.Context, params service.VideoTaskListParams) (*service.VideoTaskListResult, error) {
@@ -152,7 +160,7 @@ func TestVideoTaskHandlerCreateUsesXRequestIDAsIdempotencyFallback(t *testing.T)
 	require.Equal(t, service.VideoTaskEndpointVideos, fake.createParams.Endpoint)
 }
 
-func TestVideoTaskHandlerCreateGenerationsCompatPassesRawBodyAndEndpoint(t *testing.T) {
+func TestVideoTaskHandlerCreateGenerationsCompatReturnsAcceptedLocalTaskEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	body := `{"model":"seedance-2.0-720p","prompt":"city","duration":8,"aspect_ratio":"16:9","resolution":"720p","generate_audio":true}`
@@ -161,15 +169,71 @@ func TestVideoTaskHandlerCreateGenerationsCompatPassesRawBodyAndEndpoint(t *test
 	setVideoTaskAuthContext(c, apiKey, subscription)
 
 	fake := &fakeVideoTaskService{
-		createResult: &service.VideoTaskCreateResult{ResponseBody: []byte(`{"id":"task_123","object":"video","status":"queued"}`)},
+		createResult: &service.VideoTaskCreateResult{
+			Task: &service.VideoTask{
+				PublicTaskID: "task_123",
+				Model:        "seedance-2.0-720p",
+				Status:       service.VideoTaskStatusQueued,
+				Metadata: map[string]any{
+					"progress":                      0,
+					"duration":                      8,
+					"ratio":                         "16:9",
+					"resolution":                    "720p",
+					"result_url":                    "https://cdn.example/video.mp4",
+					"upstream_base_url":             "https://upstream.example",
+					service.VideoAdapterMetadataKey: "seedance_api_v1",
+				},
+			},
+			ResponseBody: []byte(`{"id":"upstream_task_123","adapter":"seedance_api_v1"}`),
+		},
 	}
 	h := &VideoTaskHandler{videoTaskService: fake}
 
 	h.CreateGenerationsCompat(c)
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "accepted",
+		"data": {
+			"id": "task_123",
+			"task_id": "task_123",
+			"object": "video",
+			"status": "queued",
+			"model": "seedance-2.0-720p",
+			"progress": 0,
+			"duration": 8,
+			"ratio": "16:9",
+			"resolution": "720p",
+			"result_url": "https://cdn.example/video.mp4"
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "upstream_task_123")
+	require.NotContains(t, rec.Body.String(), "upstream_base_url")
+	require.NotContains(t, rec.Body.String(), "seedance_api_v1")
 	require.JSONEq(t, body, string(fake.createParams.Body))
 	require.Equal(t, service.VideoTaskEndpointVideoGenerations, fake.createParams.Endpoint)
+}
+
+func TestVideoTaskHandlerCreateGenerationsCompatUsesOnlyXRequestID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations", `{"model":"seedance-2.0","prompt":"city"}`)
+	c.Request.Header.Set("Idempotency-Key", "legacy-key")
+	c.Request.Header.Set("X-Request-ID", "request-key")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+
+	fake := &fakeVideoTaskService{createResult: &service.VideoTaskCreateResult{Task: &service.VideoTask{
+		PublicTaskID: "task_123",
+		Model:        "seedance-2.0",
+		Status:       service.VideoTaskStatusQueued,
+	}}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.CreateGenerationsCompat(c)
+
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	require.Equal(t, "request-key", fake.createParams.IdempotencyKey)
 }
 
 func TestVideoTaskHandlerFetchReturnsRawJSONForCurrentUserTaskID(t *testing.T) {
@@ -193,6 +257,48 @@ func TestVideoTaskHandlerFetchReturnsRawJSONForCurrentUserTaskID(t *testing.T) {
 	require.Equal(t, "task_123", fake.fetchParams.PublicTaskID)
 }
 
+func TestVideoTaskHandlerFetchGenerationsReturnsLocalTaskEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodGet, "/v1/video/generations/task_123", "")
+	c.Params = gin.Params{{Key: "request_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+
+	fake := &fakeVideoTaskService{fetchResult: &service.VideoTaskFetchResult{
+		Task: &service.VideoTask{
+			PublicTaskID: "task_123",
+			Model:        "seedance-2.0",
+			Status:       service.VideoTaskStatusCompleted,
+			Metadata: map[string]any{
+				"progress":          100,
+				"result_url":        "https://cdn.example/video.mp4",
+				"upstream_base_url": "https://upstream.example",
+			},
+		},
+		ResponseBody: []byte(`{"id":"upstream_task_123","status":"completed"}`),
+	}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Fetch(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"id": "task_123",
+			"task_id": "task_123",
+			"object": "video",
+			"status": "completed",
+			"model": "seedance-2.0",
+			"progress": 100,
+			"result_url": "https://cdn.example/video.mp4"
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "upstream_task_123")
+	require.NotContains(t, rec.Body.String(), "upstream_base_url")
+}
+
 func TestVideoTaskHandlerFetchAcceptsSharedVideoRequestIDParam(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -212,20 +318,74 @@ func TestVideoTaskHandlerFetchAcceptsSharedVideoRequestIDParam(t *testing.T) {
 	require.Equal(t, "task_123", fake.fetchParams.PublicTaskID)
 }
 
-func TestVideoTaskHandlerRefreshPassesTaskIDAndReturnsRawJSON(t *testing.T) {
+func TestVideoTaskHandlerRefreshGenerationsReturnsLocalTaskEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations/task_123/refresh", "")
 	c.Params = gin.Params{{Key: "request_id", Value: "task_123"}}
 	setVideoTaskAuthContext(c, apiKey, subscription)
-	fake := &fakeVideoTaskService{refreshResult: &service.VideoTaskFetchResult{ResponseBody: []byte(`{"id":"task_123","status":"completed"}`)}}
+	fake := &fakeVideoTaskService{refreshResult: &service.VideoTaskFetchResult{
+		Task: &service.VideoTask{
+			PublicTaskID: "task_123",
+			Model:        "seedance-2.0",
+			Status:       service.VideoTaskStatusCompleted,
+			Metadata:     map[string]any{"progress": 100},
+		},
+		ResponseBody: []byte(`{"id":"upstream_task_123","status":"completed"}`),
+	}}
 	h := &VideoTaskHandler{videoTaskService: fake}
 
 	h.Refresh(c)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"id":"task_123","status":"completed"}`, rec.Body.String())
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"id": "task_123",
+			"task_id": "task_123",
+			"object": "video",
+			"status": "completed",
+			"model": "seedance-2.0",
+			"progress": 100
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "upstream_task_123")
 	require.Equal(t, int64(42), fake.refreshParams.UserID)
 	require.Equal(t, "task_123", fake.refreshParams.PublicTaskID)
+}
+
+func TestVideoTaskHandlerDeleteGenerationsReturnsDeletedLocalTaskEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodDelete, "/v1/video/generations/task_123", "")
+	c.Params = gin.Params{{Key: "request_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{deleteResult: &service.VideoTaskFetchResult{Task: &service.VideoTask{
+		PublicTaskID: "task_123",
+		Model:        "seedance-2.0",
+		Status:       service.VideoTaskStatusCompleted,
+		Metadata:     map[string]any{"progress": 100},
+	}}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Delete(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"id": "task_123",
+			"task_id": "task_123",
+			"object": "video",
+			"status": "completed",
+			"model": "seedance-2.0",
+			"progress": 100,
+			"deleted": true
+		}
+	}`, rec.Body.String())
+	require.Equal(t, int64(42), fake.deleteParams.UserID)
+	require.Equal(t, "task_123", fake.deleteParams.PublicTaskID)
 }
 
 func TestVideoTaskHandlerContentForwardsRangeStatusHeadersAndStreamBody(t *testing.T) {
@@ -273,6 +433,32 @@ func TestVideoTaskHandlerContentForwardsRangeStatusHeadersAndStreamBody(t *testi
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
 }
 
+func TestVideoTaskHandlerContentHeadReturnsHeadersWithoutBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodHead, "/v1/video/generations/task_123/content", "")
+	c.Params = gin.Params{{Key: "request_id", Value: "task_123"}}
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	streamBody := &closeTrackingReader{Reader: strings.NewReader("video")}
+	fake := &fakeVideoTaskService{contentResult: &service.VideoContentStream{
+		Body:          streamBody,
+		ContentType:   "video/mp4",
+		ContentLength: 5,
+		Headers:       map[string]string{"Accept-Ranges": "bytes"},
+	}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.Content(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Body.String())
+	require.True(t, streamBody.closed)
+	require.Equal(t, "video/mp4", rec.Header().Get("Content-Type"))
+	require.Equal(t, "5", rec.Header().Get("Content-Length"))
+	require.Equal(t, "bytes", rec.Header().Get("Accept-Ranges"))
+	require.Equal(t, http.MethodHead, fake.contentParams.Method)
+}
+
 func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -282,6 +468,8 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 		err        error
 		wantStatus int
 		wantType   string
+		wantMsg    string
+		notContain []string
 	}{
 		{
 			name:       "permission denied",
@@ -329,8 +517,8 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			name:       "unsupported action",
 			handler:    "refresh",
 			err:        service.ErrVideoTaskActionUnsupported,
-			wantStatus: http.StatusNotImplemented,
-			wantType:   "not_supported_error",
+			wantStatus: http.StatusBadRequest,
+			wantType:   "invalid_request_error",
 		},
 		{
 			name:       "body parse error",
@@ -359,6 +547,54 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusTooManyRequests, Body: `{"error":"rate limited"}`},
 			wantStatus: http.StatusTooManyRequests,
 			wantType:   "rate_limit_error",
+		},
+		{
+			name:       "upstream billing detail is sanitized",
+			handler:    "fetch",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusPaymentRequired, Body: `{"error":{"code":"insufficient_balance","message":"insufficient balance"}}`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			notContain: []string{"insufficient_balance", "insufficient balance"},
+		},
+		{
+			name:       "upstream billing code is sanitized",
+			handler:    "create",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusInternalServerError, Body: `{"code":"insufficient_balance","message":"temporary upstream failure"}`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			notContain: []string{"insufficient_balance", "temporary upstream failure"},
+		},
+		{
+			name:       "upstream validation message is passed through",
+			handler:    "create",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusInternalServerError, Body: `{"code":"build_request_failed","data":null,"message":"kling-v3 视频时长只支持5到15秒"}`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			wantMsg:    "kling-v3 视频时长只支持5到15秒",
+		},
+		{
+			name:       "upstream URL detail is sanitized",
+			handler:    "create",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusInternalServerError, Body: `{"message":"fetch https://upstream.example/v1/videos failed"}`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			notContain: []string{"https://upstream.example"},
+		},
+		{
+			name:       "upstream quota detail is sanitized",
+			handler:    "create",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusInternalServerError, Body: `{"message":"账号额度不足"}`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			notContain: []string{"账号额度不足"},
+		},
+		{
+			name:       "plain upstream message is passed through",
+			handler:    "create",
+			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusInternalServerError, Body: `model kling-v3 not found`},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			wantMsg:    "model kling-v3 not found",
 		},
 		{
 			name:       "upstream bad request",
@@ -394,7 +630,15 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 
 			require.Equal(t, tt.wantStatus, rec.Code)
 			require.Equal(t, tt.wantType, gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-			require.NotEmpty(t, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+			message := gjson.GetBytes(rec.Body.Bytes(), "error.message").String()
+			if tt.wantMsg != "" {
+				require.Equal(t, tt.wantMsg, message)
+			} else {
+				require.NotEmpty(t, message)
+			}
+			for _, value := range tt.notContain {
+				require.NotContains(t, rec.Body.String(), value)
+			}
 		})
 	}
 }
@@ -473,6 +717,79 @@ func TestVideoTaskHandlerEstimateReturnsVideoPricingContract(t *testing.T) {
 	require.JSONEq(t, response, rec.Body.String())
 }
 
+func TestVideoTaskHandlerEstimateGenerationsReturnsSanitizedEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/video/generations/estimate", `{"model":"seedance","prompt":"city"}`)
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	response := `{"object":"video.estimate","model":"seedance","upstream_model":"seedance-upstream","adapter":"seedance_api_v1","endpoint":"video_generations","metadata":{"duration":5,"ratio":"16:9","resolution":"1080p"},"billing_mode":"video","billing_model":"seedance","effective":{"seconds":5,"resolution":"1080p","video_count":1},"unit_price_usd":0.12,"gross_cost_usd":0.6,"rate_multiplier":0.5,"actual_cost_usd":0.3}`
+	h := &VideoTaskHandler{videoTaskService: &fakeVideoTaskService{estimateResult: &service.VideoTaskEstimateResult{ResponseBody: []byte(response)}}}
+
+	h.EstimateGenerationsCompat(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"object": "video.estimate",
+			"model": "seedance",
+			"metadata": {"duration": 5, "ratio": "16:9", "resolution": "1080p"},
+			"billing_mode": "video",
+			"billing_model": "seedance",
+			"effective": {"seconds": 5, "resolution": "1080p", "video_count": 1},
+			"unit_price_usd": 0.12,
+			"gross_cost_usd": 0.6,
+			"rate_multiplier": 0.5,
+			"actual_cost_usd": 0.3
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "seedance-upstream")
+	require.NotContains(t, rec.Body.String(), "seedance_api_v1")
+	require.NotContains(t, rec.Body.String(), "video_generations")
+}
+
+func TestVideoTaskHandlerListGenerationsReturnsLocalTaskEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodGet, "/v1/video/generations?limit=10", "")
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{listResult: &service.VideoTaskListResult{
+		Tasks: []*service.VideoTask{{
+			PublicTaskID: "task_123",
+			Model:        "seedance-2.0",
+			Status:       service.VideoTaskStatusInProgress,
+			Metadata:     map[string]any{"progress": 25, "duration": 8, "ratio": "16:9"},
+		}},
+		HasMore:      true,
+		ResponseBody: []byte(`{"object":"list","data":[{"id":"upstream_task_123"}]}`),
+	}}
+	h := &VideoTaskHandler{videoTaskService: fake}
+
+	h.List(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"object": "list",
+			"has_more": true,
+			"data": [{
+				"id": "task_123",
+				"task_id": "task_123",
+				"object": "video",
+				"status": "in_progress",
+				"model": "seedance-2.0",
+				"progress": 25,
+				"duration": 8,
+				"ratio": "16:9"
+			}]
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "upstream_task_123")
+}
+
 func TestVideoTaskHandlerListRejectsMalformedLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -502,6 +819,51 @@ func TestIsVideoTaskBadRequestErrorClassifiesJimengValidationWrapper(t *testing.
 func TestIsVideoTaskBadRequestErrorClassifiesAdapterNumericValidation(t *testing.T) {
 	require.True(t, isVideoTaskBadRequestError(errors.New("seconds must be a number or numeric string")))
 	require.True(t, isVideoTaskBadRequestError(errors.New("duration must be a number or numeric string")))
+}
+
+func TestVideoTaskPublicDataIncludesStoredErrorAndPricing(t *testing.T) {
+	data := videoTaskPublicData(&service.VideoTask{
+		PublicTaskID: "task_failed",
+		Model:        "seedance-2.0",
+		Status:       service.VideoTaskStatusFailed,
+		ErrorMessage: "insufficient balance at upstream provider",
+		BilledUSD:    0.3,
+		Metadata: map[string]any{
+			"request_metadata": map[string]any{
+				"video_pricing_snapshot": map[string]any{
+					"billing_mode":    "video",
+					"billing_model":   "seedance-2.0",
+					"effective":       map[string]any{"seconds": 5, "resolution": "1080p", "video_count": 1},
+					"unit_price_usd":  0.12,
+					"gross_cost_usd":  0.6,
+					"actual_cost_usd": 0.3,
+					"rate_multiplier": 0.5,
+				},
+			},
+			"upstream_base_url":             "https://upstream.example",
+			"error_code":                    "insufficient_balance",
+			"error_message":                 "insufficient balance at upstream provider",
+			service.VideoAdapterMetadataKey: "seedance_api_v1",
+		},
+	})
+
+	require.Equal(t, gin.H{
+		"id":              "task_failed",
+		"task_id":         "task_failed",
+		"object":          "video",
+		"status":          "failed",
+		"model":           "seedance-2.0",
+		"progress":        100,
+		"error":           gin.H{"code": "VIDEO_GENERATION_FAILED", "message": "Video generation failed"},
+		"billing_mode":    "video",
+		"billing_model":   "seedance-2.0",
+		"effective":       map[string]any{"seconds": 5, "resolution": "1080p", "video_count": 1},
+		"unit_price_usd":  0.12,
+		"gross_cost_usd":  0.6,
+		"actual_cost_usd": 0.3,
+		"rate_multiplier": 0.5,
+		"billed_usd":      0.3,
+	}, data)
 }
 
 func TestVideoTaskHandlerCreateRejectsEmptyBody(t *testing.T) {

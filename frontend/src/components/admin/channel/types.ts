@@ -32,6 +32,8 @@ export interface PricingFormEntry {
   intervals: IntervalFormEntry[]
 }
 
+export const DEFAULT_VIDEO_SECONDS = 10
+
 // 价格转换：后端存 per-token，前端显示 per-MTok ($/1M tokens)
 const MTOK = 1_000_000
 
@@ -57,6 +59,20 @@ export function perTokenToMTok(val: number | null | undefined): number | null {
 /** Normalizes video durations while retaining invalid values for submit-time feedback. */
 export function normalizeVideoAllowedSeconds(seconds: number[]): number[] {
   return [...new Set(seconds)].sort((a, b) => a - b)
+}
+
+export function normalizeVideoDefaultSeconds(
+  value: number | string | null | undefined,
+  allowedSeconds: number[] = [],
+): number {
+  const candidate = toNullableNumber(value)
+  if (candidate != null && Number.isInteger(candidate) && candidate >= 1 && candidate <= 3600) {
+    return candidate
+  }
+  const fallback = allowedSeconds
+    .map(Number)
+    .find(seconds => Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600)
+  return fallback ?? DEFAULT_VIDEO_SECONDS
 }
 
 /** Returns the canonical label used by backend video quote tier matching. */
@@ -85,10 +101,11 @@ export function normalizeVideoTierLabel(value: string): string {
 export function apiVideoPricingToForm(
   pricing: Pick<ChannelModelPricing, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'>,
 ): Pick<PricingFormEntry, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'> {
+  const allowedSeconds = (pricing.video_allowed_seconds || []).map(seconds => Number(seconds))
   return {
     video_price_per_second: pricing.video_price_per_second,
-    video_default_seconds: pricing.video_default_seconds,
-    video_allowed_seconds: (pricing.video_allowed_seconds || []).map(seconds => Number(seconds)),
+    video_default_seconds: normalizeVideoDefaultSeconds(pricing.video_default_seconds, allowedSeconds),
+    video_allowed_seconds: allowedSeconds,
   }
 }
 

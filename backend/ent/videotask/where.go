@@ -274,6 +274,11 @@ func PollAttempts(v int) predicate.VideoTask {
 	return predicate.VideoTask(sql.FieldEQ(FieldPollAttempts, v))
 }
 
+// UserDeletedAt applies equality check predicate on the "user_deleted_at" field. It's identical to UserDeletedAtEQ.
+func UserDeletedAt(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldEQ(FieldUserDeletedAt, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.VideoTask {
 	return predicate.VideoTask(sql.FieldEQ(FieldCreatedAt, v))
@@ -2827,6 +2832,56 @@ func PollAttemptsLT(v int) predicate.VideoTask {
 // PollAttemptsLTE applies the LTE predicate on the "poll_attempts" field.
 func PollAttemptsLTE(v int) predicate.VideoTask {
 	return predicate.VideoTask(sql.FieldLTE(FieldPollAttempts, v))
+}
+
+// UserDeletedAtEQ applies the EQ predicate on the "user_deleted_at" field.
+func UserDeletedAtEQ(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldEQ(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtNEQ applies the NEQ predicate on the "user_deleted_at" field.
+func UserDeletedAtNEQ(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldNEQ(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtIn applies the In predicate on the "user_deleted_at" field.
+func UserDeletedAtIn(vs ...time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldIn(FieldUserDeletedAt, vs...))
+}
+
+// UserDeletedAtNotIn applies the NotIn predicate on the "user_deleted_at" field.
+func UserDeletedAtNotIn(vs ...time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldNotIn(FieldUserDeletedAt, vs...))
+}
+
+// UserDeletedAtGT applies the GT predicate on the "user_deleted_at" field.
+func UserDeletedAtGT(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldGT(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtGTE applies the GTE predicate on the "user_deleted_at" field.
+func UserDeletedAtGTE(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldGTE(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtLT applies the LT predicate on the "user_deleted_at" field.
+func UserDeletedAtLT(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldLT(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtLTE applies the LTE predicate on the "user_deleted_at" field.
+func UserDeletedAtLTE(v time.Time) predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldLTE(FieldUserDeletedAt, v))
+}
+
+// UserDeletedAtIsNil applies the IsNil predicate on the "user_deleted_at" field.
+func UserDeletedAtIsNil() predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldIsNull(FieldUserDeletedAt))
+}
+
+// UserDeletedAtNotNil applies the NotNil predicate on the "user_deleted_at" field.
+func UserDeletedAtNotNil() predicate.VideoTask {
+	return predicate.VideoTask(sql.FieldNotNull(FieldUserDeletedAt))
 }
 
 // And groups predicates with the AND operator between them.
