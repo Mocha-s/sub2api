@@ -299,6 +299,7 @@ type OpenAIForwardResult struct {
 	wsReplayInput                []json.RawMessage
 	wsReplayInputExists          bool
 	wsAccountFailoverReplayInput []json.RawMessage
+	videoTaskQuote               *VideoTaskQuote
 }
 
 // SucceededForScheduling reports whether this result is an upstream success

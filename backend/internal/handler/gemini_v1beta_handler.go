@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -387,6 +389,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
 		googleError(c, status, message)
+		return
+	}
+	if action == "generateContent" && service.IsGeminiBananaBridgeModel(modelName) {
+		h.handleGeminiBananaBridge(c, apiKey, authSubject, subscription, reqLog, reqModel, reqModel, body, channelMapping)
 		return
 	}
 
@@ -896,6 +902,118 @@ func shouldFallbackGeminiModel(modelName string, res *service.UpstreamHTTPResult
 		return false
 	}
 	return gemini.HasFallbackModel(modelName)
+}
+
+func (h *GatewayHandler) handleGeminiBananaBridge(c *gin.Context, apiKey *service.APIKey, authSubject middleware.AuthSubject, subscription *service.UserSubscription, reqLog *zap.Logger, requestModel, modelName string, body []byte, channelMapping service.ChannelMappingResult) {
+	if h.openAIGatewayService == nil {
+		googleError(c, http.StatusServiceUnavailable, "OpenAI image gateway is not configured")
+		return
+	}
+	if !service.GroupAllowsImageGeneration(apiKey.Group) {
+		googleError(c, http.StatusForbidden, service.ImageGenerationPermissionMessage())
+		return
+	}
+	openAIBody, openAIContentType, openAIEndpoint, err := service.BuildOpenAIImagesRequestFromGeminiBanana(modelName, body)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	openAIReq := c.Request.Clone(c.Request.Context())
+	openAIReq.URL.Path = openAIEndpoint
+	openAIReq.Body = io.NopCloser(bytes.NewReader(openAIBody))
+	openAIReq.ContentLength = int64(len(openAIBody))
+	openAIReq.Header = openAIReq.Header.Clone()
+	openAIReq.Header.Set("Content-Type", openAIContentType)
+	openAICtx := *c
+	openAICtx.Request = openAIReq
+	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(&openAICtx, openAIBody)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	requestCtx := service.WithOpenAIImageGenerationIntent(c.Request.Context())
+	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, "", modelName, nil, "", 0)
+	if err != nil || selection == nil || selection.Account == nil {
+		if err == nil {
+			err = service.ErrNoAvailableAccounts
+		}
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
+		return
+	}
+	account := selection.Account
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if selection.ReleaseFunc != nil {
+		defer selection.ReleaseFunc()
+	}
+	upstreamAccount := account
+	if account.Type == service.AccountTypeAPIKey && account.Platform != service.PlatformOpenAI {
+		adapted := *account
+		adapted.Platform = service.PlatformOpenAI
+		upstreamAccount = &adapted
+	}
+	stopKeepalive := service.StartOpenAIImagesJSONKeepalive(c, h.openAIImagesJSONKeepaliveInterval())
+	defer stopKeepalive()
+	raw, err := h.openAIGatewayService.ForwardImagesRaw(requestCtx, &openAICtx, upstreamAccount, openAIBody, parsed, channelMapping.MappedModel)
+	if err != nil {
+		reqLog.Error("gemini.banana_bridge_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if !c.Writer.Written() {
+			googleError(c, http.StatusBadGateway, err.Error())
+		}
+		return
+	}
+	geminiBody, usage, imageCount, err := h.openAIGatewayService.BuildGeminiBananaResponseFromOpenAIImages(c.Request.Context(), upstreamAccount, modelName, raw.Body)
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", geminiBody)
+	result := geminiBananaForwardResult(modelName, raw.ForwardResult, usage, imageCount)
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	requestPayloadHash := service.HashUsageRequestPayload(body)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+			Result: result, QuotaPlatform: quotaPlatform, APIKey: apiKey, User: apiKey.User, Account: account, Subscription: subscription,
+			InboundEndpoint: inboundEndpoint, UpstreamEndpoint: upstreamEndpoint, UserAgent: userAgent, IPAddress: clientIP,
+			RequestPayloadHash: requestPayloadHash, APIKeyService: h.apiKeyService,
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, requestModel, result.UpstreamModel),
+		}); err != nil {
+			logger.L().With(zap.String("component", "handler.gemini_v1beta.models"), zap.Int64("user_id", authSubject.UserID), zap.Int64("api_key_id", apiKey.ID), zap.String("model", modelName), zap.Int64("account_id", account.ID)).Error("gemini.banana_bridge_record_usage_failed", zap.Error(err))
+		}
+	})
+}
+
+func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, imageCount int) *service.ForwardResult {
+	result := &service.ForwardResult{Usage: usage, Model: strings.TrimSpace(modelName), ImageCount: imageCount}
+	if raw == nil {
+		return result
+	}
+	result.RequestID = raw.RequestID
+	result.UpstreamModel = raw.UpstreamModel
+	result.Duration = raw.Duration
+	result.FirstTokenMs = raw.FirstTokenMs
+	result.ImageCount = max(result.ImageCount, raw.ImageCount)
+	result.ImageSize = raw.ImageSize
+	result.ImageInputSize = raw.ImageInputSize
+	result.ImageOutputSize = raw.ImageOutputSize
+	result.ImageOutputSizes = raw.ImageOutputSizes
+	result.ImageSizeSource = raw.ImageSizeSource
+	result.ImageSizeBreakdown = raw.ImageSizeBreakdown
+	if result.UpstreamModel == "" {
+		result.UpstreamModel = raw.Model
+	}
+	return result
+}
+
+func (h *GatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration {
+	if h.cfg == nil || h.cfg.Gateway.ImageNonstreamKeepaliveInterval <= 0 {
+		return 0
+	}
+	return time.Duration(h.cfg.Gateway.ImageNonstreamKeepaliveInterval) * time.Second
 }
 
 // extractGeminiCLISessionHash 从 Gemini CLI 请求中提取会话标识。

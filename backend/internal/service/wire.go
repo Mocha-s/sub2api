@@ -53,6 +53,18 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
 }
 
+func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskPoller {
+	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai), settlement)
+	poller.Start()
+	return poller
+}
+
+func ProvideVideoTaskSettlementReconciler(repo VideoTaskSettlementRepository, settlement *VideoTaskSettlementService) *VideoTaskSettlementReconciler {
+	reconciler := NewVideoTaskSettlementReconciler(repo, settlement)
+	reconciler.Start()
+	return reconciler
+}
+
 // ProvideAuthService wires the optional captcha providers into AuthService while
 // keeping NewAuthService's public constructor compatible with existing tests.
 func ProvideAuthService(
@@ -871,6 +883,10 @@ var ProviderSet = wire.NewSet(
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
+	NewVideoTaskSettlementService,
+	NewVideoTaskService,
+	ProvideVideoTaskSettlementReconciler,
+	ProvideVideoTaskPoller,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

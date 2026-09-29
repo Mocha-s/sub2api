@@ -92,6 +92,7 @@ type ChannelModelPricing struct {
 	ChannelID                  int64               `json:"channel_id,omitempty"`
 	Platform                   string              `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
 	Models                     []string            `json:"models"`
+	Description                string              `json:"description,omitempty"`
 	BillingMode                BillingMode         `json:"billing_mode"`
 	InputPrice                 *float64            `json:"input_price"`
 	OutputPrice                *float64            `json:"output_price"`
@@ -104,6 +105,9 @@ type ChannelModelPricing struct {
 	ImageInputPrice            *float64            `json:"image_input_price"`
 	ImageOutputPrice           *float64            `json:"image_output_price"`
 	PerRequestPrice            *float64            `json:"per_request_price"`
+	VideoPricePerSecond        *float64            `json:"video_price_per_second"`
+	VideoDefaultSeconds        *int                `json:"video_default_seconds"`
+	VideoAllowedSeconds        []int               `json:"video_allowed_seconds"`
 	Intervals                  []PricingInterval   `json:"intervals"`
 	TimePricing                *ChannelTimePricing `json:"time_pricing,omitempty"`
 	CreatedAt                  time.Time           `json:"created_at,omitempty"`
@@ -141,6 +145,7 @@ type PricingInterval struct {
 	CacheWriteMultiplier *float64  `json:"cache_write_multiplier"`
 	CacheReadMultiplier  *float64  `json:"cache_read_multiplier"`
 	PerRequestPrice      *float64  `json:"per_request_price"`
+	VideoPricePerSecond  *float64  `json:"video_price_per_second"`
 	SortOrder            int       `json:"sort_order"`
 	CreatedAt            time.Time `json:"created_at,omitempty"`
 	UpdatedAt            time.Time `json:"updated_at,omitempty"`

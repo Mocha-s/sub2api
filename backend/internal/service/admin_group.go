@@ -313,6 +313,10 @@ func defaultAllowImageGenerationForPlatform(platform string) bool {
 	return platform == PlatformGrok
 }
 
+func platformSupportsVideoGenerationPermission(platform string) bool {
+	return platform == PlatformOpenAI || platform == PlatformComposite
+}
+
 func compositeDefaultModelsListCandidateIDs() []string {
 	seen := make(map[string]struct{})
 	ids := make([]string, 0)
@@ -512,6 +516,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	allowImageGeneration := input.AllowImageGeneration || defaultAllowImageGenerationForPlatform(platform)
+	allowVideoGeneration := input.AllowVideoGeneration && platformSupportsVideoGenerationPermission(platform)
 	allowBatchImageGeneration := input.AllowBatchImageGeneration && allowImageGeneration && platform == PlatformGemini
 
 	// 如果指定了复制账号的源分组，先获取账号 ID 列表
@@ -566,6 +571,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		LongContextPricingEnabled:       input.LongContextPricingEnabled,
 		ModelPricing:                    modelPricing,
 		AllowImageGeneration:            allowImageGeneration,
+		AllowVideoGeneration:            allowVideoGeneration,
 		AllowBatchImageGeneration:       allowBatchImageGeneration,
 		ImageRateIndependent:            input.ImageRateIndependent,
 		ImageRateMultiplier:             imageRateMultiplier,
@@ -809,6 +815,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	// 图片生成计费配置：负数表示清除（使用默认价格）
 	if input.AllowImageGeneration != nil {
 		group.AllowImageGeneration = *input.AllowImageGeneration
+	}
+	if input.AllowVideoGeneration != nil {
+		group.AllowVideoGeneration = *input.AllowVideoGeneration && platformSupportsVideoGenerationPermission(group.Platform)
+	} else if !platformSupportsVideoGenerationPermission(group.Platform) {
+		group.AllowVideoGeneration = false
 	}
 	if input.AllowBatchImageGeneration != nil {
 		group.AllowBatchImageGeneration = *input.AllowBatchImageGeneration

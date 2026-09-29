@@ -128,6 +128,7 @@ type authCacheStub struct {
 	getAuthCache   func(ctx context.Context, key string) (*APIKeyAuthCacheEntry, error)
 	setAuthKeys    []string
 	deleteAuthKeys []string
+	deleteErr      error
 }
 
 func (s *authCacheStub) GetCreateAttemptCount(ctx context.Context, userID int64) (int, error) {
@@ -164,7 +165,7 @@ func (s *authCacheStub) SetAuthCache(ctx context.Context, key string, entry *API
 
 func (s *authCacheStub) DeleteAuthCache(ctx context.Context, key string) error {
 	s.deleteAuthKeys = append(s.deleteAuthKeys, key)
-	return nil
+	return s.deleteErr
 }
 
 func (s *authCacheStub) PublishAuthCacheInvalidation(ctx context.Context, cacheKey string) error {
@@ -513,6 +514,21 @@ func TestAPIKeyService_InvalidateAuthCacheByUserID(t *testing.T) {
 
 	svc.InvalidateAuthCacheByUserID(context.Background(), 7)
 	require.Len(t, cache.deleteAuthKeys, 2)
+}
+
+func TestAPIKeyService_InvalidateAuthCacheByUserIDStrictReturnsCacheError(t *testing.T) {
+	want := errors.New("redis delete failed")
+	cache := &authCacheStub{deleteErr: want}
+	repo := &authRepoStub{
+		listKeysByUserID: func(context.Context, int64) ([]string, error) {
+			return []string{"k1", "k2"}, nil
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, cache, &config.Config{})
+
+	err := svc.InvalidateAuthCacheByUserIDStrict(context.Background(), 7)
+	require.ErrorIs(t, err, want)
+	require.Len(t, cache.deleteAuthKeys, 1)
 }
 
 func TestAPIKeyService_InvalidateAuthCacheByGroupID(t *testing.T) {

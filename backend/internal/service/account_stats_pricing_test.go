@@ -976,6 +976,26 @@ func TestResolveAccountStatsCost_NilBillingService_SkipsLiteLLM(t *testing.T) {
 	require.Nil(t, result)
 }
 
+func TestApplyVideoAccountStatsPricingUsesResolutionTier(t *testing.T) {
+	basePrice := 0.02
+	tierPrice := 0.05
+	quote := VideoTaskQuote{
+		BillingMode:           BillingModeVideo,
+		Effective:             VideoTaskEffectiveParams{Seconds: 10, Resolution: "1080p", VideoCount: 2},
+		AccountRateMultiplier: 1.5,
+	}
+
+	applyVideoAccountStatsPricing(&quote, &ChannelModelPricing{
+		BillingMode:         BillingModeVideo,
+		VideoPricePerSecond: &basePrice,
+		Intervals:           []PricingInterval{{TierLabel: "1080p", VideoPricePerSecond: &tierPrice}},
+	})
+
+	require.InDelta(t, 0.05, quote.AccountUnitPriceUSD, 1e-12)
+	require.InDelta(t, 1.0, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, 1.5, quote.AccountCostUSD, 1e-12)
+}
+
 func TestResolveAccountStatsCost_CustomRulePriorityOverApplyPricing(t *testing.T) {
 	// Both custom rule and ApplyPricingToAccountStats are configured;
 	// custom rule should take precedence.

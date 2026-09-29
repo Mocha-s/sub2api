@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"testing"
 )
 
@@ -49,5 +51,17 @@ func TestWithHTTPUpstreamPublicHostsOnly(t *testing.T) {
 	}
 	if HTTPUpstreamRedirectsDisabled(ctx) {
 		t.Fatal("public-hosts-only must not disable redirects")
+	}
+}
+
+func TestHTTPRedirectValidatorFromContext(t *testing.T) {
+	want := errors.New("blocked redirect")
+	ctx := WithHTTPRedirectValidator(context.Background(), func(*url.URL) error { return want })
+
+	if err := ValidateHTTPRedirect(ctx, &url.URL{Scheme: "https", Host: "example.com"}); !errors.Is(err, want) {
+		t.Fatalf("expected redirect validator error %v, got %v", want, err)
+	}
+	if err := ValidateHTTPRedirect(context.Background(), &url.URL{Scheme: "https", Host: "example.com"}); err != nil {
+		t.Fatalf("unmarked requests should not be validated: %v", err)
 	}
 }

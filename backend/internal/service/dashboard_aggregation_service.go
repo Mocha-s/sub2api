@@ -220,6 +220,10 @@ func (s *DashboardAggregationService) recomputeRange(ctx context.Context, start,
 	return nil
 }
 
+func (s *DashboardAggregationService) RecomputeRange(ctx context.Context, start, end time.Time) error {
+	return s.recomputeRange(ctx, start, end)
+}
+
 func (s *DashboardAggregationService) runScheduledAggregation() {
 	if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
 		return

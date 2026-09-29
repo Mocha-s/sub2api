@@ -1402,3 +1402,10 @@ func (s *BillingCacheService) HasUserPlatformQuotaLimit(ctx context.Context, use
 	}
 	return entry.DailyLimitUSD != nil || entry.WeeklyLimitUSD != nil || entry.MonthlyLimitUSD != nil
 }
+
+func (s *BillingCacheService) InvalidateUserPlatformQuota(ctx context.Context, userID int64, platform string) error {
+	if s.cache == nil {
+		return nil
+	}
+	return s.cache.DeleteUserPlatformQuotaCache(ctx, userID, platform)
+}

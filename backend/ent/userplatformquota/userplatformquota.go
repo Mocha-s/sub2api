@@ -37,6 +37,8 @@ const (
 	FieldWeeklyUsageUsd = "weekly_usage_usd"
 	// FieldMonthlyUsageUsd holds the string denoting the monthly_usage_usd field in the database.
 	FieldMonthlyUsageUsd = "monthly_usage_usd"
+	// FieldRevision holds the string denoting the revision field in the database.
+	FieldRevision = "revision"
 	// FieldDailyWindowStart holds the string denoting the daily_window_start field in the database.
 	FieldDailyWindowStart = "daily_window_start"
 	// FieldWeeklyWindowStart holds the string denoting the weekly_window_start field in the database.
@@ -70,6 +72,7 @@ var Columns = []string{
 	FieldDailyUsageUsd,
 	FieldWeeklyUsageUsd,
 	FieldMonthlyUsageUsd,
+	FieldRevision,
 	FieldDailyWindowStart,
 	FieldWeeklyWindowStart,
 	FieldMonthlyWindowStart,
@@ -107,6 +110,10 @@ var (
 	DefaultWeeklyUsageUsd float64
 	// DefaultMonthlyUsageUsd holds the default value on creation for the "monthly_usage_usd" field.
 	DefaultMonthlyUsageUsd float64
+	// DefaultRevision holds the default value on creation for the "revision" field.
+	DefaultRevision int64
+	// RevisionValidator is a validator for the "revision" field. It is called by the builders before save.
+	RevisionValidator func(int64) error
 )
 
 // OrderOption defines the ordering options for the UserPlatformQuota queries.
@@ -170,6 +177,11 @@ func ByWeeklyUsageUsd(opts ...sql.OrderTermOption) OrderOption {
 // ByMonthlyUsageUsd orders the results by the monthly_usage_usd field.
 func ByMonthlyUsageUsd(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMonthlyUsageUsd, opts...).ToFunc()
+}
+
+// ByRevision orders the results by the revision field.
+func ByRevision(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRevision, opts...).ToFunc()
 }
 
 // ByDailyWindowStart orders the results by the daily_window_start field.

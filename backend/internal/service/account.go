@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"net/url"
 	"reflect"
 	"sort"
@@ -89,6 +90,12 @@ type OpenAIEndpointCapability string
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
+	pricingManagedByCredentialKey    = "pricing_managed_by"
+	pricingManagedByAPIPricingSync   = "api-pricing-sync"
+	pricingMarkupFactorCredentialKey = "pricing_markup_factor"
+)
+
+const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
@@ -163,6 +170,28 @@ func (a *Account) BillingRateMultiplier() float64 {
 		return 1.0
 	}
 	return *a.RateMultiplier
+}
+
+func (a *Account) UsesManagedBillingRate() bool {
+	return a != nil && strings.EqualFold(strings.TrimSpace(a.GetCredential(pricingManagedByCredentialKey)), pricingManagedByAPIPricingSync)
+}
+
+func (a *Account) ManagedPricingMarkupFactor() float64 {
+	if a == nil || a.Credentials == nil {
+		return 1
+	}
+	factor := parseExtraFloat64(a.Credentials[pricingMarkupFactorCredentialKey])
+	if factor < 1 || math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return 1
+	}
+	return factor
+}
+
+func effectiveRequestRateMultiplier(account *Account, fallback float64) float64 {
+	if account != nil && account.UsesManagedBillingRate() {
+		return account.BillingRateMultiplier() * account.ManagedPricingMarkupFactor()
+	}
+	return fallback
 }
 
 func (a *Account) EffectiveLoadFactor() int {

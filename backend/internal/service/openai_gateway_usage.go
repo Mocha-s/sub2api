@@ -698,6 +698,13 @@ func isGrokVideoUsageResult(result *OpenAIForwardResult, billingModels []string)
 	return true
 }
 
+func videoTaskQuoteFromForwardResult(result *OpenAIForwardResult) (VideoTaskQuote, bool) {
+	if result == nil || !validVideoTaskQuote(result.videoTaskQuote) {
+		return VideoTaskQuote{}, false
+	}
+	return *result.videoTaskQuote, true
+}
+
 func isUsagePricingUnavailableError(err error) bool {
 	if err == nil {
 		return false
@@ -802,6 +809,13 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
+	if quote, ok := videoTaskQuoteFromForwardResult(result); ok {
+		return &CostBreakdown{
+			TotalCost:   quote.GrossCostUSD,
+			ActualCost:  quote.ActualCostUSD,
+			BillingMode: string(quote.BillingMode),
+		}
+	}
 	videoCount := result.VideoCount
 	if videoCount <= 0 {
 		videoCount = 1

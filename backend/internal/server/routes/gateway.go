@@ -79,6 +79,13 @@ func RegisterGatewayRoutes(
 	isOpenAIOnlyEndpointGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
+	isOpenAIVideoTaskGatewayPlatform := func(c *gin.Context) bool {
+		if getGroupPlatform(c) == service.PlatformOpenAI {
+			return true
+		}
+		apiKey, ok := middleware.GetAPIKeyFromContext(c)
+		return ok && apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite
+	}
 	imagesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI:
@@ -96,6 +103,18 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoGenerationHandler := func(c *gin.Context) {
+		if platform := getGroupPlatform(c); platform == service.PlatformOpenAI || platform == service.PlatformComposite {
+			if platform == service.PlatformOpenAI {
+				apiKey, _ := middleware.GetAPIKeyFromContext(c)
+				if apiKey == nil || !service.GroupAllowsVideoGeneration(apiKey.Group) {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+					c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+					return
+				}
+			}
+			h.VideoTask.CreateGenerationsCompat(c)
+			return
+		}
 		// Video status/content lookups below already allow Composite groups; keep
 		// task creation aligned so composite keys that route to Grok accounts can
 		// submit video generation jobs.
@@ -111,37 +130,72 @@ func RegisterGatewayRoutes(
 			},
 		})
 	}
+	videoCreateHandler := func(c *gin.Context) {
+		if platform := getGroupPlatform(c); platform == service.PlatformOpenAI || platform == service.PlatformComposite {
+			if platform == service.PlatformOpenAI {
+				apiKey, _ := middleware.GetAPIKeyFromContext(c)
+				if apiKey == nil || !service.GroupAllowsVideoGeneration(apiKey.Group) {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+					c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+					return
+				}
+			}
+			h.VideoTask.Create(c)
+			return
+		}
+		videoGenerationHandler(c)
+	}
 	videoStatusHandler := func(c *gin.Context) {
 		// Video status requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler and let scheduler/account selection enforce capacity.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.OpenAIGateway.GrokVideoStatus(c)
-			return
+		case service.PlatformComposite:
+			if isLocalDurableVideoTaskID(c.Param("request_id")) {
+				h.VideoTask.Fetch(c)
+				return
+			}
+			h.OpenAIGateway.GrokVideoStatus(c)
+		case service.PlatformOpenAI:
+			apiKey, _ := middleware.GetAPIKeyFromContext(c)
+			if apiKey == nil || !service.GroupAllowsVideoGeneration(apiKey.Group) {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+				return
+			}
+			h.VideoTask.Fetch(c)
+		default:
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
 	}
 	videoContentHandler := func(c *gin.Context) {
 		// Video content requests do not carry a model, so composite groups cannot
 		// be resolved by compositeTargetPlatformMiddleware. Route them through
 		// the Grok handler just like video status lookups.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.OpenAIGateway.GrokVideoContent(c)
-			return
+		case service.PlatformComposite:
+			if isLocalDurableVideoTaskID(c.Param("request_id")) {
+				h.VideoTask.Content(c)
+				return
+			}
+			h.OpenAIGateway.GrokVideoContent(c)
+		case service.PlatformOpenAI:
+			apiKey, _ := middleware.GetAPIKeyFromContext(c)
+			if apiKey == nil || !service.GroupAllowsVideoGeneration(apiKey.Group) {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+				return
+			}
+			h.VideoTask.Content(c)
+		default:
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
 	}
 	videoEditHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
@@ -158,6 +212,24 @@ func RegisterGatewayRoutes(
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+	}
+	openAIVideoTaskHandler := func(next gin.HandlerFunc) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if !isOpenAIVideoTaskGatewayPlatform(c) {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformOpenAI {
+				apiKey, _ := middleware.GetAPIKeyFromContext(c)
+				if apiKey == nil || !service.GroupAllowsVideoGeneration(apiKey.Group) {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+					c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+					return
+				}
+			}
+			next(c)
+		}
 	}
 	// /responses/*subpath 的子路径会被转发到上游同名端点之后，因此在入口就拒掉
 	// 不可转发的子路径，不让它进入调度与转发流程。可转发的判定见
@@ -269,9 +341,22 @@ func RegisterGatewayRoutes(
 		gateway.POST("/images/batches/:id/cancel", h.BatchImage.Cancel)
 		gateway.DELETE("/images/batches/:id", h.BatchImage.DeleteRecord)
 		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
-		// OpenAI-compatible clients may create through /videos; xAI receives the
-		// canonical /videos/generations route inside the Grok media forwarder.
-		gateway.POST("/videos", videoGenerationHandler)
+		gateway.POST("/video/generations", openAIVideoTaskHandler(h.VideoTask.CreateGenerationsCompat))
+		gateway.GET("/video/generations", openAIVideoTaskHandler(h.VideoTask.List))
+		gateway.POST("/video/generations/estimate", openAIVideoTaskHandler(h.VideoTask.EstimateGenerationsCompat))
+		gateway.POST("/video/generations/references", openAIVideoTaskHandler(h.VideoTask.ReferencesGenerationsCompat))
+		gateway.POST("/video/generations/material-assets", openAIVideoTaskHandler(h.VideoTask.MaterialAssetsGenerationsCompat))
+		gateway.POST("/video/generations/:request_id/refresh", openAIVideoTaskHandler(h.VideoTask.Refresh))
+		gateway.POST("/video/generations/:request_id/cancel", openAIVideoTaskHandler(h.VideoTask.Cancel))
+		gateway.DELETE("/video/generations/:request_id", openAIVideoTaskHandler(h.VideoTask.Delete))
+		gateway.GET("/video/generations/:request_id", openAIVideoTaskHandler(h.VideoTask.Fetch))
+		gateway.GET("/video/generations/:request_id/content", openAIVideoTaskHandler(h.VideoTask.Content))
+		gateway.HEAD("/video/generations/:request_id/content", openAIVideoTaskHandler(h.VideoTask.Content))
+		gateway.POST("/videos", videoCreateHandler)
+		gateway.GET("/videos", openAIVideoTaskHandler(h.VideoTask.List))
+		gateway.POST("/videos/estimate", openAIVideoTaskHandler(h.VideoTask.Estimate))
+		gateway.POST("/videos/references", openAIVideoTaskHandler(h.VideoTask.References))
+		gateway.POST("/videos/material-assets", openAIVideoTaskHandler(h.VideoTask.MaterialAssets))
 		gateway.POST("/videos/generations", videoGenerationHandler)
 		gateway.POST("/videos/edits", videoEditHandler)
 		gateway.POST("/videos/extensions", videoExtensionHandler)
@@ -281,6 +366,8 @@ func RegisterGatewayRoutes(
 		gateway.GET("/videos/generations/:request_id", videoStatusHandler)
 		gateway.GET("/videos/edits/:request_id", videoStatusHandler)
 		gateway.GET("/videos/extensions/:request_id", videoStatusHandler)
+		gateway.POST("/videos/:request_id/refresh", openAIVideoTaskHandler(h.VideoTask.Refresh))
+		gateway.POST("/videos/:request_id/cancel", openAIVideoTaskHandler(h.VideoTask.Cancel))
 		gateway.GET("/videos/:request_id", videoStatusHandler)
 		gateway.GET("/videos/:request_id/content", videoContentHandler)
 
@@ -421,7 +508,22 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodPost, "/images/generations/async", bodyLimit, h.AsyncImage.Submit)
 	rootRoute(http.MethodPost, "/images/edits/async", bodyLimit, h.AsyncImage.Submit)
 	rootRoute(http.MethodGet, "/images/tasks/:task_id", bodyLimit, h.AsyncImage.Get)
-	rootRoute(http.MethodPost, "/videos", bodyLimit, videoGenerationHandler)
+	rootRoute(http.MethodPost, "/video/generations", bodyLimit, openAIVideoTaskHandler(h.VideoTask.CreateGenerationsCompat))
+	rootRoute(http.MethodGet, "/video/generations", bodyLimit, openAIVideoTaskHandler(h.VideoTask.List))
+	rootRoute(http.MethodPost, "/video/generations/estimate", bodyLimit, openAIVideoTaskHandler(h.VideoTask.EstimateGenerationsCompat))
+	rootRoute(http.MethodPost, "/video/generations/references", bodyLimit, openAIVideoTaskHandler(h.VideoTask.ReferencesGenerationsCompat))
+	rootRoute(http.MethodPost, "/video/generations/material-assets", bodyLimit, openAIVideoTaskHandler(h.VideoTask.MaterialAssetsGenerationsCompat))
+	rootRoute(http.MethodPost, "/video/generations/:request_id/refresh", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Refresh))
+	rootRoute(http.MethodPost, "/video/generations/:request_id/cancel", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Cancel))
+	rootRoute(http.MethodDelete, "/video/generations/:request_id", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Delete))
+	rootRoute(http.MethodGet, "/video/generations/:request_id", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Fetch))
+	rootRoute(http.MethodGet, "/video/generations/:request_id/content", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Content))
+	rootRoute(http.MethodHead, "/video/generations/:request_id/content", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Content))
+	rootRoute(http.MethodPost, "/videos", bodyLimit, videoCreateHandler)
+	rootRoute(http.MethodGet, "/videos", bodyLimit, openAIVideoTaskHandler(h.VideoTask.List))
+	rootRoute(http.MethodPost, "/videos/estimate", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Estimate))
+	rootRoute(http.MethodPost, "/videos/references", bodyLimit, openAIVideoTaskHandler(h.VideoTask.References))
+	rootRoute(http.MethodPost, "/videos/material-assets", bodyLimit, openAIVideoTaskHandler(h.VideoTask.MaterialAssets))
 	rootRoute(http.MethodPost, "/videos/generations", bodyLimit, videoGenerationHandler)
 	rootRoute(http.MethodPost, "/videos/edits", bodyLimit, videoEditHandler)
 	rootRoute(http.MethodPost, "/videos/extensions", bodyLimit, videoExtensionHandler)
@@ -431,6 +533,8 @@ func RegisterGatewayRoutes(
 	rootRoute(http.MethodGet, "/videos/generations/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/edits/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/extensions/:request_id", bodyLimit, videoStatusHandler)
+	rootRoute(http.MethodPost, "/videos/:request_id/refresh", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Refresh))
+	rootRoute(http.MethodPost, "/videos/:request_id/cancel", bodyLimit, openAIVideoTaskHandler(h.VideoTask.Cancel))
 	rootRoute(http.MethodGet, "/videos/:request_id", bodyLimit, videoStatusHandler)
 	rootRoute(http.MethodGet, "/videos/:request_id/content", bodyLimit, videoContentHandler)
 
@@ -677,9 +781,35 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointEmbeddings
 	case strings.Contains(path, "/images/"):
 		return service.CompositeRouteEndpointImages
+	case isDurableVideoRoutePath(path):
+		return service.CompositeRouteEndpointVideo
 	case strings.Contains(path, "/v1beta/"):
 		return service.CompositeRouteEndpointGemini
 	default:
 		return service.CompositeRouteEndpointAny
+	}
+}
+
+func isLocalDurableVideoTaskID(requestID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(requestID), "task_")
+}
+
+func isDurableVideoRoutePath(path string) bool {
+	path = strings.TrimPrefix(strings.TrimSpace(path), "/v1")
+	if path == "" {
+		path = "/"
+	}
+	switch {
+	case path == "/videos", path == "/videos/estimate", path == "/videos/references", path == "/videos/material-assets":
+		return true
+	case strings.HasPrefix(path, "/video/generations"), strings.HasPrefix(path, "/videos/generations/"):
+		return true
+	case strings.HasPrefix(path, "/videos/"):
+		requestID := strings.TrimSuffix(strings.TrimPrefix(path, "/videos/"), "/content")
+		requestID = strings.TrimSuffix(requestID, "/refresh")
+		requestID = strings.TrimSuffix(requestID, "/cancel")
+		return isLocalDurableVideoTaskID(requestID)
+	default:
+		return false
 	}
 }

@@ -112,6 +112,18 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 	}
 }
 
+func TestMigrationChecksumCompatibilityRules_AllowKnownProductionVideoUpgradeHashes(t *testing.T) {
+	cases := map[string][2]string{
+		"172_composite_model_routes.sql":             {"d68f38cf89a4ba8fdd41302196fb6ec2ebe57423ec18db90140945a89fd9ed40", "7e591f5fe2b05c5ee5c0b96cc0bcbdcbe32239981ec305033fea413fa4fe08eb"},
+		"186_group_auth_cache_image_generation.sql":  {"f572176e02edc425551304461c86d9df8cd7a0f11c71b92122307fa2d5a7dbbf", "e4c8272402c47adf29583d21c05346d3d6fc00e3b8d5f4ad1184d0dce7ed9ec7"},
+	}
+	for name, checksums := range cases {
+		require.True(t, isMigrationChecksumCompatible(name, checksums[0], checksums[1]), name)
+		require.False(t, isMigrationChecksumCompatible(name, "unknown", checksums[1]), name)
+		require.False(t, isMigrationChecksumCompatible(name, checksums[0], "unknown"), name)
+	}
+}
+
 func TestEnsureAtlasBaselineAligned(t *testing.T) {
 	t.Run("skip_when_no_legacy_table", func(t *testing.T) {
 		db, mock, err := sqlmock.New()

@@ -82,6 +82,8 @@ var ProviderSet = wire.NewSet(
 	NewUsageLogRepository,
 	NewUsageBillingRepository,
 	NewBatchImageRepository,
+	NewVideoTaskRepository,
+	NewVideoTaskSettlementRepository,
 	NewIdempotencyRepository,
 	NewUsageCleanupRepository,
 	NewDashboardAggregationRepository,
@@ -99,6 +101,7 @@ var ProviderSet = wire.NewSet(
 	NewPluginRepository,
 	NewPluginKVStore,
 	NewChannelRepository,
+	NewChannelCache,
 	NewChannelMonitorRepository,
 	NewChannelMonitorV2Repository,
 	NewChannelMonitorRequestTemplateRepository,
@@ -138,7 +141,6 @@ var ProviderSet = wire.NewSet(
 	NewRefreshTokenCache,
 	NewErrorPassthroughCache,
 	NewTLSFingerprintProfileCache,
-	NewChannelCache,
 	NewContentModerationHashCache,
 
 	// Encryptors

@@ -104,6 +104,12 @@ type OpenAIImagesRequest struct {
 	bodyHash           string
 }
 
+type OpenAIImagesRawResult struct {
+	Body             []byte
+	ForwardResult    *OpenAIForwardResult
+	ImageOutputSizes []string
+}
+
 func (r *OpenAIImagesRequest) ModerationBody() []byte {
 	if r == nil {
 		return nil
@@ -512,7 +518,7 @@ func isGeminiCompatibleImageModel(model string) bool {
 }
 
 func validateCompatibleImagesModel(model string) error {
-	if isGeminiCompatibleImageModel(model) {
+	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) {
 		return nil
 	}
 	return validateOpenAIImagesModel(model)
@@ -615,6 +621,101 @@ func (s *OpenAIGatewayService) ForwardImages(
 	default:
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
 	}
+}
+
+func (s *OpenAIGatewayService) ForwardImagesRaw(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	parsed *OpenAIImagesRequest,
+	channelMappedModel string,
+) (*OpenAIImagesRawResult, error) {
+	if parsed == nil {
+		return nil, fmt.Errorf("parsed images request is required")
+	}
+	if parsed.Stream {
+		return nil, fmt.Errorf("streaming images bridge is not supported")
+	}
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return nil, fmt.Errorf("images bridge requires an API key account")
+	}
+
+	startTime := time.Now()
+	requestModel := strings.TrimSpace(parsed.Model)
+	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
+		requestModel = mapped
+	}
+	if err := validateCompatibleImagesModel(requestModel); err != nil {
+		return nil, err
+	}
+	upstreamModel := account.GetMappedModel(requestModel)
+	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
+		return nil, err
+	}
+	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
+	if err != nil {
+		return nil, err
+	}
+
+	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	defer releaseUpstreamCtx()
+	token, _, err := s.GetAccessToken(upstreamCtx, account)
+	if err != nil {
+		return nil, err
+	}
+	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	upstreamStart := time.Now()
+	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	if err != nil {
+		return nil, fmt.Errorf("upstream request failed: %s", sanitizeUpstreamErrorMessage(err.Error()))
+	}
+	if resp.StatusCode >= 400 {
+		respBody := s.readUpstreamErrorBody(resp)
+		_ = resp.Body.Close()
+		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody) {
+			shouldDisable := s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, upstreamModel)
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)}
+		}
+		return nil, fmt.Errorf("upstream images request failed: %s", upstreamMsg)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	if err != nil {
+		return nil, err
+	}
+	usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
+	imageCount := extractOpenAIImageCountFromJSONBytes(respBody)
+	if imageCount <= 0 {
+		imageCount = parsed.N
+	}
+	imageSizes := collectOpenAIResponseImageOutputSizesFromJSONBytes(respBody)
+	return &OpenAIImagesRawResult{
+		Body: respBody,
+		ForwardResult: &OpenAIForwardResult{
+			RequestID:        resp.Header.Get("x-request-id"),
+			Usage:            usage,
+			Model:            requestModel,
+			UpstreamModel:    upstreamModel,
+			Stream:           false,
+			ResponseHeaders:  resp.Header.Clone(),
+			Duration:         time.Since(startTime),
+			ImageCount:       imageCount,
+			ImageSize:        parsed.SizeTier,
+			ImageInputSize:   parsed.Size,
+			ImageOutputSizes: imageSizes,
+		},
+		ImageOutputSizes: imageSizes,
+	}, nil
 }
 
 func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(

@@ -36,6 +36,7 @@ const (
 
 var (
 	integrationDB        *sql.DB
+	integrationDSN       string
 	integrationEntClient *dbent.Client
 	integrationRedis     *redisclient.Client
 
@@ -96,6 +97,7 @@ func TestMain(m *testing.M) {
 		log.Printf("failed to open sql db: %v", err)
 		os.Exit(1)
 	}
+	integrationDSN = dsn
 	if err := ApplyMigrations(ctx, integrationDB); err != nil {
 		log.Printf("failed to apply db migrations: %v", err)
 		os.Exit(1)
