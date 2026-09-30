@@ -74,6 +74,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 	requestModel := parsed.Model
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformGemini && !service.IsGeminiBananaBridgeModel(requestModel) {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Images API is not supported for this Gemini model")
+		return
+	}
 	ensureCompositeTargetPlatform(c, apiKey, requestModel)
 	clientRequestModel := clientRequestedModel(c, requestModel)
 	routingModel := requestModel
