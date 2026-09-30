@@ -22,6 +22,7 @@ func TestNormalizeVideoTaskMultipartBody(t *testing.T) {
 	require.NoError(t, writer.WriteField("model", "video-ds-2.0"))
 	require.NoError(t, writer.WriteField("prompt", "city at sunset"))
 	require.NoError(t, writer.WriteField("seconds", "6"))
+	require.NoError(t, writer.WriteField("generate_audio", "true"))
 	require.NoError(t, writer.WriteField("size", "1280x720"))
 	require.NoError(t, writer.WriteField("resolution_name", "720p"))
 	header := textproto.MIMEHeader{}
@@ -42,6 +43,7 @@ func TestNormalizeVideoTaskMultipartBody(t *testing.T) {
 	require.Equal(t, "city at sunset", envelope.Prompt)
 	require.Equal(t, "6", envelope.Metadata["seconds"])
 	require.Equal(t, 1, envelope.Metadata["image_count"])
+	require.Contains(t, string(normalized), `"generate_audio":true`)
 	require.Contains(t, string(normalized), "data:image/png;base64,UE5H")
 }
 

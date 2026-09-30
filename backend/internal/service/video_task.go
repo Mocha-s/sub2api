@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -168,7 +169,15 @@ func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, str
 	payload := map[string]any{}
 	for _, key := range []string{"model", "prompt", "seconds", "duration", "duration_seconds", "size", "resolution", "resolution_name", "aspect_ratio", "ratio", "generate_audio", "watermark"} {
 		if value, ok := fields[key]; ok && strings.TrimSpace(value) != "" {
-			payload[key] = value
+			if key == "generate_audio" || key == "watermark" {
+				parsed, parseErr := strconv.ParseBool(strings.TrimSpace(value))
+				if parseErr != nil {
+					return nil, "", fmt.Errorf("%s must be boolean", key)
+				}
+				payload[key] = parsed
+			} else {
+				payload[key] = value
+			}
 		}
 	}
 	if resolution := strings.TrimSpace(fields["resolution_name"]); resolution != "" {
