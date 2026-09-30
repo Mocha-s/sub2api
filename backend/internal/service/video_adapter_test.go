@@ -23,7 +23,7 @@ func TestNormalizeVideoTaskMultipartBody(t *testing.T) {
 	require.NoError(t, writer.WriteField("prompt", "city at sunset"))
 	require.NoError(t, writer.WriteField("seconds", "6"))
 	require.NoError(t, writer.WriteField("generate_audio", "true"))
-	require.NoError(t, writer.WriteField("size", "1280x720"))
+	require.NoError(t, writer.WriteField("size", "720x1280"))
 	require.NoError(t, writer.WriteField("resolution_name", "720p"))
 	header := textproto.MIMEHeader{}
 	header.Set("Content-Disposition", `form-data; name="input_reference[]"; filename="frame.png"`)
@@ -44,6 +44,7 @@ func TestNormalizeVideoTaskMultipartBody(t *testing.T) {
 	require.Equal(t, "6", envelope.Metadata["seconds"])
 	require.Equal(t, 1, envelope.Metadata["image_count"])
 	require.Contains(t, string(normalized), `"generate_audio":true`)
+	require.Contains(t, string(normalized), `"aspect_ratio":"9:16"`)
 	require.Contains(t, string(normalized), "data:image/png;base64,UE5H")
 }
 

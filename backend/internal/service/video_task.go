@@ -184,6 +184,11 @@ func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, str
 		payload["resolution"] = resolution
 		delete(payload, "resolution_name")
 	}
+	if _, exists := payload["aspect_ratio"]; !exists {
+		if ratio := videoAspectRatioFromSize(fields["size"]); ratio != "" {
+			payload["aspect_ratio"] = ratio
+		}
+	}
 	if len(images) > 0 {
 		payload["images"] = images
 	}
@@ -192,6 +197,24 @@ func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, str
 		return nil, "", fmt.Errorf("encode normalized video request: %w", err)
 	}
 	return normalized, "application/json", nil
+}
+
+func videoAspectRatioFromSize(size string) string {
+	parts := strings.Split(strings.TrimSpace(size), "x")
+	if len(parts) != 2 {
+		return ""
+	}
+	width, errWidth := strconv.Atoi(parts[0])
+	height, errHeight := strconv.Atoi(parts[1])
+	if errWidth != nil || errHeight != nil || width <= 0 || height <= 0 {
+		return ""
+	}
+	originalWidth, originalHeight := width, height
+	divisor := width
+	for height != 0 {
+		divisor, height = height, divisor%height
+	}
+	return strconv.Itoa(originalWidth/divisor) + ":" + strconv.Itoa(originalHeight/divisor)
 }
 
 func ParseVideoTaskCreateEnvelope(body []byte) (*VideoTaskCreateEnvelope, error) {
