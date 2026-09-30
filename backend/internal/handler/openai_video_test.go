@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -139,6 +141,32 @@ func TestVideoTaskHandlerCreatePassesAuthBodyIdempotencyAndReturnsRawJSON(t *tes
 	require.Equal(t, "video-client/1.0", fake.createParams.UserAgent)
 	require.Equal(t, "203.0.113.10", fake.createParams.IPAddress)
 	require.Equal(t, "idem-123", fake.createParams.IdempotencyKey)
+}
+
+func TestVideoTaskHandlerCreateNormalizesInfiniteCanvasMultipartBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "video-ds-2.0"))
+	require.NoError(t, writer.WriteField("prompt", "city at sunset"))
+	require.NoError(t, writer.WriteField("seconds", "6"))
+	part, err := writer.CreateFormFile("input_reference[]", "frame.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("PNG"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	rec, c, apiKey, subscription := newVideoTaskTestContext(http.MethodPost, "/v1/videos", "")
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	setVideoTaskAuthContext(c, apiKey, subscription)
+	fake := &fakeVideoTaskService{createResult: &service.VideoTaskCreateResult{ResponseBody: []byte(`{"id":"task_123"}`)}}
+
+	(&VideoTaskHandler{videoTaskService: fake}).Create(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "application/json", fake.createParams.ContentType)
+	require.JSONEq(t, `{"model":"video-ds-2.0","prompt":"city at sunset","seconds":"6","images":["data:image/png;base64,UE5H"]}`, string(fake.createParams.Body))
 }
 
 func TestVideoTaskHandlerCreateUsesXRequestIDAsIdempotencyFallback(t *testing.T) {

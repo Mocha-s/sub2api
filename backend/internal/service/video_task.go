@@ -1,15 +1,20 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -108,6 +113,76 @@ type VideoTaskCreateEnvelope struct {
 	RequestHash string
 	PromptHash  string
 	RawBody     []byte
+}
+
+// NormalizeVideoTaskRequestBody converts OpenAI-style multipart video creates
+// into the JSON shape used by the durable task and provider adapters.
+func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, string, error) {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
+		return body, contentType, nil
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil, "", errors.New("multipart boundary is required")
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	fields := make(map[string]string)
+	images := make([]string, 0, 4)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read video multipart body: %w", err)
+		}
+		name := strings.TrimSpace(part.FormName())
+		if name == "" {
+			_ = part.Close()
+			continue
+		}
+		data, readErr := io.ReadAll(io.LimitReader(part, 20<<20+1))
+		_ = part.Close()
+		if readErr != nil {
+			return nil, "", fmt.Errorf("read video multipart field %s: %w", name, readErr)
+		}
+		if len(data) > 20<<20 {
+			return nil, "", fmt.Errorf("video multipart field %s exceeds 20 MiB", name)
+		}
+		if part.FileName() != "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(part.Header.Get("Content-Type"))), "video/") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(part.Header.Get("Content-Type"))), "image/") {
+			mimeType := strings.TrimSpace(part.Header.Get("Content-Type"))
+			if mimeType == "" || mimeType == "application/octet-stream" {
+				if inferred := mime.TypeByExtension(filepath.Ext(part.FileName())); inferred != "" {
+					mimeType = inferred
+				}
+			}
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+			images = append(images, "data:"+mimeType+";base64,"+base64.StdEncoding.EncodeToString(data))
+			continue
+		}
+		fields[name] = string(data)
+	}
+	payload := map[string]any{}
+	for _, key := range []string{"model", "prompt", "seconds", "duration", "duration_seconds", "size", "resolution", "resolution_name", "aspect_ratio", "ratio", "generate_audio", "watermark"} {
+		if value, ok := fields[key]; ok && strings.TrimSpace(value) != "" {
+			payload[key] = value
+		}
+	}
+	if resolution := strings.TrimSpace(fields["resolution_name"]); resolution != "" {
+		payload["resolution"] = resolution
+		delete(payload, "resolution_name")
+	}
+	if len(images) > 0 {
+		payload["images"] = images
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("encode normalized video request: %w", err)
+	}
+	return normalized, "application/json", nil
 }
 
 func ParseVideoTaskCreateEnvelope(body []byte) (*VideoTaskCreateEnvelope, error) {

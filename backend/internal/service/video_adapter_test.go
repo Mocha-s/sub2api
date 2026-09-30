@@ -3,15 +3,47 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"testing"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeVideoTaskMultipartBody(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "video-ds-2.0"))
+	require.NoError(t, writer.WriteField("prompt", "city at sunset"))
+	require.NoError(t, writer.WriteField("seconds", "6"))
+	require.NoError(t, writer.WriteField("size", "1280x720"))
+	require.NoError(t, writer.WriteField("resolution_name", "720p"))
+	header := textproto.MIMEHeader{}
+	header.Set("Content-Disposition", `form-data; name="input_reference[]"; filename="frame.png"`)
+	header.Set("Content-Type", "image/png")
+	part, err := writer.CreatePart(header)
+	require.NoError(t, err)
+	_, err = part.Write([]byte("PNG"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	normalized, contentType, err := NormalizeVideoTaskRequestBody(body.Bytes(), writer.FormDataContentType())
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	envelope, err := ParseVideoTaskCreateEnvelope(normalized)
+	require.NoError(t, err)
+	require.Equal(t, "video-ds-2.0", envelope.Model)
+	require.Equal(t, "city at sunset", envelope.Prompt)
+	require.Equal(t, "6", envelope.Metadata["seconds"])
+	require.Equal(t, 1, envelope.Metadata["image_count"])
+	require.Contains(t, string(normalized), "data:image/png;base64,UE5H")
+}
 
 type namedVideoAdapter struct {
 	name string
