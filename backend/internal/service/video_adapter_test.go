@@ -122,6 +122,12 @@ func TestParseVideoTaskCreateEnvelopeAcceptsSeedanceDurationBody(t *testing.T) {
 	require.Equal(t, "720p", envelope.Metadata["resolution"])
 }
 
+func TestValidateOpenAIVideoCreateShapeAcceptsInfiniteCanvasSize(t *testing.T) {
+	err := validateOpenAIVideoCreateShape([]byte(`{"model":"video-ds-2.0","prompt":"city","seconds":"6","size":"1280x720","resolution_name":"720p","preset":"normal"}`))
+
+	require.NoError(t, err)
+}
+
 func TestParseVideoTaskCreateEnvelopeRejectsMissingPrompt(t *testing.T) {
 	_, err := ParseVideoTaskCreateEnvelope([]byte(`{"model":"seedance-2.0-720p"}`))
 

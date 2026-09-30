@@ -120,7 +120,6 @@ func TestParseOpenAIVideoCreateRequest_RequiresModelAndPrompt(t *testing.T) {
 		{name: "forbidden duration field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","duration":"15"}`)},
 		{name: "forbidden width field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","width":1080}`)},
 		{name: "forbidden height field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","height":1920}`)},
-		{name: "forbidden size field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","size":"9:16"}`)},
 		{name: "forbidden mode field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","mode":"fast"}`)},
 		{name: "forbidden model_name field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","model_name":"video-ds-2.0-fast"}`)},
 		{name: "forbidden req_key field", body: []byte(`{"model":"video-ds-2.0-fast","prompt":"make a video","seconds":"15","req_key":"abc"}`)},

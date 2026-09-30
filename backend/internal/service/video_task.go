@@ -394,7 +394,7 @@ func rejectForbiddenOpenAIVideoFields(body []byte) error {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return err
 	}
-	for _, field := range []string{"duration", "width", "height", "size", "mode", "model_name", "req_key"} {
+	for _, field := range []string{"duration", "width", "height", "mode", "model_name", "req_key"} {
 		if _, ok := payload[field]; ok {
 			return fmt.Errorf("%s is not supported by /v1/videos", field)
 		}
