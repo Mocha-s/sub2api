@@ -18,7 +18,7 @@ ARG GOSUMDB=sum.golang.google.cn
 FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
-ENV NODE_OPTIONS=--max-old-space-size=1536
+ENV NODE_OPTIONS=--max-old-space-size=3072
 
 # Install pnpm directly so builds do not depend on the Node image's Corepack
 # shim or its signature metadata.
