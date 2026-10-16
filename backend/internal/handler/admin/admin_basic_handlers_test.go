@@ -266,6 +266,27 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestGroupHandlerCompositeRouteAcceptsVideoEndpoint(t *testing.T) {
+	router, _ := setupAdminRouter()
+	body, err := json.Marshal(map[string]any{
+		"public_model":    "video-alias",
+		"match_type":      "exact",
+		"target_platform": "openai",
+		"upstream_model":  "sora-upstream",
+		"endpoint":        "video",
+		"enabled":         true,
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups/2/composite-routes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Contains(t, rec.Body.String(), `"endpoint":"video"`)
+}
+
 func TestProxyHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

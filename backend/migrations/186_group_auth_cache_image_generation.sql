@@ -13,6 +13,9 @@ BEGIN
        AND OLD.status IS NOT DISTINCT FROM NEW.status
        AND OLD.is_exclusive IS NOT DISTINCT FROM NEW.is_exclusive
        AND OLD.allow_image_generation IS NOT DISTINCT FROM NEW.allow_image_generation
+       AND OLD.allow_video_generation IS NOT DISTINCT FROM NEW.allow_video_generation
+       AND OLD.max_reasoning_effort IS NOT DISTINCT FROM NEW.max_reasoning_effort
+       AND OLD.reasoning_effort_mappings IS NOT DISTINCT FROM NEW.reasoning_effort_mappings
        AND OLD.deleted_at IS NOT DISTINCT FROM NEW.deleted_at THEN
         RETURN NEW;
     END IF;

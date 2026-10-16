@@ -37,6 +37,7 @@ func (s *UsageLogRepoSuite) SetupTest() {
 }
 
 func TestUsageLogRepoSuite(t *testing.T) {
+	resetIntegrationCoreTables(t)
 	suite.Run(t, new(UsageLogRepoSuite))
 }
 

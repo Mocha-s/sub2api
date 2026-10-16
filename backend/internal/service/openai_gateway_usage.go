@@ -824,6 +824,17 @@ func (s *OpenAIGatewayService) calculateOpenAIVideoCost(
 	result *OpenAIForwardResult,
 	multiplier float64,
 ) *CostBreakdown {
+	if result != nil && result.videoTaskQuote != nil {
+		quote := result.videoTaskQuote
+		return &CostBreakdown{
+			TotalCost:   quote.GrossCostUSD,
+			ActualCost:  quote.ActualCostUSD,
+			BillingMode: string(quote.BillingMode),
+		}
+	}
+	if s == nil || s.billingService == nil {
+		return &CostBreakdown{BillingMode: string(BillingModeVideo)}
+	}
 	videoCount := result.VideoCount
 	if videoCount <= 0 {
 		videoCount = 1

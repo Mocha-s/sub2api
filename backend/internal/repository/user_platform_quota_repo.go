@@ -27,6 +27,7 @@ type UserPlatformQuotaRecord struct {
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time
 	MonthlyWindowStart *time.Time
+	Revision           int64
 }
 
 // HasAnyLimit 报告该记录是否至少配置了一档限额（0 也算配置）。
@@ -52,6 +53,13 @@ type UserPlatformQuotaSnapshot struct {
 	DailyWindowStart   time.Time
 	WeeklyWindowStart  time.Time
 	MonthlyWindowStart time.Time
+	Revision           int64
+}
+
+type UserPlatformQuotaSnapshotResult struct {
+	UserID, Revision int64
+	Platform         string
+	Applied          bool
 }
 
 // UserPlatformQuotaRepository 定义用户平台配额的数据访问接口。
@@ -291,7 +299,43 @@ func entQuotaToRecord(e *dbent.UserPlatformQuota) *UserPlatformQuotaRecord {
 		DailyWindowStart:   e.DailyWindowStart,
 		WeeklyWindowStart:  e.WeeklyWindowStart,
 		MonthlyWindowStart: e.MonthlyWindowStart,
+		Revision:           e.Revision,
 	}
+}
+
+func (r *userPlatformQuotaRepository) CompareAndSwapUsageSnapshots(ctx context.Context, snapshots []UserPlatformQuotaSnapshot) ([]UserPlatformQuotaSnapshotResult, error) {
+	results := make([]UserPlatformQuotaSnapshotResult, 0, len(snapshots))
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		for _, snapshot := range snapshots {
+			result := UserPlatformQuotaSnapshotResult{UserID: snapshot.UserID, Platform: snapshot.Platform, Revision: snapshot.Revision}
+			affected, err := txClient.UserPlatformQuota.Update().Where(
+				userplatformquota.UserIDEQ(snapshot.UserID), userplatformquota.PlatformEQ(snapshot.Platform),
+				userplatformquota.DeletedAtIsNil(), userplatformquota.RevisionEQ(snapshot.Revision),
+			).SetDailyUsageUsd(snapshot.DailyUsageUSD).SetWeeklyUsageUsd(snapshot.WeeklyUsageUSD).
+				SetMonthlyUsageUsd(snapshot.MonthlyUsageUSD).SetDailyWindowStart(snapshot.DailyWindowStart).
+				SetWeeklyWindowStart(snapshot.WeeklyWindowStart).SetMonthlyWindowStart(snapshot.MonthlyWindowStart).
+				AddRevision(1).Save(txCtx)
+			if err != nil {
+				return err
+			}
+			if affected == 0 {
+				current, queryErr := txClient.UserPlatformQuota.Query().Where(userplatformquota.UserIDEQ(snapshot.UserID), userplatformquota.PlatformEQ(snapshot.Platform), userplatformquota.DeletedAtIsNil()).Only(txCtx)
+				if queryErr != nil && !dbent.IsNotFound(queryErr) {
+					return queryErr
+				}
+				if current != nil {
+					result.Revision = current.Revision
+				}
+				results = append(results, result)
+				continue
+			}
+			result.Revision = snapshot.Revision + 1
+			result.Applied = true
+			results = append(results, result)
+		}
+		return nil
+	})
+	return results, err
 }
 
 // maybeReset 判断是否需要重置窗口用量：

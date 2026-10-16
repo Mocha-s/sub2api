@@ -48,6 +48,7 @@ type UserPlatformQuotaCacheEntry struct {
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
 	Version         int64
+	Revision        int64
 	SchemaVersion   int64
 
 	// 以下字段仅在 SchemaVersion >= 1 时有效

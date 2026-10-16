@@ -60,7 +60,8 @@ type updateChannelRequest struct {
 type channelModelPricingRequest struct {
 	Platform                   string                     `json:"platform" binding:"omitempty,max=50"`
 	Models                     []string                   `json:"models" binding:"required,min=1,max=100"`
-	BillingMode                string                     `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
+	Description                string                     `json:"description" binding:"max=500"`
+	BillingMode                string                     `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
 	InputPrice                 *float64                   `json:"input_price" binding:"omitempty,min=0"`
 	OutputPrice                *float64                   `json:"output_price" binding:"omitempty,min=0"`
 	CacheWritePrice            *float64                   `json:"cache_write_price" binding:"omitempty,min=0"`
@@ -72,6 +73,9 @@ type channelModelPricingRequest struct {
 	ImageInputPrice            *float64                   `json:"image_input_price" binding:"omitempty,min=0"`
 	ImageOutputPrice           *float64                   `json:"image_output_price" binding:"omitempty,min=0"`
 	PerRequestPrice            *float64                   `json:"per_request_price" binding:"omitempty,min=0"`
+	VideoPricePerSecond        *float64                   `json:"video_price_per_second" binding:"omitempty,min=0"`
+	VideoDefaultSeconds        *int                       `json:"video_default_seconds" binding:"omitempty,min=1,max=3600"`
+	VideoAllowedSeconds        []int                      `json:"video_allowed_seconds" binding:"omitempty,dive,min=1,max=3600"`
 	Intervals                  []pricingIntervalRequest   `json:"intervals"`
 	TimePricing                *channelTimePricingRequest `json:"time_pricing"`
 }
@@ -102,6 +106,7 @@ type pricingIntervalRequest struct {
 	CacheWriteMultiplier *float64 `json:"cache_write_multiplier" binding:"omitempty,gt=0"`
 	CacheReadMultiplier  *float64 `json:"cache_read_multiplier" binding:"omitempty,gt=0"`
 	PerRequestPrice      *float64 `json:"per_request_price"`
+	VideoPricePerSecond  *float64 `json:"video_price_per_second"`
 	SortOrder            int      `json:"sort_order"`
 }
 
@@ -134,6 +139,7 @@ type channelModelPricingResponse struct {
 	ID                         int64                       `json:"id"`
 	Platform                   string                      `json:"platform"`
 	Models                     []string                    `json:"models"`
+	Description                *string                     `json:"description,omitempty"`
 	BillingMode                string                      `json:"billing_mode"`
 	InputPrice                 *float64                    `json:"input_price"`
 	OutputPrice                *float64                    `json:"output_price"`
@@ -146,6 +152,9 @@ type channelModelPricingResponse struct {
 	ImageInputPrice            *float64                    `json:"image_input_price"`
 	ImageOutputPrice           *float64                    `json:"image_output_price"`
 	PerRequestPrice            *float64                    `json:"per_request_price"`
+	VideoPricePerSecond        *float64                    `json:"video_price_per_second"`
+	VideoDefaultSeconds        *int                        `json:"video_default_seconds"`
+	VideoAllowedSeconds        []int                       `json:"video_allowed_seconds"`
 	Intervals                  []pricingIntervalResponse   `json:"intervals"`
 	TimePricing                *channelTimePricingResponse `json:"time_pricing"`
 }
@@ -177,6 +186,7 @@ type pricingIntervalResponse struct {
 	CacheWriteMultiplier *float64 `json:"cache_write_multiplier"`
 	CacheReadMultiplier  *float64 `json:"cache_read_multiplier"`
 	PerRequestPrice      *float64 `json:"per_request_price"`
+	VideoPricePerSecond  *float64 `json:"video_price_per_second"`
 	SortOrder            int      `json:"sort_order"`
 }
 
@@ -187,6 +197,13 @@ type accountStatsPricingRuleResponse struct {
 	AccountIDs []int64                       `json:"account_ids"`
 	Pricing    []channelModelPricingResponse `json:"pricing"`
 }
+
+type pricingScope uint8
+
+const (
+	pricingScopePrimary pricingScope = iota
+	pricingScopeAccountStats
+)
 
 func channelToResponse(ch *service.Channel) *channelResponse {
 	if ch == nil {
@@ -235,7 +252,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 			ruleResp.AccountIDs = []int64{}
 		}
 		for i := range rule.Pricing {
-			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i]))
+			ruleResp.Pricing = append(ruleResp.Pricing, pricingToResponse(&rule.Pricing[i], pricingScopeAccountStats))
 		}
 		resp.AccountStatsPricingRules = append(resp.AccountStatsPricingRules, ruleResp)
 	}
@@ -243,7 +260,7 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 	return resp
 }
 
-func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingResponse {
+func pricingToResponse(p *service.ChannelModelPricing, scopes ...pricingScope) channelModelPricingResponse {
 	models := p.Models
 	if models == nil {
 		models = []string{}
@@ -260,10 +277,15 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 	for _, iv := range p.Intervals {
 		intervals = append(intervals, intervalToResponse(iv))
 	}
+	var description *string
+	if len(scopes) == 0 || scopes[0] == pricingScopePrimary {
+		description = &p.Description
+	}
 	return channelModelPricingResponse{
 		ID:                         p.ID,
 		Platform:                   platform,
 		Models:                     models,
+		Description:                description,
 		BillingMode:                billingMode,
 		InputPrice:                 p.InputPrice,
 		OutputPrice:                p.OutputPrice,
@@ -276,6 +298,9 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 		ImageInputPrice:            p.ImageInputPrice,
 		ImageOutputPrice:           p.ImageOutputPrice,
 		PerRequestPrice:            p.PerRequestPrice,
+		VideoPricePerSecond:        p.VideoPricePerSecond,
+		VideoDefaultSeconds:        p.VideoDefaultSeconds,
+		VideoAllowedSeconds:        p.VideoAllowedSeconds,
 		Intervals:                  intervals,
 		TimePricing:                timePricingToResponse(p.TimePricing),
 	}
@@ -316,11 +341,18 @@ func intervalToResponse(iv service.PricingInterval) pricingIntervalResponse {
 		CacheWriteMultiplier: iv.CacheWriteMultiplier,
 		CacheReadMultiplier:  iv.CacheReadMultiplier,
 		PerRequestPrice:      iv.PerRequestPrice,
+		VideoPricePerSecond:  iv.VideoPricePerSecond,
 		SortOrder:            iv.SortOrder,
 	}
 }
 
-func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMultipliers bool) []service.ChannelModelPricing {
+func pricingRequestToService(reqs []channelModelPricingRequest, scope any) []service.ChannelModelPricing {
+	allowChannelMultipliers := true
+	if value, ok := scope.(bool); ok {
+		allowChannelMultipliers = value
+	} else if value, ok := scope.(pricingScope); ok {
+		allowChannelMultipliers = value == pricingScopePrimary
+	}
 	result := make([]service.ChannelModelPricing, 0, len(reqs))
 	for _, r := range reqs {
 		billingMode := service.BillingMode(r.BillingMode)
@@ -359,9 +391,14 @@ func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMult
 			fastMultiplier = r.FastMultiplier
 			flexMultiplier = r.FlexMultiplier
 		}
+		description := ""
+		if allowChannelMultipliers {
+			description = strings.TrimSpace(r.Description)
+		}
 		result = append(result, service.ChannelModelPricing{
 			Platform:                   platform,
 			Models:                     r.Models,
+			Description:                description,
 			BillingMode:                billingMode,
 			InputPrice:                 r.InputPrice,
 			OutputPrice:                r.OutputPrice,
@@ -374,6 +411,9 @@ func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMult
 			ImageInputPrice:            r.ImageInputPrice,
 			ImageOutputPrice:           r.ImageOutputPrice,
 			PerRequestPrice:            r.PerRequestPrice,
+			VideoPricePerSecond:        r.VideoPricePerSecond,
+			VideoDefaultSeconds:        r.VideoDefaultSeconds,
+			VideoAllowedSeconds:        r.VideoAllowedSeconds,
 			Intervals:                  intervals,
 			TimePricing:                timePricingRequestToService(r.TimePricing),
 		})

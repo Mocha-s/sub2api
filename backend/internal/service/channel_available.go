@@ -93,7 +93,7 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		ch.normalizeBillingModelSource()
 
 		supported := ch.SupportedModels()
-		fillGlobalPricingFallback(s.pricingService, supported)
+		s.fillGlobalPricingFallback(supported)
 
 		out = append(out, AvailableChannel{
 			ID:                 ch.ID,
@@ -122,12 +122,31 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 //
 // 当 pricingService 为 nil（测试场景），跳过价格回落。
 // 可用渠道与模型广场共用。
-func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
+func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
+	pricingService := s.pricingService
 	for i := range models {
 		if pricingService != nil && pricingNeedsFallback(models[i].Pricing) {
 			if lp := pricingService.GetModelPricing(models[i].Name); lp != nil {
 				models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
 			}
+		}
+	}
+}
+
+func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
+	if pricingService == nil {
+		return
+	}
+	fillPricingFallback(pricingService, models)
+}
+
+func fillPricingFallback(pricingService *PricingService, models []SupportedModel) {
+	for i := range models {
+		if !pricingNeedsFallback(models[i].Pricing) {
+			continue
+		}
+		if lp := pricingService.GetModelPricing(models[i].Name); lp != nil {
+			models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
 		}
 	}
 }

@@ -16,7 +16,7 @@ import (
 
 func (r *channelRepository) ListModelPricing(ctx context.Context, channelID int64) ([]service.ChannelModelPricing, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, created_at, updated_at
+		`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, created_at, updated_at
 		 FROM channel_model_pricing WHERE channel_id = $1 ORDER BY id`, channelID,
 	)
 	if err != nil {
@@ -51,13 +51,13 @@ func (r *channelRepository) UpdateModelPricing(ctx context.Context, pricing *ser
 	if err != nil {
 		return fmt.Errorf("marshal models: %w", err)
 	}
-	reasoningEffortMultipliersJSON, err := marshalReasoningEffortMultipliers(pricing.ReasoningEffortMultipliers)
+	videoAllowedSecondsJSON, err := json.Marshal(pricing.VideoAllowedSeconds)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal video allowed seconds: %w", err)
 	}
-	timePricingJSON, err := marshalChannelTimePricing(pricing.TimePricing)
+	reasoningEffortMultipliersJSON, err := json.Marshal(pricing.ReasoningEffortMultipliers)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal reasoning effort multipliers: %w", err)
 	}
 	billingMode := pricing.BillingMode
 	if billingMode == "" {
@@ -65,11 +65,12 @@ func (r *channelRepository) UpdateModelPricing(ctx context.Context, pricing *ser
 	}
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE channel_model_pricing
-		 SET models = $1, billing_mode = $2, input_price = $3, output_price = $4, cache_write_price = $5, cache_write_1h_price = $6, cache_read_price = $7, fast_multiplier = $8, flex_multiplier = $9, reasoning_effort_multipliers = $10, image_input_price = $11, image_output_price = $12, per_request_price = $13, time_pricing = $14, platform = $15, updated_at = NOW()
-		 WHERE id = $16`,
+		 SET models = $1, billing_mode = $2, input_price = $3, output_price = $4, cache_write_price = $5, cache_write_1h_price = $6, cache_read_price = $7, fast_multiplier = $8, flex_multiplier = $9, reasoning_effort_multipliers = $10, image_input_price = $11, image_output_price = $12, per_request_price = $13, time_pricing = $14, video_price_per_second = $15, video_default_seconds = $16, video_allowed_seconds = $17, platform = $18, description = $19, max_reasoning_effort_multiplier = $20, updated_at = NOW()
+		 WHERE id = $21`,
 		modelsJSON, billingMode, pricing.InputPrice, pricing.OutputPrice, pricing.CacheWritePrice, pricing.CacheWrite1hPrice, pricing.CacheReadPrice,
 		pricing.FastMultiplier, pricing.FlexMultiplier, reasoningEffortMultipliersJSON, pricing.ImageInputPrice, pricing.ImageOutputPrice, pricing.PerRequestPrice,
-		timePricingJSON, pricing.Platform, pricing.ID,
+		marshalTimePricingOrNil(pricing.TimePricing), pricing.VideoPricePerSecond, pricing.VideoDefaultSeconds, videoAllowedSecondsJSON,
+		pricing.Platform, pricing.Description, pricing.MaxReasoningEffortMultiplier, pricing.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update model pricing: %w", err)
@@ -100,7 +101,7 @@ func (r *channelRepository) ReplaceModelPricing(ctx context.Context, channelID i
 // batchLoadModelPricing 批量加载多个渠道的模型定价（含区间）
 func (r *channelRepository) batchLoadModelPricing(ctx context.Context, channelIDs []int64) (map[int64][]service.ChannelModelPricing, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, created_at, updated_at
+		`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, created_at, updated_at
 		 FROM channel_model_pricing WHERE channel_id = ANY($1) ORDER BY channel_id, id`,
 		pq.Array(channelIDs),
 	)
@@ -142,7 +143,7 @@ func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs [
 		`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
 		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
 		        input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier,
-		        per_request_price, sort_order, created_at, updated_at
+		        per_request_price, video_price_per_second, sort_order, created_at, updated_at
 		 FROM channel_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`,
 		pq.Array(pricingIDs),
@@ -159,7 +160,7 @@ func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs [
 			&iv.ID, &iv.PricingID, &iv.MinTokens, &iv.MaxTokens, &iv.TierLabel,
 			&iv.InputPrice, &iv.OutputPrice, &iv.CacheWritePrice, &iv.CacheWrite1hPrice, &iv.CacheReadPrice,
 			&iv.InputMultiplier, &iv.OutputMultiplier, &iv.CacheWriteMultiplier, &iv.CacheReadMultiplier,
-			&iv.PerRequestPrice, &iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
+			&iv.PerRequestPrice, &iv.VideoPricePerSecond, &iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan interval: %w", err)
 		}
@@ -181,12 +182,14 @@ func scanModelPricingRows(rows *sql.Rows) ([]service.ChannelModelPricing, []int6
 		var p service.ChannelModelPricing
 		var modelsJSON []byte
 		var timePricingJSON []byte
+		var videoAllowedSecondsJSON []byte
 		var reasoningEffortMultipliersJSON []byte
 		if err := rows.Scan(
 			&p.ID, &p.ChannelID, &p.Platform, &modelsJSON, &p.BillingMode,
 			&p.InputPrice, &p.OutputPrice, &p.CacheWritePrice, &p.CacheWrite1hPrice, &p.CacheReadPrice,
 			&p.FastMultiplier, &p.FlexMultiplier, &reasoningEffortMultipliersJSON,
-			&p.ImageInputPrice, &p.ImageOutputPrice, &p.PerRequestPrice, &timePricingJSON, &p.CreatedAt, &p.UpdatedAt,
+			&p.ImageInputPrice, &p.ImageOutputPrice, &p.PerRequestPrice, &timePricingJSON, &p.VideoPricePerSecond, &p.VideoDefaultSeconds,
+			&videoAllowedSecondsJSON, &p.Description, &p.MaxReasoningEffortMultiplier, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan model pricing: %w", err)
 		}
@@ -198,11 +201,12 @@ func scanModelPricingRows(rows *sql.Rows) ([]service.ChannelModelPricing, []int6
 			return nil, nil, err
 		}
 		p.ReasoningEffortMultipliers = multipliers
-		timePricing, err := unmarshalChannelTimePricing(timePricingJSON)
-		if err != nil {
+		_ = json.Unmarshal(videoAllowedSecondsJSON, &p.VideoAllowedSeconds)
+		if timePricing, err := unmarshalChannelTimePricing(timePricingJSON); err != nil {
 			return nil, nil, err
+		} else {
+			p.TimePricing = timePricing
 		}
-		p.TimePricing = timePricing
 		pricingIDs = append(pricingIDs, p.ID)
 		result = append(result, p)
 	}
@@ -244,13 +248,13 @@ func createModelPricingExec(ctx context.Context, exec dbExec, pricing *service.C
 	if err != nil {
 		return fmt.Errorf("marshal models: %w", err)
 	}
-	reasoningEffortMultipliersJSON, err := marshalReasoningEffortMultipliers(pricing.ReasoningEffortMultipliers)
+	videoAllowedSecondsJSON, err := json.Marshal(pricing.VideoAllowedSeconds)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal video allowed seconds: %w", err)
 	}
-	timePricingJSON, err := marshalChannelTimePricing(pricing.TimePricing)
+	reasoningEffortMultipliersJSON, err := json.Marshal(pricing.ReasoningEffortMultipliers)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal reasoning multipliers: %w", err)
 	}
 	billingMode := pricing.BillingMode
 	if billingMode == "" {
@@ -261,12 +265,13 @@ func createModelPricingExec(ctx context.Context, exec dbExec, pricing *service.C
 		platform = "anthropic"
 	}
 	err = exec.QueryRowContext(ctx,
-		`INSERT INTO channel_model_pricing (channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
+		`INSERT INTO channel_model_pricing (channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, created_at, updated_at`,
 		pricing.ChannelID, platform, modelsJSON, billingMode,
 		pricing.InputPrice, pricing.OutputPrice, pricing.CacheWritePrice, pricing.CacheWrite1hPrice, pricing.CacheReadPrice,
-		pricing.FastMultiplier, pricing.FlexMultiplier, reasoningEffortMultipliersJSON, pricing.ImageInputPrice, pricing.ImageOutputPrice,
-		pricing.PerRequestPrice, timePricingJSON,
+		pricing.FastMultiplier, pricing.FlexMultiplier, reasoningEffortMultipliersJSON, pricing.ImageInputPrice, pricing.ImageOutputPrice, pricing.PerRequestPrice,
+		marshalTimePricingOrNil(pricing.TimePricing), pricing.VideoPricePerSecond, pricing.VideoDefaultSeconds,
+		videoAllowedSecondsJSON, pricing.Description, pricing.MaxReasoningEffortMultiplier,
 	).Scan(&pricing.ID, &pricing.CreatedAt, &pricing.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert model pricing: %w", err)
@@ -318,6 +323,14 @@ func marshalChannelTimePricing(config *service.ChannelTimePricing) (any, error) 
 	return string(data), nil
 }
 
+func marshalTimePricingOrNil(config *service.ChannelTimePricing) any {
+	value, err := marshalChannelTimePricing(config)
+	if err != nil {
+		return nil
+	}
+	return value
+}
+
 func unmarshalChannelTimePricing(data []byte) (*service.ChannelTimePricing, error) {
 	if len(data) == 0 {
 		return nil, nil
@@ -332,12 +345,12 @@ func unmarshalChannelTimePricing(data []byte) (*service.ChannelTimePricing, erro
 func createIntervalExec(ctx context.Context, exec dbExec, iv *service.PricingInterval) error {
 	return exec.QueryRowContext(ctx,
 		`INSERT INTO channel_pricing_intervals
-		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier, per_request_price, sort_order)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, created_at, updated_at`,
+			 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier, per_request_price, video_price_per_second, sort_order)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
 		iv.PricingID, iv.MinTokens, iv.MaxTokens, iv.TierLabel,
 		iv.InputPrice, iv.OutputPrice, iv.CacheWritePrice, iv.CacheWrite1hPrice, iv.CacheReadPrice,
 		iv.InputMultiplier, iv.OutputMultiplier, iv.CacheWriteMultiplier, iv.CacheReadMultiplier,
-		iv.PerRequestPrice, iv.SortOrder,
+		iv.PerRequestPrice, iv.VideoPricePerSecond, iv.SortOrder,
 	).Scan(&iv.ID, &iv.CreatedAt, &iv.UpdatedAt)
 }
 

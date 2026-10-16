@@ -22,6 +22,7 @@ type PlazaOfficialPricing struct {
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
 type PlazaModel struct {
 	Name            string
+	Description     string
 	Platform        string
 	Pricing         *ChannelModelPricing
 	OfficialPricing *PlazaOfficialPricing
@@ -59,6 +60,13 @@ type PlazaGroup struct {
 	// LongContextPricingEnabled 分组是否按上下文长度应用阶梯价；关闭时模型展示的是最低档。
 	LongContextPricingEnabled bool
 	Models                    []PlazaModel
+}
+
+func pricingDescription(pricing *ChannelModelPricing) string {
+	if pricing == nil {
+		return ""
+	}
+	return strings.TrimSpace(pricing.Description)
 }
 
 // ModelPlazaService 聚合模型广场数据。
@@ -189,9 +197,10 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 				}
 				idx[key] = len(pg.Models)
 				pg.Models = append(pg.Models, PlazaModel{
-					Name:     m.Name,
-					Platform: m.Platform,
-					Pricing:  m.Pricing,
+					Name:        m.Name,
+					Description: pricingDescription(m.Pricing),
+					Platform:    m.Platform,
+					Pricing:     m.Pricing,
 				})
 			}
 		}

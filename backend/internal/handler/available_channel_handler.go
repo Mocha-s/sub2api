@@ -2,6 +2,7 @@ package handler
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -69,6 +70,7 @@ type userAvailableGroup struct {
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
+	Description                string                   `json:"description,omitempty"`
 	BillingMode                string                   `json:"billing_mode"`
 	InputPrice                 *float64                 `json:"input_price"`
 	OutputPrice                *float64                 `json:"output_price"`
@@ -79,6 +81,9 @@ type userSupportedModelPricing struct {
 	ImageInputPrice            *float64                 `json:"image_input_price"`
 	ImageOutputPrice           *float64                 `json:"image_output_price"`
 	PerRequestPrice            *float64                 `json:"per_request_price"`
+	VideoPricePerSecond        *float64                 `json:"video_price_per_second,omitempty"`
+	VideoDefaultSeconds        *int                     `json:"video_default_seconds,omitempty"`
+	VideoAllowedSeconds        []int                    `json:"video_allowed_seconds,omitempty"`
 	Intervals                  []userPricingIntervalDTO `json:"intervals"`
 }
 
@@ -97,6 +102,7 @@ type userPricingIntervalDTO struct {
 	CacheWriteMultiplier *float64 `json:"cache_write_multiplier"`
 	CacheReadMultiplier  *float64 `json:"cache_read_multiplier"`
 	PerRequestPrice      *float64 `json:"per_request_price"`
+	VideoPricePerSecond  *float64 `json:"video_price_per_second,omitempty"`
 }
 
 // userSupportedModel 用户可见的支持模型条目。
@@ -325,6 +331,7 @@ func toUserPricingIntervals(src []service.PricingInterval) []userPricingInterval
 			CacheWriteMultiplier: iv.CacheWriteMultiplier,
 			CacheReadMultiplier:  iv.CacheReadMultiplier,
 			PerRequestPrice:      iv.PerRequestPrice,
+			VideoPricePerSecond:  iv.VideoPricePerSecond,
 		})
 	}
 	return intervals
@@ -345,6 +352,7 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		billingMode = string(service.BillingModeToken)
 	}
 	return &userSupportedModelPricing{
+		Description:                strings.TrimSpace(p.Description),
 		BillingMode:                billingMode,
 		InputPrice:                 p.InputPrice,
 		OutputPrice:                p.OutputPrice,
@@ -355,6 +363,9 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		ImageInputPrice:            p.ImageInputPrice,
 		ImageOutputPrice:           p.ImageOutputPrice,
 		PerRequestPrice:            p.PerRequestPrice,
+		VideoPricePerSecond:        p.VideoPricePerSecond,
+		VideoDefaultSeconds:        p.VideoDefaultSeconds,
+		VideoAllowedSeconds:        p.VideoAllowedSeconds,
 		Intervals:                  intervals,
 	}
 }

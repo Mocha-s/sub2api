@@ -598,6 +598,7 @@ export default {
     },
     detailColumns: {
       model: '模型',
+      description: '说明',
       latestStatus: '最新状态',
       latestLatency: '最新延迟 (ms)',
       availability7d: '7 天可用率',

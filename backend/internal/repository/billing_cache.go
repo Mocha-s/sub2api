@@ -427,6 +427,7 @@ func parseUserPlatformQuotaHash(m map[string]string) *service.UserPlatformQuotaC
 		WeeklyUsageUSD:     parseFloat(m["weekly_usage"]),
 		MonthlyUsageUSD:    parseFloat(m["monthly_usage"]),
 		Version:            parseInt64(m["version"]),
+		Revision:           parseInt64(m["revision"]),
 		SchemaVersion:      parseInt64(m["schema_version"]),
 		DailyLimitUSD:      parseFloatPtr(m["daily_limit"]),
 		WeeklyLimitUSD:     parseFloatPtr(m["weekly_limit"]),
@@ -478,6 +479,7 @@ func (c *billingCache) SetUserPlatformQuotaCache(ctx context.Context, userID int
 		"weekly_usage", entry.WeeklyUsageUSD,
 		"monthly_usage", entry.MonthlyUsageUSD,
 		"version", entry.Version,
+		"revision", entry.Revision,
 		"schema_version", entry.SchemaVersion,
 		"daily_limit", fmtFloatPtr(entry.DailyLimitUSD),
 		"weekly_limit", fmtFloatPtr(entry.WeeklyLimitUSD),
@@ -489,6 +491,31 @@ func (c *billingCache) SetUserPlatformQuotaCache(ctx context.Context, userID int
 	pipe.Expire(ctx, key, ttl)
 	_, err := pipe.Exec(ctx)
 	return err
+}
+
+const finalizeUserPlatformQuotaFlushScript = `
+if redis.call("EXISTS", KEYS[1]) == 0 then return 0 end
+if tonumber(redis.call("HGET", KEYS[1], "version") or "-1") ~= tonumber(ARGV[1]) or tonumber(redis.call("HGET", KEYS[1], "schema_version") or "0") ~= tonumber(ARGV[2]) then
+    redis.call("SADD", KEYS[2], ARGV[5])
+    redis.call("EXPIRE", KEYS[2], ARGV[6])
+    return 0
+end
+if ARGV[3] == "1" then
+    redis.call("HSET", KEYS[1], "revision", ARGV[4])
+    return 1
+end
+redis.call("DEL", KEYS[1])
+return 1
+`
+
+func (c *billingCache) FinalizeUserPlatformQuotaFlush(ctx context.Context, key service.UserPlatformQuotaKey, cacheVersion, schemaVersion, revision int64, applied bool) error {
+	appliedArg := "0"
+	if applied {
+		appliedArg = "1"
+	}
+	return c.rdb.Eval(ctx, finalizeUserPlatformQuotaFlushScript,
+		[]string{userPlatformQuotaCacheKey(key.UserID, key.Platform), userPlatformQuotaDirtySetKey()},
+		cacheVersion, schemaVersion, appliedArg, revision, userPlatformQuotaDirtyMember(key.UserID, key.Platform), userPlatformQuotaDirtyTTLSeconds).Err()
 }
 
 func (c *billingCache) DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error {

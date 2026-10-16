@@ -1,8 +1,9 @@
 <template>
   <div class="plaza-pricing-table overflow-x-auto" :style="accentStyle">
-    <table class="w-full min-w-[1000px] table-auto border-collapse text-sm tabular-nums">
+    <table class="w-full min-w-[1180px] table-auto border-collapse text-sm tabular-nums">
       <colgroup>
-        <col class="w-[25%]" />
+        <col class="w-[20%]" />
+        <col class="w-[15%]" />
         <col class="w-[11%]" />
         <col class="w-[9%]" />
         <col class="w-[14%]" />
@@ -20,6 +21,12 @@
             class="border-r border-gray-100 py-2.5 pl-5 pr-4 text-left align-middle dark:border-dark-700/60"
           >
             {{ t('modelPlaza.table.model') }}
+          </th>
+          <th
+            rowspan="2"
+            class="border-r border-gray-100 py-2.5 pl-3 pr-4 text-left align-middle dark:border-dark-700/60"
+          >
+            {{ t('modelPlaza.table.description') }}
           </th>
           <th colspan="3" class="pz-bg pt-2 text-center">
             <div class="pz-title border-b pb-2 font-semibold">
@@ -109,6 +116,11 @@
                 {{ t('modelPlaza.table.reasoningMultiplierBadge', { effort, multiplier }) }}
               </span>
             </div>
+          </td>
+
+          <td class="border-r border-gray-100 px-3 py-2.5 align-top text-xs leading-5 text-gray-600 dark:border-dark-700/60 dark:text-dark-300">
+            <span v-if="m.description" class="whitespace-pre-line break-words">{{ m.description }}</span>
+            <span v-else class="text-gray-400 dark:text-dark-500">-</span>
           </td>
 
           <!-- token 计费:输入 / 输出 / 缓存(写/读),有阶梯时每档一行;档位标签只放输入列,其余列按行对齐 -->

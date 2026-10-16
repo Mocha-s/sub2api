@@ -593,6 +593,7 @@ export default {
     },
     detailColumns: {
       model: 'Model',
+      description: 'Description',
       latestStatus: 'Latest Status',
       latestLatency: 'Latest Latency (ms)',
       availability7d: '7d Availability',

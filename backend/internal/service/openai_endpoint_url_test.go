@@ -29,3 +29,23 @@ func TestBuildOpenAIEndpointURLPreservesURLComponents(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildOpenAIEndpointURLSub2APIV1PrefixOnlyForTargetHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     string
+		endpoint string
+		want     string
+	}{
+		{name: "sub2api root models", base: "https://sub2api.0x0.fan", endpoint: "/v1/models", want: "https://sub2api.0x0.fan/api/v1/models"},
+		{name: "sub2api root responses", base: "https://sub2api.0x0.fan", endpoint: "/v1/responses", want: "https://sub2api.0x0.fan/api/v1/responses"},
+		{name: "sub2api already prefixed", base: "https://sub2api.0x0.fan/api/v1", endpoint: "/v1/models", want: "https://sub2api.0x0.fan/api/v1/models"},
+		{name: "other host unchanged", base: "https://api.openai.com", endpoint: "/v1/models", want: "https://api.openai.com/v1/models"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildOpenAIEndpointURL(tt.base, tt.endpoint))
+		})
+	}
+}

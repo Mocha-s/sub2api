@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"net/url"
 	"reflect"
 	"sort"
@@ -20,6 +21,34 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
+
+const (
+	pricingManagedByCredentialKey    = "pricing_managed_by"
+	pricingMarkupFactorCredentialKey = "pricing_markup_factor"
+	pricingManagedByAPIPricingSync   = "api-pricing-sync"
+)
+
+func (a *Account) UsesManagedBillingRate() bool {
+	return a != nil && strings.EqualFold(strings.TrimSpace(a.GetCredential(pricingManagedByCredentialKey)), pricingManagedByAPIPricingSync)
+}
+
+func (a *Account) ManagedPricingMarkupFactor() float64 {
+	if a == nil {
+		return 1
+	}
+	factor := parseExtraFloat64(a.Credentials[pricingMarkupFactorCredentialKey])
+	if factor < 1 || math.IsNaN(factor) || math.IsInf(factor, 0) {
+		return 1
+	}
+	return factor
+}
+
+func effectiveRequestRateMultiplier(account *Account, fallback float64) float64 {
+	if account != nil && account.UsesManagedBillingRate() {
+		return account.BillingRateMultiplier() * account.ManagedPricingMarkupFactor()
+	}
+	return fallback
+}
 
 type Account struct {
 	ID                      int64

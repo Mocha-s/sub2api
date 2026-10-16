@@ -26,6 +26,15 @@ type UserPlatformQuotaSnapshot struct {
 	DailyWindowStart   time.Time
 	WeeklyWindowStart  time.Time
 	MonthlyWindowStart time.Time
+	Revision           int64
+	CacheVersion       int64
+	SchemaVersion      int64
+}
+
+type UserPlatformQuotaSnapshotResult struct {
+	UserID, Revision int64
+	Platform         string
+	Applied          bool
 }
 
 // UserPlatformQuotaRecord service 层传输结构体（与 repository 层解耦）。
@@ -38,6 +47,7 @@ type UserPlatformQuotaRecord struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
+	Revision        int64
 	// 窗口起始时间（可选，用于未来 reset 校验）
 	DailyWindowStart   *time.Time
 	WeeklyWindowStart  *time.Time

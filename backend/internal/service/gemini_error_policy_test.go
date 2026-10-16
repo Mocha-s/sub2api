@@ -47,6 +47,25 @@ func TestShouldFailoverGeminiUpstreamError(t *testing.T) {
 	}
 }
 
+func TestShouldFailoverGeminiImageBadRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+		body  string
+		want  bool
+	}{
+		{name: "flash image generic invalid request", model: "gemini-3.1-flash-image", body: `{"error":{"message":"Invalid request. Please check the request parameters."}}`, want: true},
+		{name: "preview image model error", model: "gemini-3.1-flash-image-preview", body: `{"error":{"message":"model is not supported"}}`, want: true},
+		{name: "nano banana image model", model: "nano-banana2-1k", body: `{"error":{"message":"Invalid request"}}`, want: true},
+		{name: "normal gemini request", model: "gemini-2.5-pro", body: `{"error":{"message":"Invalid request"}}`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, shouldFailoverGeminiImageBadRequest(tt.model, []byte(tt.body)))
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestCheckErrorPolicy_GeminiAccounts — verifies CheckErrorPolicy works
 // correctly for Gemini platform accounts (API Key type).

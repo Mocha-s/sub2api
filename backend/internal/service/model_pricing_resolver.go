@@ -30,7 +30,11 @@ type ResolvedPricing struct {
 	RequestTiers []PricingInterval
 
 	// 按次/图片模式：默认价格（未命中层级时使用）
-	DefaultPerRequestPrice float64
+	DefaultPerRequestPrice     float64
+	ReasoningEffortMultipliers map[string]float64
+	VideoPricePerSecond        float64
+	VideoDefaultSeconds        int
+	VideoAllowedSeconds        []int
 
 	// 来源标识
 	Source string // "channel", "litellm", "fallback"
@@ -99,7 +103,12 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 					channelPricing: chPricing,
 				}
 				resolved.longContextPricingEnabled = longContextPricingEnabled
-				r.applyRequestTierOverrides(chPricing, resolved)
+				r.applyReasoningEffortOverrides(chPricing, resolved)
+				if mode == BillingModeVideo {
+					r.applyVideoOverrides(chPricing, resolved)
+				} else {
+					r.applyRequestTierOverrides(chPricing, resolved)
+				}
 				return resolved
 			}
 		}
@@ -120,6 +129,7 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	if chPricing != nil {
 		resolved.Source = PricingSourceChannel
 		resolved.channelPricing = chPricing
+		r.applyReasoningEffortOverrides(chPricing, resolved)
 		r.applyTokenOverrides(chPricing, resolved)
 	} else if input.GroupID != nil && r.channelService != nil {
 		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
@@ -211,6 +221,7 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 
 	resolved.Source = PricingSourceChannel
 	resolved.channelPricing = chPricing
+	r.applyReasoningEffortOverrides(chPricing, resolved)
 	resolved.Mode = chPricing.BillingMode
 	if resolved.Mode == "" {
 		resolved.Mode = BillingModeToken
@@ -219,8 +230,10 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 	switch resolved.Mode {
 	case BillingModeToken:
 		r.applyTokenOverrides(chPricing, resolved)
-	case BillingModePerRequest, BillingModeImage, BillingModeVideo:
+	case BillingModePerRequest, BillingModeImage:
 		r.applyRequestTierOverrides(chPricing, resolved)
+	case BillingModeVideo:
+		r.applyVideoOverrides(chPricing, resolved)
 	}
 }
 
@@ -284,6 +297,24 @@ func (r *ModelPricingResolver) applyRequestTierOverrides(chPricing *ChannelModel
 	}
 }
 
+func (r *ModelPricingResolver) applyReasoningEffortOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
+	if chPricing == nil || resolved == nil {
+		return
+	}
+	resolved.ReasoningEffortMultipliers = maps.Clone(chPricing.ReasoningEffortMultipliers)
+}
+
+func (r *ModelPricingResolver) applyVideoOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
+	resolved.RequestTiers = filterValidIntervals(chPricing.Intervals)
+	if chPricing.VideoPricePerSecond != nil {
+		resolved.VideoPricePerSecond = *chPricing.VideoPricePerSecond
+	}
+	if chPricing.VideoDefaultSeconds != nil {
+		resolved.VideoDefaultSeconds = *chPricing.VideoDefaultSeconds
+	}
+	resolved.VideoAllowedSeconds = append([]int(nil), chPricing.VideoAllowedSeconds...)
+}
+
 // filterValidIntervals 过滤掉所有价格字段都为空的无效 interval。
 // 前端可能创建了只有 min/max 但无价格的空 interval。
 func filterValidIntervals(intervals []PricingInterval) []PricingInterval {
@@ -291,7 +322,7 @@ func filterValidIntervals(intervals []PricingInterval) []PricingInterval {
 	for _, iv := range intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
 			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheReadPrice != nil ||
-			iv.PerRequestPrice != nil || iv.InputMultiplier != nil ||
+			iv.PerRequestPrice != nil || iv.VideoPricePerSecond != nil || iv.InputMultiplier != nil ||
 			iv.OutputMultiplier != nil || iv.CacheWriteMultiplier != nil ||
 			iv.CacheReadMultiplier != nil {
 			valid = append(valid, iv)

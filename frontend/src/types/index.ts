@@ -593,6 +593,7 @@ export interface Group {
   long_context_pricing_enabled: boolean
   // 图片生成计费配置
   allow_image_generation: boolean
+  allow_video_generation: boolean
   allow_batch_image_generation: boolean
   image_rate_independent: boolean
   image_rate_multiplier: number
@@ -695,6 +696,7 @@ export type CompositeRouteEndpoint =
   | 'chat_completions'
   | 'embeddings'
   | 'images'
+  | 'video'
   | 'gemini'
 
 export type CompositeRouteSource = 'route' | 'detector' | string
@@ -818,6 +820,7 @@ export interface CreateGroupRequest {
   free_openai_fast?: boolean
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
+  allow_video_generation?: boolean
   allow_batch_image_generation?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
@@ -885,6 +888,7 @@ export interface UpdateGroupRequest {
   free_openai_fast?: boolean
   model_pricing?: import('@/api/admin/channels').ChannelModelPricing[]
   allow_image_generation?: boolean
+  allow_video_generation?: boolean
   allow_batch_image_generation?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
@@ -1793,6 +1797,12 @@ export interface UsageLog {
   cache_read_cost: number
   total_cost: number
   actual_cost: number
+  refunded_cost?: number | null
+  refunded_total_cost?: number | null
+  net_actual_cost?: number | null
+  net_total_cost?: number | null
+  refund_reason?: string | null
+  refunded_at?: string | null
   rate_multiplier: number
   long_context_billing_applied: boolean
   billing_type: number
@@ -1815,6 +1825,11 @@ export interface UsageLog {
   image_input_cost: number
   image_output_tokens: number
   image_output_cost: number
+
+  // 视频生成字段
+  video_count?: number | null
+  video_resolution?: string | null
+  video_duration_seconds?: number | null
 
   // User-Agent
   user_agent: string | null
@@ -1851,6 +1866,8 @@ export interface AdminUsageLog extends UsageLog {
   account_rate_multiplier?: number | null
   // 自定义定价规则计算的账号统计费用（nil 时使用 total_cost * multiplier）
   account_stats_cost?: number | null
+  refunded_account_cost?: number | null
+  net_account_cost?: number | null
 
   // 渠道 ID 和计费等级（仅管理员可见）
   channel_id?: number | null

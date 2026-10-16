@@ -44,6 +44,7 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/images/batches":           {"batch_image_handler.go"},
 		"/videos":                   {"grok_media.go"},
 		"/videos/generations":       {"grok_media.go"},
+		"/video/generations":        {"openai_video.go"},
 		"/videos/edits":             {"grok_media.go"},
 		"/videos/extensions":        {"grok_media.go"},
 		"/models/*modelAction":      {"gemini_v1beta_handler.go"},
@@ -53,10 +54,20 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/x_search":                 {"gateway_web_search.go"},
 	}
 	excluded := map[string]string{
-		"/messages/count_tokens":     "tokenization only; it does not execute a model request",
-		"/images/batches/:id/cancel": "control-plane cancellation with no user prompt",
-		"/stt":                       "speech transcription is not a text-generation prompt",
-		"/custom-voices":             "voice profile management has no model prompt",
+		"/messages/count_tokens":                 "tokenization only; it does not execute a model request",
+		"/images/batches/:id/cancel":             "control-plane cancellation with no user prompt",
+		"/stt":                                   "speech transcription is not a text-generation prompt",
+		"/custom-voices":                         "voice profile management has no model prompt",
+		"/video/generations/:request_id/refresh": "video task control-plane refresh has no prompt",
+		"/video/generations/:request_id/cancel":  "video task control-plane cancellation has no prompt",
+		"/videos/:request_id/refresh":            "video task control-plane refresh has no prompt",
+		"/videos/:request_id/cancel":             "video task control-plane cancellation has no prompt",
+		"/video/generations/estimate":            "video estimate has no generation prompt",
+		"/video/generations/references":          "video reference upload has no prompt",
+		"/video/generations/material-assets":     "video material upload has no prompt",
+		"/videos/estimate":                       "video estimate has no generation prompt",
+		"/videos/references":                     "video reference upload has no prompt",
+		"/videos/material-assets":                "video material upload has no prompt",
 	}
 
 	unclassified := make([]string, 0)
