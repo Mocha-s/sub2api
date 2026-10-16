@@ -683,6 +683,7 @@ export default {
     },
     table: {
       model: '模型',
+      description: '说明',
       input: '输入',
       output: '输出',
       cache: '缓存',
