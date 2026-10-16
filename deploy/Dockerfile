@@ -7,7 +7,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.27.2-alpine
+ARG GOLANG_IMAGE=golang:1.27.2-bookworm
 ARG ALPINE_IMAGE=alpine:3.20
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
@@ -20,9 +20,9 @@ FROM ${NODE_IMAGE} AS frontend-builder
 WORKDIR /app/frontend
 ENV NODE_OPTIONS=--max-old-space-size=1536
 
-# Install pnpm. Keep this pinned to the lockfile-compatible major version so
-# Docker builds remain reproducible when pnpm changes config validation rules.
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+# Install pnpm directly so builds do not depend on the Node image's Corepack
+# shim or its signature metadata.
+RUN npm install --global pnpm@9.15.9
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
@@ -53,7 +53,7 @@ ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/backend
 

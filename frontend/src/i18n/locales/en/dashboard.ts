@@ -678,6 +678,7 @@ export default {
     },
     table: {
       model: 'Model',
+      description: 'Description',
       input: 'Input',
       output: 'Output',
       cache: 'Cache',
