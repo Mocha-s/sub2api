@@ -879,6 +879,7 @@ type CostInput struct {
 	SizeTier                  string // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
 	RateMultiplier            float64
 	ServiceTier               string                // "priority","flex","" 等
+	ReasoningEffort           string                // channel pricing effort multiplier, e.g. xhigh
 	Resolver                  *ModelPricingResolver // 定价解析器
 	Resolved                  *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
 	LongContextBillingEnabled *bool
@@ -916,6 +917,7 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 	if input.RateMultiplier < 0 {
 		input.RateMultiplier = 0
 	}
+	input.RateMultiplier *= input.Resolver.ReasoningEffortMultiplier(resolved, input.ReasoningEffort)
 
 	var breakdown *CostBreakdown
 	var err error

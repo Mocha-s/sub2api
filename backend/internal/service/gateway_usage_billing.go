@@ -884,7 +884,11 @@ func (s *GatewayService) calculateImageCost(
 	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
 	groupConfig := imagePriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
-		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+		cost := s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+		if resolvedChannelPricing != nil && s.resolver != nil {
+			cost.ActualCost *= s.resolver.ReasoningEffortMultiplier(resolvedChannelPricing, reasoningEffortValue(result))
+		}
+		return cost
 	}
 	if resolvedChannelPricing != nil {
 		tokens := UsageTokens{
@@ -894,15 +898,16 @@ func (s *GatewayService) calculateImageCost(
 		}
 		gid := apiKey.Group.ID
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			Tokens:         tokens,
-			RequestCount:   result.ImageCount,
-			SizeTier:       sizeTier,
-			RateMultiplier: multiplier,
-			Resolver:       s.resolver,
-			Resolved:       resolvedChannelPricing,
+			Ctx:             ctx,
+			Model:           billingModel,
+			GroupID:         &gid,
+			Tokens:          tokens,
+			RequestCount:    result.ImageCount,
+			SizeTier:        sizeTier,
+			RateMultiplier:  multiplier,
+			ReasoningEffort: reasoningEffortValue(result),
+			Resolver:        s.resolver,
+			Resolved:        resolvedChannelPricing,
 		})
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Calculate image token cost failed: %v", err)
@@ -941,14 +946,15 @@ func (s *GatewayService) calculateTokenCost(
 	if resolvedChannelPricing != nil {
 		gid := apiKey.Group.ID
 		cost, err = s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			Tokens:         tokens,
-			RequestCount:   1,
-			RateMultiplier: multiplier,
-			Resolver:       s.resolver,
-			Resolved:       resolvedChannelPricing,
+			Ctx:             ctx,
+			Model:           billingModel,
+			GroupID:         &gid,
+			Tokens:          tokens,
+			RequestCount:    1,
+			RateMultiplier:  multiplier,
+			ReasoningEffort: reasoningEffortValue(result),
+			Resolver:        s.resolver,
+			Resolved:        resolvedChannelPricing,
 		})
 	} else if opts.LongContextThreshold > 0 {
 		// 长上下文双倍计费（如 Gemini 200K 阈值）
@@ -961,6 +967,13 @@ func (s *GatewayService) calculateTokenCost(
 		return &CostBreakdown{ActualCost: 0}
 	}
 	return cost
+}
+
+func reasoningEffortValue(result *ForwardResult) string {
+	if result == nil || result.ReasoningEffort == nil {
+		return ""
+	}
+	return strings.TrimSpace(*result.ReasoningEffort)
 }
 
 // buildRecordUsageLog 构建使用日志并设置计费模式。

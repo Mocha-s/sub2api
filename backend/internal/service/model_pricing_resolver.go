@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"strings"
 )
 
 // PricingSource 定价来源标识
@@ -28,6 +29,8 @@ type ResolvedPricing struct {
 
 	// 按次/图片模式：默认价格（未命中层级时使用）
 	DefaultPerRequestPrice float64
+
+	ReasoningEffortMultipliers map[string]float64
 
 	// 视频模式：默认每秒价格、默认时长和允许时长
 	VideoPricePerSecond float64
@@ -83,6 +86,7 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 					Source:         PricingSourceChannel,
 					channelPricing: chPricing,
 				}
+				r.applyReasoningEffortOverrides(chPricing, resolved)
 				if mode == BillingModeVideo {
 					r.applyVideoOverrides(chPricing, resolved)
 				} else {
@@ -107,12 +111,33 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	if chPricing != nil {
 		resolved.Source = PricingSourceChannel
 		resolved.channelPricing = chPricing
+		r.applyReasoningEffortOverrides(chPricing, resolved)
 		r.applyTokenOverrides(chPricing, resolved)
 	} else if input.GroupID != nil {
 		r.applyChannelOverrides(ctx, *input.GroupID, input.Model, resolved)
 	}
 
 	return resolved
+}
+
+func (r *ModelPricingResolver) applyReasoningEffortOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
+	if chPricing == nil || resolved == nil || len(chPricing.ReasoningEffortMultipliers) == 0 {
+		return
+	}
+	resolved.ReasoningEffortMultipliers = make(map[string]float64, len(chPricing.ReasoningEffortMultipliers))
+	for effort, multiplier := range chPricing.ReasoningEffortMultipliers {
+		resolved.ReasoningEffortMultipliers[strings.ToLower(strings.TrimSpace(effort))] = multiplier
+	}
+}
+
+func (r *ModelPricingResolver) ReasoningEffortMultiplier(resolved *ResolvedPricing, effort string) float64 {
+	if resolved == nil {
+		return 1
+	}
+	if multiplier, ok := resolved.ReasoningEffortMultipliers[strings.ToLower(strings.TrimSpace(effort))]; ok {
+		return multiplier
+	}
+	return 1
 }
 
 // resolveBasePricing 从 LiteLLM 或 Fallback 获取基础定价

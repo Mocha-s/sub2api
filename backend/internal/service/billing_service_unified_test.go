@@ -169,6 +169,31 @@ func TestCalculateCostUnified_ImageMode(t *testing.T) {
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
 }
 
+func TestCalculateCostUnified_ImageModeAppliesReasoningEffortMultiplier(t *testing.T) {
+	price := 2.2
+	resolver := NewModelPricingResolver(nil, nil)
+	resolved := &ResolvedPricing{
+		Mode:                   BillingModeImage,
+		DefaultPerRequestPrice: price,
+		ReasoningEffortMultipliers: map[string]float64{
+			"xhigh": 2,
+		},
+	}
+
+	cost, err := (&BillingService{}).CalculateCostUnified(CostInput{
+		Ctx:             context.Background(),
+		Model:           "gpt-image-2.5-sunburst-4k",
+		RequestCount:    1,
+		RateMultiplier:  0.132,
+		ReasoningEffort: "xhigh",
+		Resolver:        resolver,
+		Resolved:        resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 2.2, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.5808, cost.ActualCost, 1e-12)
+}
+
 // TestCalculateCostUnified_RateMultiplierZeroProducesZero 锁定新行为：
 // 保存时强制 > 0；若 0 仍泄漏到计费层，按 0 计费（而非历史上的 1.0）。
 func TestCalculateCostUnified_RateMultiplierZeroProducesZero(t *testing.T) {

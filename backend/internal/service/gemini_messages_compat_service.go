@@ -979,6 +979,24 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 		// ErrorPolicyNone → 原有逻辑
 		s.handleGeminiUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		if resp.StatusCode == http.StatusBadRequest && shouldFailoverGeminiImageBadRequest(originalModel, respBody) {
+			evBody := respBody
+			upstreamReqID := resp.Header.Get(requestIDHeader)
+			if upstreamReqID == "" {
+				upstreamReqID = resp.Header.Get("x-goog-request-id")
+			}
+			upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(evBody)))
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  upstreamReqID,
+				Kind:               "failover",
+				Message:            upstreamMsg,
+			})
+			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: evBody}
+		}
 		// 精确匹配服务端配置类 400 错误，触发 failover + 临时封禁
 		if resp.StatusCode == http.StatusBadRequest {
 			msg400 := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
@@ -1102,6 +1120,18 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		ImageSize:      imageSize,
 		ImageInputSize: imageInputSize,
 	}, nil
+}
+
+func shouldFailoverGeminiImageBadRequest(model string, body []byte) bool {
+	if !isImageGenerationModel(model) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	return strings.Contains(message, "invalid request") ||
+		strings.Contains(message, "not supported") ||
+		strings.Contains(message, "not found") ||
+		strings.Contains(message, "not a public model") ||
+		strings.Contains(message, "unavailable")
 }
 
 func isGeminiSignatureRelatedError(respBody []byte) bool {

@@ -77,6 +77,7 @@ type OpenAIImagesRequest struct {
 	Moderation         string
 	InputFidelity      string
 	Style              string
+	ReasoningEffort    string
 	OutputCompression  *int
 	PartialImages      *int
 	HasMask            bool
@@ -264,6 +265,10 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 	req.Moderation = strings.TrimSpace(gjson.GetBytes(body, "moderation").String())
 	req.InputFidelity = strings.TrimSpace(gjson.GetBytes(body, "input_fidelity").String())
 	req.Style = strings.TrimSpace(gjson.GetBytes(body, "style").String())
+	req.ReasoningEffort = normalizeImageReasoningEffort(gjson.GetBytes(body, "reasoning_effort").String())
+	if req.ReasoningEffort == "" {
+		req.ReasoningEffort = normalizeImageReasoningEffort(gjson.GetBytes(body, "reasoning.effort").String())
+	}
 	req.HasMask = gjson.GetBytes(body, "mask").Exists()
 	if outputCompression := gjson.GetBytes(body, "output_compression"); outputCompression.Exists() {
 		if outputCompression.Type != gjson.Number {
@@ -415,6 +420,8 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 		case "style":
 			req.Style = value
 			req.HasNativeOptions = true
+		case "reasoning_effort":
+			req.ReasoningEffort = normalizeImageReasoningEffort(value)
 		case "output_compression":
 			n, err := strconv.Atoi(value)
 			if err != nil {
@@ -442,6 +449,10 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 	return nil
 }
 
+func normalizeImageReasoningEffort(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func parseOpenAIImageDimensions(_ textproto.MIMEHeader) (int, int) {
 	return 0, 0
 }
@@ -461,7 +472,7 @@ func applyOpenAIImagesDefaults(req *OpenAIImagesRequest) {
 }
 
 func isOpenAIImageGenerationModel(model string) bool {
-	return IsGPTImageGenerationModel(model) || isGrokImageGenerationModel(model) || isOpenAICompatibleBananaImageGenerationModel(model)
+	return IsGPTImageGenerationModel(model) || isGrokImageGenerationModel(model) || isOpenAICompatibleBananaImageGenerationModel(model) || isMidjourneyImageGenerationModel(model)
 }
 
 // IsGPTImageGenerationModel identifies the GPT native image-generation model family.
@@ -482,6 +493,11 @@ func isOpenAICompatibleBananaImageGenerationModel(model string) bool {
 	return strings.HasPrefix(model, "nano-banana2-") ||
 		strings.HasPrefix(model, "banana2-") ||
 		strings.HasPrefix(model, "nano-banana-pro-")
+}
+
+func isMidjourneyImageGenerationModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "midjourney-")
 }
 
 func validateOpenAIImagesModel(model string) error {
