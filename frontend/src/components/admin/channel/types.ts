@@ -17,11 +17,13 @@ export interface IntervalFormEntry {
   cache_write_multiplier: number | string | null
   cache_read_multiplier: number | string | null
   per_request_price: number | string | null
+  video_price_per_second?: number | string | null
   sort_order: number
 }
 
 export interface PricingFormEntry {
   models: string[]
+  description?: string
   billing_mode: BillingMode
   input_price: number | string | null
   output_price: number | string | null
@@ -34,6 +36,9 @@ export interface PricingFormEntry {
   image_input_price: number | string | null
   image_output_price: number | string | null
   per_request_price: number | string | null
+  video_price_per_second?: number | string | null
+  video_default_seconds?: number | null
+  video_allowed_seconds?: number[]
   intervals: IntervalFormEntry[]
   time_pricing: TimePricingFormEntry
 }
@@ -235,6 +240,7 @@ export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEn
     cache_write_multiplier: iv.cache_write_multiplier,
     cache_read_multiplier: iv.cache_read_multiplier,
     per_request_price: iv.per_request_price,
+    video_price_per_second: iv.video_price_per_second,
     sort_order: iv.sort_order
   }))
 }
@@ -254,6 +260,7 @@ export function formIntervalsToAPI(intervals: IntervalFormEntry[]): PricingInter
     cache_write_multiplier: toNullableNumber(iv.cache_write_multiplier),
     cache_read_multiplier: toNullableNumber(iv.cache_read_multiplier),
     per_request_price: toNullableNumber(iv.per_request_price),
+    video_price_per_second: toNullableNumber(iv.video_price_per_second),
     sort_order: iv.sort_order
   }))
 }

@@ -4413,6 +4413,7 @@ const supportsLivePlatform = (platform: string): boolean =>
 
 const emptyGroupPricing = (): PricingFormEntry => ({
   models: [],
+  description: '',
   billing_mode: "token",
   input_price: null,
   output_price: null,
@@ -4423,6 +4424,9 @@ const emptyGroupPricing = (): PricingFormEntry => ({
   image_input_price: null,
   image_output_price: null,
   per_request_price: null,
+  video_price_per_second: null,
+  video_default_seconds: null,
+  video_allowed_seconds: [],
   intervals: [],
   time_pricing: createDefaultTimePricingForm(),
 });
@@ -4435,6 +4439,7 @@ const groupPricingFromAPI = (
 ): PricingFormEntry[] =>
   (pricing || []).map((entry) => ({
     models: entry.models || [],
+    description: entry.description || '',
     billing_mode: entry.billing_mode || "token",
     input_price: perTokenToMTok(entry.input_price),
     output_price: perTokenToMTok(entry.output_price),
@@ -4447,6 +4452,9 @@ const groupPricingFromAPI = (
     image_input_price: perTokenToMTok(entry.image_input_price),
     image_output_price: perTokenToMTok(entry.image_output_price),
     per_request_price: entry.per_request_price,
+    video_price_per_second: entry.video_price_per_second,
+    video_default_seconds: entry.video_default_seconds,
+    video_allowed_seconds: entry.video_allowed_seconds || [],
     intervals: apiIntervalsToForm(entry.intervals || []),
     time_pricing: createDefaultTimePricingForm(),
   }));
@@ -4460,6 +4468,7 @@ const groupPricingToAPI = (
     .map((entry) => ({
       platform,
       models: entry.models,
+      description: entry.description || '',
       billing_mode: entry.billing_mode,
       input_price: mTokToPerToken(entry.input_price),
       output_price: mTokToPerToken(entry.output_price),
@@ -4472,6 +4481,9 @@ const groupPricingToAPI = (
       image_input_price: mTokToPerToken(entry.image_input_price),
       image_output_price: mTokToPerToken(entry.image_output_price),
       per_request_price: toNullableNumber(entry.per_request_price),
+      video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
+      video_default_seconds: entry.video_default_seconds ?? null,
+      video_allowed_seconds: entry.video_allowed_seconds || [],
       intervals:
         entry.billing_mode === "token"
           ? []

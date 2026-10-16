@@ -1081,12 +1081,13 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
       rules.push({
         name: rule.name,
         group_ids: rule.group_ids,
-        account_ids: rule.account_ids,
+         account_ids: rule.account_ids,
         pricing: rule.pricing
           .filter(p => p.models.length > 0)
           .map(p => ({
             platform: section.platform,
             models: p.models,
+            description: '',
             billing_mode: p.billing_mode,
             input_price: mTokToPerToken(p.input_price),
             output_price: mTokToPerToken(p.output_price),
@@ -1097,6 +1098,9 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
             image_input_price: mTokToPerToken(p.image_input_price),
             image_output_price: mTokToPerToken(p.image_output_price),
             per_request_price: p.per_request_price != null && p.per_request_price !== '' ? Number(p.per_request_price) : null,
+            video_price_per_second: p.video_price_per_second != null && p.video_price_per_second !== '' ? Number(p.video_price_per_second) : null,
+            video_default_seconds: p.video_default_seconds ?? null,
+            video_allowed_seconds: p.video_allowed_seconds ?? [],
             intervals: formIntervalsToAPI(p.intervals || []),
             time_pricing: null
           }))
@@ -1129,8 +1133,9 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
     for (const entry of section.model_pricing) {
       if (entry.models.length === 0) continue
       model_pricing.push({
-        platform: section.platform,
-        models: entry.models,
+         platform: section.platform,
+         models: entry.models,
+         description: entry.description ?? '',
         billing_mode: entry.billing_mode,
         input_price: mTokToPerToken(entry.input_price),
         output_price: mTokToPerToken(entry.output_price),
@@ -1142,7 +1147,10 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         reasoning_effort_multipliers: formReasoningEffortMultipliersToAPI(entry.reasoning_effort_multipliers),
         image_input_price: mTokToPerToken(entry.image_input_price),
         image_output_price: mTokToPerToken(entry.image_output_price),
-        per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
+         per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
+         video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
+         video_default_seconds: entry.video_default_seconds ?? null,
+         video_allowed_seconds: entry.video_allowed_seconds ?? [],
         intervals: formIntervalsToAPI(entry.intervals || []),
         time_pricing: formTimePricingToAPI(entry.time_pricing)
       })
