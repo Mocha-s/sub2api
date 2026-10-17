@@ -5,10 +5,11 @@ This document is the authoritative baseline for future upstream upgrades.
 ## Baseline Identity
 
 - Application version: `0.2.17`
-- Baseline commit: `c9012835ea60e8ab5d1f8bc9b74f144efafec58f`
-- Baseline tag: `baseline/v0.2.17-historical-fixes`
+- Baseline commit: `32255f71c`
+- Baseline tag: `baseline/v0.2.17-historical-fixes-sync`
+- Supersedes tag: `baseline/v0.2.17-historical-fixes` (`c9012835e`)
 - Upstream release included: `refs/tags/v0.2.17-upstream`
-- Production image: `weishaw/sub2api:upgrade-v0.2.17-c9012835e`
+- Production image: `weishaw/sub2api:upgrade-v0.2.17-32255f71c`
 - Production entrypoint: `https://api.aigcdo.top`
 - Production host: `186.244.215.254`
 
@@ -20,13 +21,13 @@ the commit and tag, not the branch name.
 
 For every future upstream upgrade:
 
-1. Start from `baseline/v0.2.17-historical-fixes`.
+1. Start from `baseline/v0.2.17-historical-fixes-sync`.
 2. Merge the new official upstream tag or release commit.
 3. Compare the merge against this baseline with:
 
    ```bash
-   git diff --stat baseline/v0.2.17-historical-fixes...HEAD
-   git diff --name-status baseline/v0.2.17-historical-fixes...HEAD
+   git diff --stat baseline/v0.2.17-historical-fixes-sync...HEAD
+   git diff --name-status baseline/v0.2.17-historical-fixes-sync...HEAD
    ```
 
 4. When upstream already contains one of the historical fixes, keep the
@@ -95,9 +96,21 @@ Representative history:
 - Image URL-to-base64 backfill and private-destination protections.
 - Fixed-price image billing, cache pricing, balance failures, and usage
   recording.
+- Images API usage with unsplit `output_tokens` is classified as image output
+  tokens, so `image_output_price` applies when the upstream omits
+  `output_tokens_details.image_tokens`.
 - Account statistics pricing and long-context billing gates.
 - In-flight reservation protection against concurrent overdraft.
 - Deleted-key usage settlement and upstream billing-probe behavior.
+- Dedicated OpenAI Images scheduling honors the existing
+  `openai_low_upstream_rate_priority_enabled` API-pricing-sync rate ordering for
+  both native and basic fallback selection. This uses sync-owned account rates;
+  it does not create a separate profit gate or rewrite group/account prices.
+- The API-pricing-sync account rate remains the source of the upstream-cost
+  scheduling signal. Image requests opt into the same existing low-upstream-rate
+  priority used by token requests when the setting is enabled; the setting is a
+  preference among eligible accounts, not a guarantee when cheaper accounts
+  are unavailable.
 
 Representative history:
 
@@ -109,6 +122,8 @@ Representative history:
   fallback safeguards
 - `c2d5bbd93` settle usage after API-key deletion
 - `de98bdff1` preserve insufficient-balance failures
+- `c5897dc17` classify unsplit Images API output tokens as image tokens
+- `32255f71c` pass API-pricing-sync rate priority through image scheduling
 
 ### Channel Pricing and Model Plaza
 
@@ -163,7 +178,7 @@ Representative history:
 The full exact file-level preservation set is captured by:
 
 ```bash
-git diff --name-status refs/tags/v0.2.17-upstream..baseline/v0.2.17-historical-fixes
+git diff --name-status refs/tags/v0.2.17-upstream..baseline/v0.2.17-historical-fixes-sync
 ```
 
 ## Migration and Deployment Safeguards
@@ -187,6 +202,14 @@ Checks completed for this baseline:
   tests.
 - Channel pricing description editor, locale, and form round-trip tests.
 - Model Plaza description propagation unit test.
+- Images API real-request verification: output-only token usage was classified
+  as image output and charged against `image_output_price`.
+- API-pricing-sync image scheduler regression: with low-upstream-rate priority
+  enabled, a `2.35` account is ordered after a `0.107` account.
+- Production sync-order image request returned one image; the `.091` account
+  was tried first and returned upstream 503, then the `.105` account succeeded.
+  The resulting usage log recorded account `601`, image output tokens `1056`,
+  group rate `0.132`, and billed amount `$0.033`.
 - Frontend `vue-tsc -b`.
 - Frontend ESLint on changed files.
 - Frontend production build and i18n completeness checks.
