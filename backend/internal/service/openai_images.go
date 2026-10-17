@@ -741,7 +741,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKeyRaw(
 	if err != nil {
 		return nil, err
 	}
-	usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
+	usage, _ := extractOpenAIImagesUsageFromJSONBytes(respBody)
 	imageCount := extractOpenAIImageCountFromJSONBytes(respBody)
 	if imageCount <= 0 {
 		imageCount = parsed.N
@@ -1127,8 +1127,22 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(
 	}
 	c.Data(resp.StatusCode, contentType, body)
 
-	usage, _ := extractOpenAIUsageFromJSONBytes(body)
+	usage, _ := extractOpenAIImagesUsageFromJSONBytes(body)
 	return usage, extractOpenAIImageCountFromJSONBytes(body), collectOpenAIResponseImageOutputSizesFromJSONBytes(body), nil
+}
+
+// extractOpenAIImagesUsageFromJSONBytes applies the Images API contract after
+// parsing the shared OpenAI usage shape. Images endpoints may report only
+// output_tokens even though every output token is an image token.
+func extractOpenAIImagesUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
+	usage, ok := extractOpenAIUsageFromJSONBytes(body)
+	if !ok {
+		return OpenAIUsage{}, false
+	}
+	if imageUsage, imageOK := codexDirectImagesUsage(body); imageOK {
+		mergeOpenAIUsageNonZero(&usage, imageUsage)
+	}
+	return usage, true
 }
 
 func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
