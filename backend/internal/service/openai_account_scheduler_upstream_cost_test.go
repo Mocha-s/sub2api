@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -734,6 +735,47 @@ func TestOpenAIGatewayServiceLegacyLowRatePrioritySkipsCooledDownAccount(t *test
 	selection, _, err := svc.SelectAccountWithScheduler(context.Background(), &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
+func TestOpenAIImagesSchedulerUsesSyncedUpstreamRateWhenPrioritizationEnabled(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	now := time.Now()
+	expensive := upstreamCostTestAccount(11, UpstreamBillingProbeStatusOK, 2.35, now.Add(-time.Minute), 30*time.Minute)
+	cheap := upstreamCostTestAccount(12, UpstreamBillingProbeStatusOK, 0.107, now.Add(-time.Minute), 30*time.Minute)
+	expensive.Status, expensive.Schedulable, expensive.Concurrency, expensive.Priority = StatusActive, true, 1, 1
+	cheap.Status, cheap.Schedulable, cheap.Concurrency, cheap.Priority = StatusActive, true, 1, 2
+	group := &Group{ID: 1, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 0.132}
+	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
+		openAIAdvancedSchedulerSettingKey:              "false",
+		SettingKeyOpenAILowUpstreamRatePriorityEnabled: "true",
+	}}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{*expensive, *cheap}},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		rateLimitService:   &RateLimitService{settingService: NewSettingService(settings, cfg)},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		context.WithValue(context.Background(), ctxkey.Group, group),
+		&group.ID,
+		"",
+		"gpt-image-2.5-sunburst-az",
+		nil,
+		OpenAIImagesCapabilityBasic,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, cheap.ID, selection.Account.ID, "image requests should honor the enabled API-pricing-sync rate priority")
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
