@@ -57,6 +57,18 @@ func TestListPlazaGroups_GroupCentricAggregation(t *testing.T) {
 	require.Equal(t, "claude-sonnet", out[0].Models[1].Name)
 }
 
+func TestListPlazaGroups_ModelPricingDescriptionFollowsModel(t *testing.T) {
+	ch := plazaPricedChannel(1, "channel", []int64{10}, PlatformOpenAI, "gpt-description")
+	ch.ModelPricing[0].Description = "Fast coding model\nSupports tools"
+
+	out, err := newPlazaService([]Channel{ch}, []Group{{ID: 10, Platform: PlatformOpenAI}}, nil).ListGroups(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Models, 1)
+	require.Equal(t, "Fast coding model\nSupports tools", out[0].Models[0].Description)
+}
+
 func TestListPlazaGroups_Fable51HasNoImplicitReasoningMultiplier(t *testing.T) {
 	ch := plazaPricedChannel(1, "ch", []int64{10}, "anthropic", "claude-fable-5-1")
 	svc := newPlazaService([]Channel{ch}, []Group{{ID: 10, Platform: "anthropic"}}, nil)

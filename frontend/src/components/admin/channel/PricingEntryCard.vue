@@ -99,6 +99,27 @@
           </div>
         </div>
 
+        <div v-if="showDescription" class="mt-3">
+          <div class="flex items-center justify-between">
+            <label :for="descriptionInputId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.pricingDescription') }}
+            </label>
+            <span data-test="pricing-description-count" class="text-xs text-gray-400 dark:text-dark-500">
+              {{ descriptionLength }}/500
+            </span>
+          </div>
+          <textarea
+            :id="descriptionInputId"
+            data-test="pricing-description"
+            :value="entry.description || ''"
+            :placeholder="t('admin.channels.form.pricingDescriptionPlaceholder')"
+            maxlength="500"
+            rows="2"
+            class="input mt-1 resize-y text-sm"
+            @input="updateDescription(($event.target as HTMLTextAreaElement).value)"
+          />
+        </div>
+
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
           <!-- Default prices (fallback when no interval matches) -->
@@ -299,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, getCurrentInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -320,10 +341,14 @@ const props = withDefaults(defineProps<{
   hideTokenIntervals?: boolean
   enableTimePricing?: boolean
   enableTierMultipliers?: boolean
+  inputIdPrefix?: string
+  showDescription?: boolean
 }>(), {
   hideTokenIntervals: false,
   enableTimePricing: false,
   enableTierMultipliers: false,
+  inputIdPrefix: '',
+  showDescription: true,
 })
 
 const emit = defineEmits<{
@@ -346,6 +371,9 @@ const billingModeLabel = computed(() => {
   return opt ? opt.label : props.entry.billing_mode
 })
 
+const descriptionLength = computed(() => (props.entry.description || '').length)
+const descriptionInputId = computed(() => `${props.inputIdPrefix || `pricing-entry-${getCurrentInstance()?.uid ?? 0}`}-description`)
+
 const reasoningEffortMultiplierError = computed(() =>
   validateReasoningEffortMultipliers(props.entry.reasoning_effort_multipliers, t)
 )
@@ -362,6 +390,10 @@ function updateReasoningEffortMultiplier(effort: ReasoningEffortLevel, value: st
 
 function emitField(field: keyof PricingFormEntry, value: string) {
   emit('update', { ...props.entry, [field]: value === '' ? null : value })
+}
+
+function updateDescription(value: string) {
+  emit('update', { ...props.entry, description: value })
 }
 
 function addInterval() {
