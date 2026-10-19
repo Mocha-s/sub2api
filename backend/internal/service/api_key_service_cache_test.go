@@ -320,6 +320,36 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 	require.Equal(t, apiKey.Group.ReasoningEffortMappings, roundTrip.Group.ReasoningEffortMappings)
 }
 
+func TestAPIKeyService_SnapshotRoundTrip_PreservesVideoGenerationPermission(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+	groupID := int64(19)
+	apiKey := &APIKey{
+		ID:      1,
+		UserID:  2,
+		GroupID: &groupID,
+		Key:     "k-video-permission",
+		Status:  StatusActive,
+		User: &User{
+			ID:     2,
+			Status: StatusActive,
+			Role:   RoleUser,
+		},
+		Group: &Group{
+			ID:                   groupID,
+			Name:                 "Video/次",
+			Platform:             PlatformOpenAI,
+			Status:               StatusActive,
+			AllowVideoGeneration: true,
+		},
+	}
+
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, svc.snapshotFromAPIKey(context.Background(), apiKey))
+
+	require.NotNil(t, roundTrip)
+	require.NotNil(t, roundTrip.Group)
+	require.True(t, roundTrip.Group.AllowVideoGeneration)
+}
+
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {
 	cache := &authCacheStub{}
 	var repoCalls int32
