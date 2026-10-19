@@ -106,6 +106,25 @@ func TestOpenAIImagesRequestModerationBody_JSONEditIncludesInputImageURLs(t *tes
 	require.Equal(t, []string{"https://example.com/source.png", "https://example.com/mask.png"}, input.Images)
 }
 
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLStrings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{
+		"model":"gpt-image-2.5-sunburst-4k",
+		"prompt":"replace the background",
+		"images":["https://media.example/source.png"]
+	}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, []string{"https://media.example/source.png"}, parsed.InputImageURLs)
+}
+
 func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(t *testing.T) {
 	parsed := &OpenAIImagesRequest{
 		Endpoint: openAIImagesEditsEndpoint,

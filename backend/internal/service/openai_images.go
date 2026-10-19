@@ -291,6 +291,12 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 				return fmt.Errorf("invalid images field type")
 			}
 			for _, item := range images.Array() {
+				if item.Type == gjson.String {
+					if imageURL := strings.TrimSpace(item.String()); imageURL != "" {
+						req.InputImageURLs = append(req.InputImageURLs, imageURL)
+					}
+					continue
+				}
 				if imageURL := strings.TrimSpace(item.Get("image_url").String()); imageURL != "" {
 					req.InputImageURLs = append(req.InputImageURLs, imageURL)
 					continue
