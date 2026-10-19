@@ -266,6 +266,35 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+func TestGroupHandlerUpdateMapsVideoGenerationPermission(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+	body := []byte(`{"name":"Video","platform":"openai","allow_video_generation":true}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.updatedGroups, 1)
+	require.NotNil(t, adminSvc.updatedGroups[0].AllowVideoGeneration)
+	require.True(t, *adminSvc.updatedGroups[0].AllowVideoGeneration)
+}
+
+func TestGroupHandlerCreateMapsVideoGenerationPermission(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+	body := []byte(`{"name":"Video","platform":"openai","allow_video_generation":true}`)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.createdGroups, 1)
+	require.True(t, adminSvc.createdGroups[0].AllowVideoGeneration)
+}
+
 func TestGroupHandlerCompositeRouteAcceptsVideoEndpoint(t *testing.T) {
 	router, _ := setupAdminRouter()
 	body, err := json.Marshal(map[string]any{
