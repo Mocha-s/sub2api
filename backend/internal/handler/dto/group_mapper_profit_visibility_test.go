@@ -73,3 +73,14 @@ func TestGroupFromServiceAdminIncludesProfitControl(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupFromServiceAdminIncludesVideoGenerationPermission(t *testing.T) {
+	admin := GroupFromServiceAdmin(&service.Group{
+		Platform:             service.PlatformOpenAI,
+		AllowVideoGeneration: true,
+	})
+
+	if !admin.AllowVideoGeneration {
+		t.Fatal("管理员 DTO 未透传视频生成权限")
+	}
+}
