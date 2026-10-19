@@ -186,6 +186,7 @@ func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, str
 			payload["aspect_ratio"] = ratio
 		}
 	}
+	delete(payload, "size")
 	if len(images) > 0 {
 		payload["images"] = images
 	}

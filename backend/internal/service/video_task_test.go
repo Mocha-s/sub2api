@@ -43,6 +43,9 @@ func TestNormalizeVideoTaskRequestBodyDerivesAspectRatioFromMultipartSize(t *tes
 	if payload["aspect_ratio"] != "9:16" {
 		t.Fatalf("aspect_ratio = %#v, want 9:16", payload["aspect_ratio"])
 	}
+	if _, exists := payload["size"]; exists {
+		t.Fatal("normalized video body must omit the unsupported size field")
+	}
 }
 
 func TestNormalizeOpenAIVideoStatus(t *testing.T) {
