@@ -679,8 +679,10 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 			}
 			if decision.Matched {
 				installCompositeRequestTarget(c, apiKey, decision)
-				effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
-				if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
+				if (strings.Contains(c.Request.URL.Path, "/embeddings") || strings.Contains(c.Request.URL.Path, "/images/")) && decision.TargetPlatform != service.PlatformOpenAI {
+					// Let the endpoint's platform gate return its protocol error before
+					// customer billing policy runs for an incompatible model.
+				} else if effectiveKey, _ := middleware.GetAPIKeyFromContext(c); !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
 					return
 				}
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
@@ -743,10 +745,22 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 				}
 				if decision.Matched {
 					installCompositeRequestTarget(c, apiKey, decision)
+				}
+				if !decision.Matched || decision.TargetPlatform == service.PlatformGemini {
 					effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
 					if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
 						return
 					}
+				}
+				effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
+				allowlistGroup := apiKey.Group
+				if effectiveKey != nil && effectiveKey.Group != nil {
+					allowlistGroup = effectiveKey.Group
+				}
+				if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(model) {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+					c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", model)}})
+					return
 				}
 			}
 			if _, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); !resolved {
@@ -761,16 +775,19 @@ func installCompositeTargetSubscription(c *gin.Context, apiKey *service.APIKey, 
 	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
 		return true
 	}
-	// A Composite request without a resolved concrete target is the legacy
-	// copied-account path; keep its existing source-group checks unchanged.
-	if apiKey.Group.Platform == service.PlatformComposite {
-		return true
-	}
 	if !apiKey.Group.IsSubscriptionType() {
 		c.Set(string(middleware.ContextKeySubscription), (*service.UserSubscription)(nil))
+		if apiKey.User.Balance <= 0 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "insufficient_balance", "message": "Insufficient account balance"}})
+			return false
+		}
 		return true
 	}
 	if len(subscriptionServices) == 0 || subscriptionServices[0] == nil {
+		if apiKey.User.Balance <= 0 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "insufficient_balance", "message": "Insufficient account balance"}})
+			return false
+		}
 		return true
 	}
 	subscription, err := subscriptionServices[0].GetActiveSubscription(c.Request.Context(), apiKey.User.ID, apiKey.Group.ID)

@@ -1644,6 +1644,14 @@ func (s *GatewayService) GetCompositeTargetModels(ctx context.Context, groupID i
 	return models, true, nil
 }
 
+func (s *GatewayService) CompositeModelHasUsableTarget(ctx context.Context, groupID int64, model, endpoint string) bool {
+	if s == nil || s.compositeResolver == nil {
+		return false
+	}
+	decision, err := s.compositeResolver.Resolve(ctx, groupID, model, endpoint)
+	return err == nil && decision.Matched && decision.TargetGroupID != nil
+}
+
 func (s *GatewayService) FilterCompositeCodexModels(ctx context.Context, groupID int64, models []string) ([]string, error) {
 	if s == nil || s.compositeResolver == nil {
 		return models, nil

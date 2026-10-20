@@ -192,6 +192,15 @@ func TestCompositeTargetPlatformMiddlewareInstallsEffectiveTargetAPIKey(t *testi
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 
+func TestCompositeTargetPolicyRejectsZeroBalanceStandardTarget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	apiKey := &service.APIKey{User: &service.User{ID: 1, Balance: 0}, Group: &service.Group{ID: 20, Platform: service.PlatformOpenAI, SubscriptionType: service.SubscriptionTypeStandard}}
+
+	require.False(t, installCompositeTargetSubscription(c, apiKey))
+	require.Equal(t, http.StatusForbidden, c.Writer.Status())
+}
+
 func TestCompositeTargetPlatformMiddlewareRewritesNestedLiveModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

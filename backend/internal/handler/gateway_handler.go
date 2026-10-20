@@ -1276,9 +1276,13 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 	}
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(ctx, groupID, service.CompositeRouteEndpointResponses, false)
+		_, dynamicTargetsConfigured, targetErr := h.gatewayService.GetCompositeTargetModels(ctx, group.ID, "")
+		if targetErr != nil {
+			dynamicTargetsConfigured = true
+		}
 		fallbackModels := defaultCodexModelIDsForPlatform(service.PlatformComposite)
 		models := availableModels
-		if len(models) == 0 {
+		if len(models) == 0 && !dynamicTargetsConfigured {
 			models = fallbackModels
 		}
 		if group.ModelAllowlistEnabled() {
@@ -1318,6 +1322,9 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 			}
 			if routeModels, routeErr := h.gatewayService.GetCompositeRouteModels(ctx, groupID, endpoint, includeSystemOne); routeErr == nil {
 				for _, model := range routeModels {
+					if !h.gatewayService.CompositeModelHasUsableTarget(ctx, *groupID, model, endpoint) {
+						continue
+					}
 					if _, exists := seen[strings.ToLower(model)]; exists {
 						continue
 					}

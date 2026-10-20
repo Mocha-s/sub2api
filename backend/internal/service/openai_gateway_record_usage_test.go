@@ -2464,6 +2464,26 @@ func TestGrokVideoBillingUsesSeparateVideoRateMultiplier(t *testing.T) {
 	require.Equal(t, 1, *usageRepo.lastLog.VideoDurationSeconds)
 }
 
+func TestCompositeOpenAIVideoBillingUsesCompositeIndependentRate(t *testing.T) {
+	groupID, targetID := int64(1260), int64(1261)
+	price := 0.08
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	ctx := WithCompositeBillingGroup(context.Background(), &Group{
+		ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true,
+		RateMultiplier: 0.15, VideoRateIndependent: true, VideoRateMultiplier: 0.25, VideoPrice480P: &price,
+	})
+
+	err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{RequestID: "composite-video", Model: "sora-2", BillingModel: "sora-2", VideoCount: 1, VideoResolution: VideoBillingResolution480P, VideoDurationSeconds: 1},
+		APIKey: &APIKey{ID: 101260, GroupID: &targetID, Group: &Group{ID: targetID, Platform: PlatformOpenAI, VideoRateIndependent: true, VideoRateMultiplier: 0.99}},
+		User:   &User{ID: 201260}, Account: &Account{ID: 301260, Platform: PlatformOpenAI},
+	})
+
+	require.NoError(t, err)
+	require.InDelta(t, 0.25, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_SeedanceQuoteUsesExactCostAndUnclampedMetadata(t *testing.T) {
 	groupID := int64(12601)
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}

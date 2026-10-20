@@ -259,7 +259,7 @@ func (s *adminServiceImpl) validateCompositeRouteTarget(ctx context.Context, gro
 		return err
 	}
 	for _, target := range targets {
-		if target.TargetGroupID != *route.TargetGroupID || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != route.TargetPlatform {
+		if target.TargetGroupID != *route.TargetGroupID || target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform == PlatformComposite || target.TargetGroup.Platform != route.TargetPlatform {
 			continue
 		}
 		return nil
