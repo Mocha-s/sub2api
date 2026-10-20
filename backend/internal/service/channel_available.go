@@ -157,6 +157,17 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 	if p == nil {
 		return true
 	}
+	if p.BillingMode == BillingModeVideo {
+		if p.VideoPricePerSecond != nil {
+			return false
+		}
+		for _, iv := range p.Intervals {
+			if iv.VideoPricePerSecond != nil {
+				return false
+			}
+		}
+		return true
+	}
 	if p.InputPrice != nil || p.OutputPrice != nil ||
 		p.CacheWritePrice != nil || p.CacheWrite1hPrice != nil || p.CacheReadPrice != nil ||
 		p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
@@ -194,10 +205,18 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 	case lp.Mode == "image_generation":
 		mode = BillingModeImage
 	}
+	description := ""
+	if existing != nil {
+		description = existing.Description
+	}
+	if mode == BillingModeVideo {
+		return existing
+	}
 
 	if mode == BillingModeImage || mode == BillingModePerRequest {
 		return &ChannelModelPricing{
 			BillingMode:                mode,
+			Description:                description,
 			PerRequestPrice:            nonZeroPtr(lp.OutputCostPerImage),
 			ImageOutputPrice:           nonZeroPtr(lp.OutputCostPerImageToken),
 			InputPrice:                 nonZeroPtr(lp.InputCostPerToken),
@@ -207,6 +226,7 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 	}
 	return &ChannelModelPricing{
 		BillingMode:                mode,
+		Description:                description,
 		InputPrice:                 nonZeroPtr(lp.InputCostPerToken),
 		OutputPrice:                nonZeroPtr(lp.OutputCostPerToken),
 		CacheWritePrice:            nonZeroPtr(lp.CacheCreationInputTokenCost),

@@ -190,11 +190,15 @@ func createAccountStatsModelPricingTx(ctx context.Context, tx *sql.Tx, ruleID in
 		billingMode = service.BillingModeToken
 	}
 	platform := pricing.Platform
+	reasoningEffortMultipliersJSON, err := marshalReasoningEffortMultipliers(pricing.ReasoningEffortMultipliers)
+	if err != nil {
+		return err
+	}
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO channel_account_stats_model_pricing (rule_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
 		ruleID, platform, modelsJSON, billingMode,
-		pricing.InputPrice, pricing.OutputPrice, pricing.CacheWritePrice, pricing.CacheWrite1hPrice, pricing.CacheReadPrice, mustMarshalJSON(pricing.ReasoningEffortMultipliers), pricing.ImageInputPrice, pricing.ImageOutputPrice, pricing.PerRequestPrice,
+		pricing.InputPrice, pricing.OutputPrice, pricing.CacheWritePrice, pricing.CacheWrite1hPrice, pricing.CacheReadPrice, reasoningEffortMultipliersJSON, pricing.ImageInputPrice, pricing.ImageOutputPrice, pricing.PerRequestPrice,
 		pricing.VideoPricePerSecond, pricing.VideoDefaultSeconds, mustMarshalJSON(pricing.VideoAllowedSeconds),
 	).Scan(&pricing.ID, &pricing.CreatedAt, &pricing.UpdatedAt)
 	if err != nil {

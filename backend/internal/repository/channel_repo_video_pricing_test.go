@@ -20,24 +20,25 @@ func TestListModelPricingScansVideoColumnsInOrder(t *testing.T) {
 	repo := &channelRepository{db: db}
 	now := time.Now()
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, reasoning_effort_multipliers, created_at, updated_at
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, created_at, updated_at
 		 FROM channel_model_pricing WHERE channel_id = $1 ORDER BY id`)).
 		WithArgs(int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "channel_id", "platform", "models", "billing_mode", "input_price", "output_price",
-			"cache_write_price", "cache_read_price", "image_input_price", "image_output_price", "per_request_price",
-			"video_price_per_second", "video_default_seconds", "video_allowed_seconds", "description", "max_reasoning_effort_multiplier", "reasoning_effort_multipliers", "created_at", "updated_at",
-		}).AddRow(int64(11), int64(7), "openai", []byte(`["sora-2","sora-2-fast"]`), "video", nil, nil, nil, nil, nil, nil, nil, 0.03, 10, []byte(`[5,10]`), "Fast video\nShared by aliases", nil, []byte(`{}`), now, now))
+			"cache_write_price", "cache_write_1h_price", "cache_read_price", "fast_multiplier", "flex_multiplier", "reasoning_effort_multipliers", "image_input_price", "image_output_price", "per_request_price", "time_pricing",
+			"video_price_per_second", "video_default_seconds", "video_allowed_seconds", "description", "max_reasoning_effort_multiplier", "created_at", "updated_at",
+		}).AddRow(int64(11), int64(7), "openai", []byte(`["sora-2","sora-2-fast"]`), "video", nil, nil, nil, nil, nil, nil, nil, []byte(`{}`), nil, nil, nil, nil, 0.03, 10, []byte(`[5,10]`), "Fast video\nShared by aliases", nil, now, now))
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
-		        input_price, output_price, cache_write_price, cache_read_price,
+		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
+		        input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier,
 		        per_request_price, video_price_per_second, sort_order, created_at, updated_at
 		 FROM channel_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`)).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "pricing_id", "min_tokens", "max_tokens", "tier_label", "input_price", "output_price",
-			"cache_write_price", "cache_read_price", "per_request_price", "video_price_per_second", "sort_order", "created_at", "updated_at",
-		}).AddRow(int64(12), int64(11), 0, nil, "hd", nil, nil, nil, nil, nil, 0.05, 0, now, now))
+			"cache_write_price", "cache_write_1h_price", "cache_read_price", "input_multiplier", "output_multiplier", "cache_write_multiplier", "cache_read_multiplier", "per_request_price", "video_price_per_second", "sort_order", "created_at", "updated_at",
+		}).AddRow(int64(12), int64(11), 0, nil, "hd", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, 0.05, 0, now, now))
 
 	got, err := repo.ListModelPricing(context.Background(), 7)
 	require.NoError(t, err)
@@ -56,13 +57,13 @@ func TestBatchLoadModelPricingSelectsVideoColumnsInOrder(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	repo := &channelRepository{db: db}
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, reasoning_effort_multipliers, created_at, updated_at
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, created_at, updated_at
 		 FROM channel_model_pricing WHERE channel_id = ANY($1) ORDER BY channel_id, id`)).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "channel_id", "platform", "models", "billing_mode", "input_price", "output_price",
-			"cache_write_price", "cache_read_price", "image_input_price", "image_output_price", "per_request_price",
-			"video_price_per_second", "video_default_seconds", "video_allowed_seconds", "description", "max_reasoning_effort_multiplier", "reasoning_effort_multipliers", "created_at", "updated_at",
+			"cache_write_price", "cache_write_1h_price", "cache_read_price", "fast_multiplier", "flex_multiplier", "reasoning_effort_multipliers", "image_input_price", "image_output_price", "per_request_price", "time_pricing",
+			"video_price_per_second", "video_default_seconds", "video_allowed_seconds", "description", "max_reasoning_effort_multiplier", "created_at", "updated_at",
 		}))
 
 	got, err := repo.batchLoadModelPricing(context.Background(), []int64{7})
@@ -93,23 +94,25 @@ func TestMainPricingWritesVideoColumnsAndArgumentsInOrder(t *testing.T) {
 		}},
 	}
 
-	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_model_pricing (channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier, reasoning_effort_multipliers)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id, created_at, updated_at`)).
-		WithArgs(int64(7), "openai", []byte(`["sora-2"]`), service.BillingModeVideo, nil, nil, nil, nil, nil, nil, nil, price, seconds, []byte(`[5,10]`), "Fast video\nShared by aliases", nil, []byte(`null`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_model_pricing (channel_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, fast_multiplier, flex_multiplier, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, time_pricing, video_price_per_second, video_default_seconds, video_allowed_seconds, description, max_reasoning_effort_multiplier)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, created_at, updated_at`)).
+		WithArgs(int64(7), "openai", []byte(`["sora-2"]`), service.BillingModeVideo,
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(int64(11), now, now))
 	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_pricing_intervals
-		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_read_price, per_request_price, video_price_per_second, sort_order)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, created_at, updated_at`)).
-		WithArgs(int64(11), 0, nil, "hd", nil, nil, nil, nil, nil, tierPrice, 0).
+		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier, per_request_price, video_price_per_second, sort_order)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`)).
+		WithArgs(int64(11), 0, nil, "hd", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, tierPrice, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(int64(12), now, now))
 
 	require.NoError(t, createModelPricingExec(context.Background(), db, &pricing))
 
 	repo := &channelRepository{db: db}
 	mock.ExpectExec(regexp.QuoteMeta(`UPDATE channel_model_pricing
-		 SET models = $1, billing_mode = $2, input_price = $3, output_price = $4, cache_write_price = $5, cache_read_price = $6, image_input_price = $7, image_output_price = $8, per_request_price = $9, video_price_per_second = $10, video_default_seconds = $11, video_allowed_seconds = $12, platform = $13, description = $14, max_reasoning_effort_multiplier = $15, reasoning_effort_multipliers = $16, updated_at = NOW()
-		 WHERE id = $17`)).
-		WithArgs([]byte(`["sora-2"]`), service.BillingModeVideo, nil, nil, nil, nil, nil, nil, nil, price, seconds, []byte(`[5,10]`), "openai", "Fast video\nShared by aliases", nil, []byte(`null`), int64(11)).
+		 SET models = $1, billing_mode = $2, input_price = $3, output_price = $4, cache_write_price = $5, cache_write_1h_price = $6, cache_read_price = $7, fast_multiplier = $8, flex_multiplier = $9, reasoning_effort_multipliers = $10, image_input_price = $11, image_output_price = $12, per_request_price = $13, time_pricing = $14, video_price_per_second = $15, video_default_seconds = $16, video_allowed_seconds = $17, platform = $18, description = $19, max_reasoning_effort_multiplier = $20, updated_at = NOW()
+		 WHERE id = $21`)).
+		WithArgs([]byte(`["sora-2"]`), service.BillingModeVideo,
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	require.NoError(t, repo.UpdateModelPricing(context.Background(), &pricing))
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -123,25 +126,25 @@ func TestAccountStatsPricingReadsVideoColumnsInOrder(t *testing.T) {
 	now := time.Now()
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, rule_id, platform, models, billing_mode, input_price, output_price,
-		        cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price,
+		        cache_write_price, cache_write_1h_price, cache_read_price, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price,
 		        video_price_per_second, video_default_seconds, video_allowed_seconds, created_at, updated_at
 		 FROM channel_account_stats_model_pricing WHERE rule_id = ANY($1) ORDER BY rule_id, id`)).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "rule_id", "platform", "models", "billing_mode", "input_price", "output_price", "cache_write_price",
-			"cache_read_price", "image_input_price", "image_output_price", "per_request_price", "video_price_per_second", "video_default_seconds",
+			"id", "rule_id", "platform", "models", "billing_mode", "input_price", "output_price", "cache_write_price", "cache_write_1h_price",
+			"cache_read_price", "reasoning_effort_multipliers", "image_input_price", "image_output_price", "per_request_price", "video_price_per_second", "video_default_seconds",
 			"video_allowed_seconds", "created_at", "updated_at",
-		}).AddRow(int64(21), int64(9), "openai", []byte(`["sora-2"]`), "video", nil, nil, nil, nil, nil, nil, nil, 0.03, 10, []byte(`[5,10]`), now, now))
+		}).AddRow(int64(21), int64(9), "openai", []byte(`["sora-2"]`), "video", nil, nil, nil, nil, nil, []byte(`{}`), nil, nil, nil, 0.03, 10, []byte(`[5,10]`), now, now))
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
-		        input_price, output_price, cache_write_price, cache_read_price,
+		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
 		        per_request_price, video_price_per_second, sort_order, created_at, updated_at
 		 FROM channel_account_stats_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`)).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "pricing_id", "min_tokens", "max_tokens", "tier_label", "input_price", "output_price", "cache_write_price",
+			"id", "pricing_id", "min_tokens", "max_tokens", "tier_label", "input_price", "output_price", "cache_write_price", "cache_write_1h_price",
 			"cache_read_price", "per_request_price", "video_price_per_second", "sort_order", "created_at", "updated_at",
-		}).AddRow(int64(22), int64(21), 0, nil, "hd", nil, nil, nil, nil, nil, 0.05, 0, now, now))
+		}).AddRow(int64(22), int64(21), 0, nil, "hd", nil, nil, nil, nil, nil, nil, 0.05, 0, now, now))
 
 	got, err := repo.batchLoadAccountStatsModelPricing(context.Background(), []int64{9})
 	require.NoError(t, err)
@@ -174,9 +177,9 @@ func TestAccountStatsPricingWritesVideoColumnsAndIgnoresDescription(t *testing.T
 	mock.ExpectBegin()
 	tx, err := db.Begin()
 	require.NoError(t, err)
-	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_account_stats_model_pricing (rule_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_read_price, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id, created_at, updated_at`)).
-		WithArgs(int64(9), "openai", []byte(`["sora-2"]`), service.BillingModeVideo, nil, nil, nil, nil, nil, nil, nil, price, seconds, []byte(`[5,10]`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_account_stats_model_pricing (rule_id, platform, models, billing_mode, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, reasoning_effort_multipliers, image_input_price, image_output_price, per_request_price, video_price_per_second, video_default_seconds, video_allowed_seconds)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`)).
+		WithArgs(int64(9), "openai", []byte(`["sora-2"]`), service.BillingModeVideo, nil, nil, nil, nil, nil, `{}`, nil, nil, nil, price, seconds, []byte(`[5,10]`)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(int64(21), now, now))
 	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO channel_account_stats_pricing_intervals
 		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_read_price, per_request_price, video_price_per_second, sort_order)

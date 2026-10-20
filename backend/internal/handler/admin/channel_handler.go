@@ -372,7 +372,7 @@ func pricingRequestToService(reqs []channelModelPricingRequest, scope any) []ser
 			intervals = append(intervals, service.PricingInterval{
 				MinTokens:            iv.MinTokens,
 				MaxTokens:            iv.MaxTokens,
-				TierLabel:            iv.TierLabel,
+				TierLabel:            service.NormalizeVideoBillingTierLabel(iv.TierLabel),
 				InputPrice:           iv.InputPrice,
 				OutputPrice:          iv.OutputPrice,
 				CacheWritePrice:      iv.CacheWritePrice,
@@ -383,6 +383,7 @@ func pricingRequestToService(reqs []channelModelPricingRequest, scope any) []ser
 				CacheWriteMultiplier: cacheWriteMultiplier,
 				CacheReadMultiplier:  cacheReadMultiplier,
 				PerRequestPrice:      iv.PerRequestPrice,
+				VideoPricePerSecond:  iv.VideoPricePerSecond,
 				SortOrder:            iv.SortOrder,
 			})
 		}

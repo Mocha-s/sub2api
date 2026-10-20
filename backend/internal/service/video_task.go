@@ -181,6 +181,7 @@ func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, str
 		payload["resolution"] = resolution
 		delete(payload, "resolution_name")
 	}
+	delete(payload, "size")
 	if _, exists := payload["aspect_ratio"]; !exists {
 		if ratio := videoAspectRatioFromSize(fields["size"]); ratio != "" {
 			payload["aspect_ratio"] = ratio

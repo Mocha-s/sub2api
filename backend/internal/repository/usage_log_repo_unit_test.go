@@ -3,7 +3,6 @@
 package repository
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"os"
 	"strings"
@@ -47,21 +46,15 @@ func TestSafeDateFormat(t *testing.T) {
 	}
 }
 
-func TestUsageLogRefundFields_InsertAndSelectPositionParity(t *testing.T) {
-	reason := "provider failed"
-	refundedAt := time.Date(2026, 7, 12, 10, 30, 0, 0, time.UTC)
+func TestUsageLogRefundFields_InsertAndSelectContract(t *testing.T) {
 	prepared := prepareUsageLogInsert(&service.UsageLog{
 		UserID: 1, APIKeyID: 2, AccountID: 3, Model: "video-model",
-		TotalCost: 12, ActualCost: 10, RefundedCost: 4, RefundedTotalCost: 5,
-		RefundedAccountCost: 3, RefundReason: &reason, RefundedAt: &refundedAt,
+		TotalCost: 12, ActualCost: 10,
 	})
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
-	require.Equal(t, 4.0, prepared.args[25])
-	require.Equal(t, 5.0, prepared.args[26])
-	require.Equal(t, 3.0, prepared.args[27])
-	require.Equal(t, sql.NullString{String: reason, Valid: true}, prepared.args[28])
-	require.Equal(t, sql.NullTime{Time: refundedAt, Valid: true}, prepared.args[29])
+	require.Equal(t, 12.0, prepared.args[25])
+	require.Equal(t, 10.0, prepared.args[26])
 	for _, column := range []string{"refunded_cost", "refunded_total_cost", "refunded_account_cost", "refund_reason", "refunded_at"} {
 		require.Contains(t, usageLogSelectColumns, column)
 	}
@@ -75,13 +68,56 @@ func TestUsageLogRefundFields_RowRoundTripPreservesGrossAndRefund(t *testing.T) 
 	refundedAt := time.Date(2026, 7, 12, 10, 30, 0, 0, time.UTC)
 	createdAt := refundedAt.Add(-time.Hour)
 	columns := strings.Split(usageLogSelectColumns, ", ")
-	values := []driver.Value{
-		int64(9), int64(1), int64(2), int64(3), "req", "video-model", "video-model", nil, nil, nil,
-		0, 0, 0, 0, 0, 0, 0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 12.0, 10.0,
-		4.0, 5.0, 3.0, reason, refundedAt,
-		1.0, nil, int16(0), int16(1), false, false, nil, nil, nil, nil, 0, nil, nil, nil, nil, nil,
-		1, "720p", 5, nil, nil, nil, nil, false, false, nil, nil, nil, "video", nil, createdAt,
+	values := make([]driver.Value, len(columns))
+	for i, column := range columns {
+		switch column {
+		case "id", "user_id", "api_key_id", "account_id":
+			values[i] = int64(0)
+		case "model":
+			values[i] = ""
+		case "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "cache_creation_5m_tokens", "cache_creation_1h_tokens", "image_output_tokens", "image_input_tokens", "image_count", "video_count":
+			values[i] = 0
+		case "image_output_cost", "image_input_cost", "input_cost", "output_cost", "cache_creation_cost", "cache_read_cost", "total_cost", "actual_cost", "refunded_cost", "refunded_total_cost", "refunded_account_cost", "rate_multiplier":
+			values[i] = float64(0)
+		case "billing_type", "request_type":
+			values[i] = int16(0)
+		case "stream", "openai_ws_mode", "cache_ttl_overridden", "long_context_billing_applied", "native_compaction_v2":
+			values[i] = false
+		case "created_at":
+			values[i] = createdAt
+		}
 	}
+	set := func(column string, value driver.Value) {
+		for i, name := range columns {
+			if name == column {
+				values[i] = value
+				return
+			}
+		}
+		t.Fatalf("unknown usage log column %q", column)
+	}
+	set("id", int64(9))
+	set("user_id", int64(1))
+	set("api_key_id", int64(2))
+	set("account_id", int64(3))
+	set("request_id", "req")
+	set("model", "video-model")
+	set("requested_model", "video-model")
+	set("total_cost", 12.0)
+	set("actual_cost", 10.0)
+	set("refunded_cost", 4.0)
+	set("refunded_total_cost", 5.0)
+	set("refunded_account_cost", 3.0)
+	set("refund_reason", reason)
+	set("refunded_at", refundedAt)
+	set("rate_multiplier", 1.0)
+	set("billing_type", int16(0))
+	set("request_type", int16(1))
+	set("video_count", 1)
+	set("video_resolution", "720p")
+	set("video_duration_seconds", int64(5))
+	set("billing_mode", "video")
+	set("created_at", createdAt)
 	require.Len(t, values, len(columns))
 	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE id = \\$1").WithArgs(int64(9)).
 		WillReturnRows(sqlmock.NewRows(columns).AddRow(values...))

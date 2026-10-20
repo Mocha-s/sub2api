@@ -145,7 +145,11 @@ func (r *ModelPricingResolver) resolveConfiguredPricing(config *ChannelModelPric
 	}
 	resolved := &ResolvedPricing{Mode: mode, Source: source, channelPricing: config}
 	if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
-		r.applyRequestTierOverrides(config, resolved)
+		if mode == BillingModeVideo {
+			r.applyVideoOverrides(config, resolved)
+		} else {
+			r.applyRequestTierOverrides(config, resolved)
+		}
 		return resolved
 	}
 	resolved.BasePricing, _ = r.resolveBasePricing(model)
@@ -306,6 +310,9 @@ func (r *ModelPricingResolver) applyReasoningEffortOverrides(chPricing *ChannelM
 
 func (r *ModelPricingResolver) applyVideoOverrides(chPricing *ChannelModelPricing, resolved *ResolvedPricing) {
 	resolved.RequestTiers = filterValidIntervals(chPricing.Intervals)
+	if chPricing.PerRequestPrice != nil {
+		resolved.DefaultPerRequestPrice = *chPricing.PerRequestPrice
+	}
 	if chPricing.VideoPricePerSecond != nil {
 		resolved.VideoPricePerSecond = *chPricing.VideoPricePerSecond
 	}

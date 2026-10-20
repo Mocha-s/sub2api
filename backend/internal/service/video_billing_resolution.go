@@ -40,11 +40,25 @@ func LookupVideoBillingResolution(resolution string) (string, bool) {
 		return VideoBillingResolution480P, true
 	case "720", "720p", "hd":
 		return VideoBillingResolution720P, true
+	case "1280x720":
+		return VideoBillingResolution720P, true
 	case "1080", "1080p", "full_hd", "full-hd", "fhd":
+		return VideoBillingResolution1080P, true
+	case "1920x1080":
 		return VideoBillingResolution1080P, true
 	default:
 		return "", false
 	}
+}
+
+// NormalizeVideoBillingTierLabel lowercases custom tier labels and canonicalizes
+// the known resolution aliases while preserving provider-specific labels.
+func NormalizeVideoBillingTierLabel(label string) string {
+	label = strings.ToLower(strings.TrimSpace(label))
+	if normalized, ok := LookupVideoBillingResolution(label); ok {
+		return normalized
+	}
+	return label
 }
 
 // NormalizeVideoBillingResolutionOrDefault 用于运行时计费：上游回传的分辨率

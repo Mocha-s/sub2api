@@ -360,6 +360,17 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 
 	// per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
 	if mode == BillingModePerRequest || mode == BillingModeImage || mode == BillingModeVideo {
+		seenLabels := make(map[string]struct{}, len(sorted))
+		for i := range sorted {
+			label := NormalizeVideoBillingTierLabel(sorted[i].TierLabel)
+			if label == "" {
+				return fmt.Errorf("interval #%d: tier_label is required", i+1)
+			}
+			if _, exists := seenLabels[label]; exists {
+				return fmt.Errorf("interval #%d: tier_label %q must be unique", i+1, label)
+			}
+			seenLabels[label] = struct{}{}
+		}
 		return nil
 	}
 	return validateIntervalOverlap(sorted)

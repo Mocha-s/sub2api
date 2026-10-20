@@ -896,6 +896,16 @@ func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	if trimmed == "" {
 		return ""
 	}
+	if platform == PlatformOpenAI {
+		modelStart := 0
+		if slash := strings.LastIndex(trimmed, "/"); slash >= 0 {
+			modelStart = slash + 1
+		}
+		model := trimmed[modelStart:]
+		if strings.HasPrefix(strings.ToLower(model), "seedance") && len(model) > len("seedance") && model[len("seedance")] != '-' {
+			return trimmed[:modelStart] + model[:len("seedance")] + "-" + model[len("seedance"):]
+		}
+	}
 	if platform != PlatformGemini && platform != PlatformAntigravity {
 		return trimmed
 	}

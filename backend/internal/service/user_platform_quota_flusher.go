@@ -150,6 +150,9 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		if e == nil {
 			continue
 		}
+		if e.SchemaVersion != UserPlatformQuotaCacheSchemaV1 {
+			continue
+		}
 		if e.DailyWindowStart == nil || e.WeeklyWindowStart == nil || e.MonthlyWindowStart == nil {
 			continue
 		}

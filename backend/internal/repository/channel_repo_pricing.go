@@ -55,9 +55,9 @@ func (r *channelRepository) UpdateModelPricing(ctx context.Context, pricing *ser
 	if err != nil {
 		return fmt.Errorf("marshal video allowed seconds: %w", err)
 	}
-	reasoningEffortMultipliersJSON, err := json.Marshal(pricing.ReasoningEffortMultipliers)
+	reasoningEffortMultipliersJSON, err := marshalReasoningEffortMultipliers(pricing.ReasoningEffortMultipliers)
 	if err != nil {
-		return fmt.Errorf("marshal reasoning effort multipliers: %w", err)
+		return err
 	}
 	billingMode := pricing.BillingMode
 	if billingMode == "" {
@@ -252,9 +252,9 @@ func createModelPricingExec(ctx context.Context, exec dbExec, pricing *service.C
 	if err != nil {
 		return fmt.Errorf("marshal video allowed seconds: %w", err)
 	}
-	reasoningEffortMultipliersJSON, err := json.Marshal(pricing.ReasoningEffortMultipliers)
+	reasoningEffortMultipliersJSON, err := marshalReasoningEffortMultipliers(pricing.ReasoningEffortMultipliers)
 	if err != nil {
-		return fmt.Errorf("marshal reasoning multipliers: %w", err)
+		return err
 	}
 	billingMode := pricing.BillingMode
 	if billingMode == "" {

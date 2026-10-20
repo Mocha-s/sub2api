@@ -1815,6 +1815,25 @@ func (s *BillingService) calculatePerRequestCost(resolved *ResolvedPricing, inpu
 		}
 		units = float64(count)
 	}
+	if resolved.Mode == BillingModeVideo {
+		unitPrice := resolved.VideoPricePerSecond
+		if unitPrice == 0 {
+			unitPrice = resolved.DefaultPerRequestPrice
+		}
+		wantedTier := NormalizeVideoBillingTierLabel(input.SizeTier)
+		for _, interval := range resolved.RequestTiers {
+			if interval.VideoPricePerSecond != nil && NormalizeVideoBillingTierLabel(interval.TierLabel) == wantedTier {
+				unitPrice = *interval.VideoPricePerSecond
+				break
+			}
+		}
+		totalCost := unitPrice * units
+		return &CostBreakdown{
+			TotalCost:   totalCost,
+			ActualCost:  totalCost * input.RateMultiplier,
+			BillingMode: string(BillingModeVideo),
+		}, nil
+	}
 
 	var unitPrice float64
 

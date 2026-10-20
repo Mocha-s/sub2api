@@ -92,6 +92,25 @@ func TestRecordUsage_ImageReasoningPricing(t *testing.T) {
 	}
 }
 
+func TestCalculateRecordUsageCost_ChannelImagePricingCountsAliasRequest(t *testing.T) {
+	groupID := int64(77)
+	model := "gemini-3-pro-image-preview"
+	price := 0.25
+	resolver := newOpenAIImageChannelPricingResolverForTest(t, groupID, model, price)
+	cache := resolver.channelService.cache.Load().(*channelCache)
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}].BillingMode = BillingModeImage
+	apiKey := &APIKey{GroupID: &groupID, Group: &Group{ID: groupID}}
+	result := &ForwardResult{Model: model, Usage: ClaudeUsage{ImageOutputTokens: 5}}
+	svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
+
+	cost := svc.calculateRecordUsageCost(context.Background(), result, apiKey, model, 1, 1, time.Time{})
+
+	require.Equal(t, 1, result.ImageCount)
+	require.NotNil(t, cost)
+	require.Equal(t, string(BillingModeImage), cost.BillingMode)
+	require.InDelta(t, price, cost.TotalCost, 1e-12)
+}
+
 func TestCalculateRecordUsageCost_MediaReasoningPricing(t *testing.T) {
 	for _, source := range []string{PricingSourceChannel, PricingSourceGroup} {
 		for _, media := range []string{"gateway_audio", "openai_audio", "openai_video"} {
@@ -107,6 +126,7 @@ func TestCalculateRecordUsageCost_MediaReasoningPricing(t *testing.T) {
 				wantTotal := 1.0 // Two units at $0.25, with high=2.
 				if media == "openai_video" {
 					pricing.BillingMode = BillingModeVideo
+					pricing.VideoPricePerSecond = &price
 					wantTotal = 5 // Two five-second videos at $0.25/second, with high=2.
 				}
 				apiKey := &APIKey{GroupID: &groupID, Group: &Group{ID: groupID, Hydrated: true}}
@@ -123,6 +143,11 @@ func TestCalculateRecordUsageCost_MediaReasoningPricing(t *testing.T) {
 					}, apiKey, model, 0.5, 0.5, time.Time{})
 				} else {
 					svc := &OpenAIGatewayService{billingService: resolver.billingService, resolver: resolver}
+					if media == "openai_video" && source == PricingSourceChannel {
+						resolved := resolver.Resolve(context.Background(), PricingInput{Model: model, GroupID: &groupID, Group: apiKey.Group})
+						require.Equal(t, BillingModeVideo, resolved.Mode)
+						require.InDelta(t, price, resolved.VideoPricePerSecond, 1e-12)
+					}
 					result := &OpenAIForwardResult{ReasoningEffort: &effort}
 					if media == "openai_audio" {
 						result.AudioUsage = &AudioUsage{Mode: "tts", DurationOrUnits: 2}

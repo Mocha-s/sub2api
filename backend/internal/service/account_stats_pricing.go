@@ -13,7 +13,7 @@ import (
 // 优先级（先命中为准）：
 //  1. 自定义规则（始终尝试，不依赖 ApplyPricingToAccountStats 开关）
 //  2. ApplyPricingToAccountStats 启用时，直接使用本次请求的客户计费（倍率前的 totalCost）
-//  3. 模型定价文件（LiteLLM）中上游模型的默认价格
+//  3. Token 计费使用模型定价文件（LiteLLM）中上游模型的默认价格
 //  4. nil → 走默认公式（total_cost × account_rate_multiplier）
 //
 // upstreamModel 是最终发往上游的模型 ID。
@@ -34,14 +34,11 @@ func resolveAccountStatsCost(
 	requestCount int,
 	totalCost float64,
 	serviceTier string,
+	reasoningEffort string,
 	pricingAt time.Time,
 	longContextPricingEnabled bool,
-	reasoningEfforts ...string,
+	billingMode BillingMode,
 ) *float64 {
-	reasoningEffort := ""
-	if len(reasoningEfforts) > 0 {
-		reasoningEffort = reasoningEfforts[0]
-	}
 	if channelService == nil || upstreamModel == "" {
 		return nil
 	}
@@ -64,6 +61,10 @@ func resolveAccountStatsCost(
 			return nil
 		}
 		return &cost
+	}
+
+	if billingMode == BillingModeImage || billingMode == BillingModePerRequest || billingMode == BillingModeVideo {
+		return nil
 	}
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
@@ -359,6 +360,9 @@ func applyAccountStatsCost(
 	pricingAt time.Time,
 	longContextPricingEnabled bool,
 ) {
+	if usageLog == nil {
+		return
+	}
 	model := upstreamModel
 	if model == "" {
 		model = requestedModel
@@ -375,8 +379,12 @@ func applyAccountStatsCost(
 	if usageLog != nil && usageLog.ReasoningEffort != nil {
 		reasoningEffort = *usageLog.ReasoningEffort
 	}
+	billingMode := BillingModeToken
+	if usageLog.BillingMode != nil {
+		billingMode = BillingMode(*usageLog.BillingMode)
+	}
 	usageLog.AccountStatsCost = resolveAccountStatsCost(
-		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort,
+		ctx, cs, bs, accountID, groupID, model, tokens, requestCount, totalCost, serviceTier, reasoningEffort, pricingAt, longContextPricingEnabled, billingMode,
 	)
 }
 
