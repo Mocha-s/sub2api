@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -88,11 +89,13 @@ func TestCompositeRouteResolverDetectorSelectsLowestPriorityConcreteTarget(t *te
 }
 
 func TestCompositeRouteResolverConfiguredButUnusableTargetsFailClosed(t *testing.T) {
+	deletedAt := time.Now()
 	for _, scenario := range []struct {
 		name   string
 		target CompositeGroupTarget
 	}{
 		{name: "disabled reference", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: false, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive}}},
+		{name: "soft deleted reference", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, DeletedAt: &deletedAt, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive}}},
 		{name: "inactive target group", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusDisabled}}},
 		{name: "nested composite", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, TargetGroup: &Group{ID: 20, Platform: PlatformComposite, Status: StatusActive}}},
 	} {

@@ -90,6 +90,11 @@ func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (
 	targetID := *decision.TargetGroupID
 	copy.GroupID = &targetID
 	copy.Group = decision.TargetGroup
+	if apiKey.User != nil {
+		user := *apiKey.User
+		user.UserGroupRPMOverride = nil
+		copy.User = &user
+	}
 	return &copy, true
 }
 

@@ -704,6 +704,44 @@ func TestResolveVideoTaskPricingUsesUserRateForPerRequestAndIndependentRateForVi
 	}
 }
 
+func TestResolveVideoTaskPricingUsesCompositeBillingGroupVideoRate(t *testing.T) {
+	const (
+		sourceGroupID   = int64(42)
+		targetGroupID   = int64(43)
+		sourceVideoRate = 0.07
+		targetVideoRate = 0.99
+	)
+	price := 65.0
+	cache := newEmptyChannelCache()
+	cache.loadedAt = time.Now()
+	cache.channelByGroupID[targetGroupID] = &Channel{ID: 7, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+	cache.groupPlatform[targetGroupID] = PlatformOpenAI
+	cache.pricingByGroupModel[channelModelKey{groupID: targetGroupID, platform: PlatformOpenAI, model: "sora-2"}] = &ChannelModelPricing{BillingMode: BillingModeVideo, PerRequestPrice: &price}
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	svc := &OpenAIGatewayService{
+		cfg:                   &config.Config{Default: config.DefaultConfig{RateMultiplier: 0.25}},
+		channelService:        channelService,
+		userGroupRateResolver: newUserGroupRateResolver(&openAIVideoRateResolverRepoStub{}, nil, time.Minute, nil, "service.openai_video.test"),
+	}
+
+	targetID := targetGroupID
+	selection := svc.ResolveVideoTaskPricing(
+		WithCompositeBillingGroup(context.Background(), &Group{
+			ID: sourceGroupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: 0.4,
+			VideoRateIndependent: true, VideoRateMultiplier: sourceVideoRate,
+		}),
+		VideoTaskPricingResolveInput{
+			GroupID: targetGroupID,
+			APIKey:  &APIKey{GroupID: &targetID, Group: &Group{ID: targetGroupID, Platform: PlatformOpenAI, VideoRateIndependent: true, VideoRateMultiplier: targetVideoRate}},
+			Account: &Account{}, RequestedModel: "sora-2",
+		},
+	)
+
+	require.NotNil(t, selection.Pricing)
+	require.InDelta(t, sourceVideoRate, selection.RateMultiplier, 1e-12)
+}
+
 func TestResolveVideoTaskPricingFallsBackWithoutAPIKeyGroup(t *testing.T) {
 	groupID := int64(42)
 	const defaultRate = 0.25

@@ -1513,7 +1513,7 @@ func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	for _, target := range targets {
-		if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || (platform != "" && target.TargetGroup.Platform != platform) {
+		if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || (platform != "" && target.TargetGroup.Platform != platform) {
 			continue
 		}
 		targetID := target.TargetGroupID
@@ -1540,8 +1540,18 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 		return CompositeModelOwnership{}, nil
 	}
 
+	var targets []CompositeGroupTarget
+	dynamicTargets := false
+	if s.compositeResolver != nil {
+		var err error
+		targets, err = s.compositeResolver.ListCompositeTargets(ctx, groupID)
+		if err != nil {
+			return CompositeModelOwnership{}, err
+		}
+		dynamicTargets = len(targets) > 0
+	}
 	cacheKey := compositeModelOwnershipCacheKey(groupID, model)
-	if s.modelsListCache != nil {
+	if !dynamicTargets && s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
 			if ownership, ok := cached.(CompositeModelOwnership); ok {
 				return ownership, nil
@@ -1552,27 +1562,17 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 	// 归属取决于配置而非运行时健康：限流/临时不可调度不应让同一模型在
 	// 「唯一归属」与「歧义」之间来回翻转，否则配置错误只会间歇暴露。
 	accounts := make([]Account, 0)
-	if s.compositeResolver != nil {
-		if targets, targetErr := s.compositeResolver.ListCompositeTargets(ctx, groupID); targetErr != nil {
-			return CompositeModelOwnership{}, targetErr
-		} else if len(targets) > 0 {
-			for _, target := range targets {
-				if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) {
-					continue
-				}
-				targetID := target.TargetGroupID
-				candidateAccounts, candidateErr := s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
-				if candidateErr != nil {
-					return CompositeModelOwnership{}, candidateErr
-				}
-				accounts = append(accounts, candidateAccounts...)
+	if dynamicTargets {
+		for _, target := range targets {
+			if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) {
+				continue
 			}
-		} else {
-			var listErr error
-			accounts, listErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
-			if listErr != nil {
-				return CompositeModelOwnership{}, listErr
+			targetID := target.TargetGroupID
+			candidateAccounts, candidateErr := s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
+			if candidateErr != nil {
+				return CompositeModelOwnership{}, candidateErr
 			}
+			accounts = append(accounts, candidateAccounts...)
 		}
 	} else {
 		var listErr error
@@ -1601,7 +1601,7 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 		ownership.Ambiguous = true
 	}
 
-	if s.modelsListCache != nil {
+	if !dynamicTargets && s.modelsListCache != nil {
 		s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
 	}
 	return ownership, nil

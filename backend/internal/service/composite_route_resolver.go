@@ -230,7 +230,7 @@ func (r *CompositeRouteResolver) loadTargets(ctx context.Context, groupID int64)
 
 func applyCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, targetID int64) bool {
 	for _, target := range targets {
-		if target.TargetGroupID != targetID || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) || target.TargetGroup.Platform != decision.TargetPlatform {
+		if target.TargetGroupID != targetID || target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) || target.TargetGroup.Platform != decision.TargetPlatform {
 			continue
 		}
 		decision.TargetGroupID = &target.TargetGroupID
@@ -249,7 +249,7 @@ func applyDetectedCompositeTarget(decision *CompositeRouteDecision, targets []Co
 		return ordered[i].TargetGroupID < ordered[j].TargetGroupID
 	})
 	for _, target := range ordered {
-		if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != platform {
+		if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != platform {
 			continue
 		}
 		decision.TargetGroupID = &target.TargetGroupID

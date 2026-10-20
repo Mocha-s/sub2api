@@ -113,7 +113,11 @@ func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, in
 		selection.RateMultiplier, _ = computePeakAwareMultipliers(apiKeyWithBillingGroup(input.APIKey, billingGroup, billingGroupID), baseMultiplier, now)
 	}
 	if selection.Pricing.BillingMode == BillingModeVideo {
-		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, baseMultiplier)
+		videoRateKey := input.APIKey
+		if _, composite := CompositeBillingGroupFromContext(ctx); composite {
+			videoRateKey = apiKeyWithBillingGroup(input.APIKey, billingGroup, billingGroupID)
+		}
+		selection.RateMultiplier = resolveVideoRateMultiplier(videoRateKey, baseMultiplier)
 	}
 	return selection
 }

@@ -709,6 +709,9 @@ func installCompositeRequestTarget(c *gin.Context, apiKey *service.APIKey, decis
 	if effectiveKey, installed := service.EffectiveCompositeAPIKey(apiKey, decision); installed {
 		ctx = service.WithEffectiveCompositeGroup(ctx, effectiveKey.Group)
 		c.Set(string(middleware.ContextKeyAPIKey), effectiveKey)
+		if effectiveKey.User != nil {
+			effectiveKey.User.UserGroupRPMOverride = nil
+		}
 	}
 	c.Request = c.Request.WithContext(ctx)
 }
@@ -750,16 +753,43 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 }
 
 func installCompositeTargetSubscription(c *gin.Context, apiKey *service.APIKey, subscriptionServices ...*service.SubscriptionService) bool {
-	if apiKey != nil && apiKey.Group != nil && !apiKey.Group.IsSubscriptionType() {
+	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
+		return true
+	}
+	// A Composite request without a resolved concrete target is the legacy
+	// copied-account path; keep its existing source-group checks unchanged.
+	if apiKey.Group.Platform == service.PlatformComposite {
+		return true
+	}
+	if !apiKey.Group.IsSubscriptionType() {
 		c.Set(string(middleware.ContextKeySubscription), (*service.UserSubscription)(nil))
 		return true
 	}
-	if len(subscriptionServices) == 0 || subscriptionServices[0] == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
+	if len(subscriptionServices) == 0 || subscriptionServices[0] == nil {
 		return true
 	}
 	subscription, err := subscriptionServices[0].GetActiveSubscription(c.Request.Context(), apiKey.User.ID, apiKey.Group.ID)
 	if err != nil || subscription == nil {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "subscription_error", "message": "No active subscription found for target group"}})
+		return false
+	}
+	needsMaintenance, validateErr := subscriptionServices[0].ValidateAndCheckLimits(subscription, apiKey.Group)
+	if needsMaintenance {
+		subscription, err = subscriptionServices[0].EnsureWindowMaintenance(c.Request.Context(), subscription)
+		if err == nil {
+			_, validateErr = subscriptionServices[0].ValidateAndCheckLimits(subscription, apiKey.Group)
+		}
+	}
+	if err != nil || validateErr != nil {
+		status := http.StatusForbidden
+		errorType := "subscription_invalid"
+		message := "Target group subscription is not valid"
+		if errors.Is(validateErr, service.ErrDailyLimitExceeded) || errors.Is(validateErr, service.ErrWeeklyLimitExceeded) || errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
+			status = http.StatusTooManyRequests
+			errorType = "usage_limit_exceeded"
+			message = "Target group subscription limit exceeded"
+		}
+		c.AbortWithStatusJSON(status, gin.H{"error": gin.H{"type": errorType, "message": message}})
 		return false
 	}
 	c.Set(string(middleware.ContextKeySubscription), subscription)

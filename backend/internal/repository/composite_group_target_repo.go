@@ -43,7 +43,7 @@ func (r *compositeGroupTargetRepository) ListByCompositeGroup(ctx context.Contex
 }
 
 func (r *compositeGroupTargetRepository) listAllByCompositeGroup(ctx context.Context, compositeGroupID int64) ([]service.CompositeGroupTarget, error) {
-	rows, err := r.sql.QueryContext(ctx, `SELECT t.id,t.composite_group_id,t.target_group_id,t.priority,t.enabled,t.created_at,t.updated_at,t.deleted_at,g.id,g.name,g.platform,g.status FROM composite_group_targets t LEFT JOIN groups g ON g.id=t.target_group_id WHERE t.composite_group_id=$1 ORDER BY t.priority,t.target_group_id,t.id`, compositeGroupID)
+	rows, err := r.sql.QueryContext(ctx, `SELECT t.id,t.composite_group_id,t.target_group_id,t.priority,t.enabled,t.created_at,t.updated_at,t.deleted_at,g.id,g.name,g.platform,g.status FROM composite_group_targets t LEFT JOIN groups g ON g.id=t.target_group_id AND g.deleted_at IS NULL WHERE t.composite_group_id=$1 ORDER BY t.priority,t.target_group_id,t.id`, compositeGroupID)
 	if err != nil {
 		return nil, err
 	}

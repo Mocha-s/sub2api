@@ -277,7 +277,17 @@ func (s *adminServiceImpl) ListCompositeTargets(ctx context.Context, groupID int
 	if s.compositeTargetRepo == nil {
 		return nil, fmt.Errorf("composite target repository is not configured")
 	}
-	return s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	targets, err := s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	if err != nil {
+		return nil, err
+	}
+	active := targets[:0]
+	for _, target := range targets {
+		if target.DeletedAt == nil {
+			active = append(active, target)
+		}
+	}
+	return active, nil
 }
 
 func (s *adminServiceImpl) CreateCompositeTarget(ctx context.Context, groupID int64, input CompositeGroupTargetInput) (*CompositeGroupTarget, error) {
@@ -373,7 +383,7 @@ func (s *adminServiceImpl) findCompositeTarget(ctx context.Context, groupID, tar
 		return CompositeGroupTarget{}, err
 	}
 	for _, target := range targets {
-		if target.ID == targetID {
+		if target.ID == targetID && target.DeletedAt == nil {
 			return target, nil
 		}
 	}

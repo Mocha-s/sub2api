@@ -1169,15 +1169,19 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID, "", true)
+		dynamicTargetsConfigured := false
+		if groupID != nil {
+			_, dynamicTargetsConfigured, _ = h.gatewayService.GetCompositeTargetModels(c.Request.Context(), *groupID, "")
+		}
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
 			source := availableModels
-			if len(source) == 0 {
+			if len(source) == 0 && !dynamicTargetsConfigured {
 				source = defaultModelIDsForPlatform(service.PlatformComposite)
 			}
 			writeAllowlistedModelsList(c, service.PlatformComposite, apiKey.Group.ModelAllowlist.FilterForListing(source))
 			return
 		}
-		if len(availableModels) > 0 {
+		if len(availableModels) > 0 || dynamicTargetsConfigured {
 			writeModelsList(c, service.PlatformComposite, availableModels)
 			return
 		}
