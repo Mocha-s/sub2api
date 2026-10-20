@@ -1414,7 +1414,11 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	var err error
 
 	if groupID != nil {
-		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+		if s.schedulerSnapshot != nil {
+			accounts, _, err = s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
+		} else {
+			accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+		}
 	} else {
 		accounts, err = s.accountRepo.ListSchedulable(ctx)
 	}
@@ -1517,7 +1521,6 @@ func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int
 			continue
 		}
 		targetID := target.TargetGroupID
-		s.InvalidateAvailableModelsCache(&targetID, platform)
 		for _, model := range s.GetAvailableModels(ctx, &targetID, platform) {
 			key := strings.ToLower(strings.TrimSpace(model))
 			if key == "" {
@@ -1568,7 +1571,13 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 				continue
 			}
 			targetID := target.TargetGroupID
-			candidateAccounts, candidateErr := s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
+			var candidateAccounts []Account
+			var candidateErr error
+			if s.schedulerSnapshot != nil {
+				candidateAccounts, _, candidateErr = s.schedulerSnapshot.ListSchedulableAccounts(ctx, &targetID, target.TargetGroup.Platform, false)
+			} else {
+				candidateAccounts, candidateErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
+			}
 			if candidateErr != nil {
 				return CompositeModelOwnership{}, candidateErr
 			}

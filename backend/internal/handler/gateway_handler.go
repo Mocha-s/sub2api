@@ -1171,7 +1171,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID, "", true)
 		dynamicTargetsConfigured := false
 		if groupID != nil {
-			_, dynamicTargetsConfigured, _ = h.gatewayService.GetCompositeTargetModels(c.Request.Context(), *groupID, "")
+			var targetErr error
+			_, dynamicTargetsConfigured, targetErr = h.gatewayService.GetCompositeTargetModels(c.Request.Context(), *groupID, "")
+			if targetErr != nil {
+				dynamicTargetsConfigured = true
+			}
 		}
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
 			source := availableModels
@@ -1305,7 +1309,9 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 		return nil
 	}
 	if groupID != nil {
-		if targetModels, configured, err := h.gatewayService.GetCompositeTargetModels(ctx, *groupID, ""); err == nil && configured {
+		if targetModels, configured, err := h.gatewayService.GetCompositeTargetModels(ctx, *groupID, ""); err != nil {
+			return []string{}
+		} else if configured {
 			seen := make(map[string]struct{}, len(targetModels))
 			for _, model := range targetModels {
 				seen[strings.ToLower(model)] = struct{}{}

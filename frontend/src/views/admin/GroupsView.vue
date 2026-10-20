@@ -4173,7 +4173,7 @@
                 <label class="input-label">{{ t("admin.groups.compositeRoutes.targetGroup") }}</label>
                 <select v-model.number="compositeRouteForm.target_group_id" class="input">
                   <option :value="undefined">{{ t("admin.groups.compositeRoutes.targetGroupAuto") }}</option>
-                  <option v-for="option in compositeTargetGroupOptions" :key="option.value" :value="option.value">
+                  <option v-for="option in compositeRouteTargetGroupOptions" :key="option.value" :value="option.value">
                     {{ option.label }}
                   </option>
                 </select>
@@ -4883,8 +4883,20 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 const compositeTargetGroupOptions = computed(() => {
   const currentId = compositeRoutesGroup.value?.id;
   return sortableGroups.value
-    .filter((g) => g.id !== currentId && g.platform !== "composite" && g.status === "active")
+    .filter(
+      (g) =>
+        g.id !== currentId &&
+        g.platform !== "composite" &&
+        g.status === "active",
+    )
     .map((g) => ({ value: g.id, label: `${g.name} (${platformLabel(g.platform)})` }));
+});
+
+const compositeRouteTargetGroupOptions = computed(() => {
+  const configuredTargetIDs = new Set(
+    compositeTargets.value.filter((target) => target.enabled).map((target) => target.target_group_id),
+  );
+  return compositeTargetGroupOptions.value.filter((option) => configuredTargetIDs.has(option.value));
 });
 
 const groups = ref<AdminGroup[]>([]);

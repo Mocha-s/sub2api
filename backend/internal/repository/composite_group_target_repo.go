@@ -61,8 +61,13 @@ func (r *compositeGroupTargetRepository) listAllByCompositeGroup(ctx context.Con
 			target.DeletedAt = &deletedAt.Time
 		}
 		if targetID.Valid {
-			target.TargetGroupInfo = &service.CompositeTargetGroupInfo{ID: targetID.Int64, Name: targetName.String, Platform: targetPlatform.String, Status: targetStatus.String}
-			target.TargetGroup = &service.Group{ID: targetID.Int64, Name: targetName.String, Platform: targetPlatform.String, Status: targetStatus.String, Hydrated: true}
+			if targetGroup, groupErr := clientFromContext(ctx, r.client).Group.Get(ctx, targetID.Int64); groupErr == nil {
+				target.TargetGroup = groupEntityToService(targetGroup)
+				target.TargetGroupInfo = &service.CompositeTargetGroupInfo{
+					ID: targetGroup.ID, Name: targetGroup.Name,
+					Platform: targetGroup.Platform, Status: targetGroup.Status,
+				}
+			}
 		}
 		out = append(out, target)
 	}

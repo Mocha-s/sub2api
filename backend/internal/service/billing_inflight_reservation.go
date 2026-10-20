@@ -493,13 +493,14 @@ func (d inflightEstimateDeps) rates(ctx context.Context, apiKey *APIKey) (text, 
 	if d.cfg != nil && d.cfg.Default.RateMultiplier > 0 {
 		rate = d.cfg.Default.RateMultiplier
 	}
-	if apiKey != nil && apiKey.GroupID != nil && apiKey.Group != nil {
-		rate = apiKey.Group.RateMultiplier
+	billingGroup, billingGroupID, _ := customerBillingGroup(ctx, apiKey)
+	if billingGroup != nil && billingGroupID != nil {
+		rate = billingGroup.RateMultiplier
 		if d.userGroupRate != nil && apiKey.User != nil {
-			rate = d.userGroupRate(ctx, apiKey.User.ID, *apiKey.GroupID, rate)
+			rate = d.userGroupRate(ctx, apiKey.User.ID, *billingGroupID, rate)
 		}
 	}
-	return computePeakAwareMultipliers(apiKey, rate, timezone.Now())
+	return computePeakAwareMultipliers(apiKeyWithBillingGroup(apiKey, billingGroup, billingGroupID), rate, timezone.Now())
 }
 
 func tokenCounts(cfg config.InflightReservationConfig, bodyBytes, maxTokens int) (int, int) {

@@ -652,6 +652,11 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 		// 解析保持一致），避免顶层 model 别名与 session 模型不一致时改错对象。
 		routePath := c.FullPath()
 		model := requestmodel.FromBodyForRoute(routePath, c.GetHeader("Content-Type"), body)
+		if model == "" && strings.Contains(c.Request.URL.Path, "/images/") {
+			// Keep Composite resolution aligned with ParseOpenAIImagesRequest,
+			// whose public default is gpt-image-2.
+			model = "gpt-image-2"
+		}
 		if model != "" {
 			decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, compositeRouteEndpointForPath(c.Request.URL.Path))
 			if err != nil {
@@ -678,23 +683,23 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 				if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
 					return
 				}
-				allowlistGroup := apiKey.Group
-				if effectiveKey != nil && effectiveKey.Group != nil {
-					allowlistGroup = effectiveKey.Group
-				}
-				for _, candidate := range requestmodel.FromBodyCandidates(routePath, c.GetHeader("Content-Type"), body) {
-					if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(candidate) {
-						service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
-						c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", candidate)}})
-						return
-					}
-				}
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
 							body = rewritten
 						}
 					}
+				}
+			}
+			allowlistGroup := apiKey.Group
+			if effectiveKey, ok := middleware.GetAPIKeyFromContext(c); ok && effectiveKey.Group != nil {
+				allowlistGroup = effectiveKey.Group
+			}
+			for _, candidate := range requestmodel.FromBodyCandidates(routePath, c.GetHeader("Content-Type"), body) {
+				if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(candidate) {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+					c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", candidate)}})
+					return
 				}
 			}
 		}
