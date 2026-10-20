@@ -55,6 +55,10 @@ func (r *CompositeRouteResolver) SetTargetRepository(repo CompositeGroupTargetRe
 	}
 }
 
+func (r *CompositeRouteResolver) ListCompositeTargets(ctx context.Context, groupID int64) ([]CompositeGroupTarget, error) {
+	return r.loadTargets(ctx, groupID)
+}
+
 // ListExactPublicModels returns enabled, concrete route IDs suitable for a model catalog.
 func (r *CompositeRouteResolver) ListExactPublicModels(ctx context.Context, groupID int64, endpoint string, includeSystemOne bool) ([]string, error) {
 	if r == nil || r.repo == nil || groupID <= 0 {

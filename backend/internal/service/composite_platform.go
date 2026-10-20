@@ -100,14 +100,16 @@ func customerBillingGroup(ctx context.Context, apiKey *APIKey) (*Group, *int64, 
 		id := group.ID
 		return group, &id, group.DynamicRateBillingEnabled
 	}
-	if apiKey == nil || apiKey.Group == nil || apiKey.GroupID == nil {
+	if apiKey == nil || apiKey.Group == nil {
 		return nil, nil, true
 	}
-	managedRate := true
-	if apiKey.Group.Platform == PlatformComposite {
-		managedRate = apiKey.Group.DynamicRateBillingEnabled
+	if apiKey.GroupID == nil {
+		return apiKey.Group, nil, apiKey.Group.Platform != PlatformComposite || apiKey.Group.DynamicRateBillingEnabled
 	}
-	return apiKey.Group, apiKey.GroupID, managedRate
+	if apiKey.Group.Platform == PlatformComposite {
+		return apiKey.Group, apiKey.GroupID, apiKey.Group.DynamicRateBillingEnabled
+	}
+	return apiKey.Group, apiKey.GroupID, true
 }
 
 func apiKeyWithBillingGroup(apiKey *APIKey, group *Group, groupID *int64) *APIKey {
