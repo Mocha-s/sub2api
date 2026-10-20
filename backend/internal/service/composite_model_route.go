@@ -73,15 +73,18 @@ type CompositeRoutePreviewRequest struct {
 }
 
 type CompositeRouteDecision struct {
-	Matched        bool                 `json:"matched"`
-	Source         string               `json:"source"`
-	GroupID        int64                `json:"group_id"`
-	PublicModel    string               `json:"public_model"`
-	TargetPlatform string               `json:"target_platform"`
-	UpstreamModel  string               `json:"upstream_model"`
-	Endpoint       string               `json:"endpoint"`
-	Route          *CompositeModelRoute `json:"route,omitempty"`
-	Reason         string               `json:"reason,omitempty"`
+	Matched                  bool                 `json:"matched"`
+	Source                   string               `json:"source"`
+	GroupID                  int64                `json:"group_id"`
+	PublicModel              string               `json:"public_model"`
+	TargetPlatform           string               `json:"target_platform"`
+	TargetGroupID            *int64               `json:"target_group_id,omitempty"`
+	TargetGroup              *Group               `json:"-"`
+	DynamicTargetsConfigured bool                 `json:"dynamic_targets_configured,omitempty"`
+	UpstreamModel            string               `json:"upstream_model"`
+	Endpoint                 string               `json:"endpoint"`
+	Route                    *CompositeModelRoute `json:"route,omitempty"`
+	Reason                   string               `json:"reason,omitempty"`
 }
 
 type CompositeRouteInput struct {

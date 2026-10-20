@@ -161,6 +161,9 @@ func (s *adminServiceImpl) CreateCompositeRoute(ctx context.Context, groupID int
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateCompositeRouteTarget(ctx, groupID, route); err != nil {
+		return nil, err
+	}
 	if err := s.compositeRouteRepo.Create(ctx, route); err != nil {
 		return nil, err
 	}
@@ -184,6 +187,9 @@ func (s *adminServiceImpl) UpdateCompositeRoute(ctx context.Context, groupID, ro
 	}
 	route, err := compositeRouteFromInput(groupID, input)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateCompositeRouteTarget(ctx, groupID, route); err != nil {
 		return nil, err
 	}
 	route.ID = routeID
@@ -222,6 +228,7 @@ func (s *adminServiceImpl) PreviewCompositeRoute(ctx context.Context, groupID in
 	if resolver == nil {
 		resolver = NewCompositeRouteResolver(s.compositeRouteRepo)
 	}
+	resolver.SetTargetRepository(s.compositeTargetRepo)
 	decision, err := resolver.Resolve(ctx, groupID, input.Model, input.Endpoint)
 	if err != nil {
 		return nil, err
@@ -238,6 +245,26 @@ func (s *adminServiceImpl) requireCompositeGroup(ctx context.Context, groupID in
 		return fmt.Errorf("group %d is not a composite group", groupID)
 	}
 	return nil
+}
+
+func (s *adminServiceImpl) validateCompositeRouteTarget(ctx context.Context, groupID int64, route *CompositeModelRoute) error {
+	if route == nil || route.TargetGroupID == nil {
+		return nil
+	}
+	if s.compositeTargetRepo == nil {
+		return fmt.Errorf("composite target repository is not configured")
+	}
+	targets, err := s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target.TargetGroupID != *route.TargetGroupID || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != route.TargetPlatform {
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("target_group_id %d is not an enabled target for composite group %d", *route.TargetGroupID, groupID)
 }
 
 func (s *adminServiceImpl) ListCompositeTargets(ctx context.Context, groupID int64) ([]CompositeGroupTarget, error) {

@@ -36,6 +36,7 @@ func (d CompositeRouteDecision) AmbiguousMessage() string {
 type CompositeRouteResolver struct {
 	repo                   CompositeModelRouteRepository
 	modelOwnershipResolver CompositeModelOwnershipResolver
+	targetRepo             CompositeGroupTargetRepository
 }
 
 func NewCompositeRouteResolver(repo CompositeModelRouteRepository) *CompositeRouteResolver {
@@ -45,6 +46,12 @@ func NewCompositeRouteResolver(repo CompositeModelRouteRepository) *CompositeRou
 func (r *CompositeRouteResolver) SetModelOwnershipResolver(resolver CompositeModelOwnershipResolver) {
 	if r != nil {
 		r.modelOwnershipResolver = resolver
+	}
+}
+
+func (r *CompositeRouteResolver) SetTargetRepository(repo CompositeGroupTargetRepository) {
+	if r != nil {
+		r.targetRepo = repo
 	}
 }
 
@@ -106,6 +113,11 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 		decision.Reason = "model is required"
 		return decision, nil
 	}
+	targets, err := r.loadTargets(ctx, groupID)
+	if err != nil {
+		return decision, err
+	}
+	decision.DynamicTargetsConfigured = len(targets) > 0
 
 	if r != nil && r.repo != nil && groupID > 0 {
 		routes, err := r.repo.ListByGroup(ctx, groupID, false)
@@ -117,7 +129,7 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			if upstreamModel == "" {
 				upstreamModel = model
 			}
-			return CompositeRouteDecision{
+			decision := CompositeRouteDecision{
 				Matched:        true,
 				Source:         CompositeRouteSourceExplicit,
 				GroupID:        groupID,
@@ -126,7 +138,19 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 				UpstreamModel:  upstreamModel,
 				Endpoint:       endpoint,
 				Route:          &route,
-			}, nil
+			}
+			if route.TargetGroupID != nil {
+				if !applyCompositeTarget(&decision, targets, *route.TargetGroupID) {
+					decision.Matched = false
+					decision.Reason = "explicit route target group is unavailable or mismatched"
+					return decision, nil
+				}
+			} else if len(targets) > 0 && !applyDetectedCompositeTarget(&decision, targets, route.TargetPlatform) {
+				decision.Matched = false
+				decision.Reason = "no enabled target group matches explicit route platform"
+				return decision, nil
+			}
+			return decision, nil
 		}
 	}
 
@@ -152,7 +176,7 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 				decision.Reason = "account model ownership has no concrete target platform"
 				return decision, nil
 			}
-			return CompositeRouteDecision{
+			decision := CompositeRouteDecision{
 				Matched:        true,
 				Source:         CompositeRouteSourceAccount,
 				GroupID:        groupID,
@@ -160,12 +184,18 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 				TargetPlatform: platform,
 				UpstreamModel:  model,
 				Endpoint:       endpoint,
-			}, nil
+			}
+			decision.DynamicTargetsConfigured = len(targets) > 0
+			if len(targets) > 0 && !applyDetectedCompositeTarget(&decision, targets, platform) {
+				decision.Matched = false
+				decision.Reason = "no enabled target group matches account model platform"
+			}
+			return decision, nil
 		}
 	}
 
 	if platform, ok := DetectModelPlatform(model); ok {
-		return CompositeRouteDecision{
+		decision := CompositeRouteDecision{
 			Matched:        true,
 			Source:         CompositeRouteSourceDetector,
 			GroupID:        groupID,
@@ -173,10 +203,56 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			TargetPlatform: platform,
 			UpstreamModel:  model,
 			Endpoint:       endpoint,
-		}, nil
+		}
+		if len(targets) > 0 {
+			if !applyDetectedCompositeTarget(&decision, targets, platform) {
+				decision.Matched = false
+				decision.Reason = "no enabled target group matches detected platform"
+				return decision, nil
+			}
+		}
+		return decision, nil
 	}
 	decision.Reason = "no explicit route or built-in detector match"
 	return decision, nil
+}
+
+func (r *CompositeRouteResolver) loadTargets(ctx context.Context, groupID int64) ([]CompositeGroupTarget, error) {
+	if r == nil || r.targetRepo == nil || groupID <= 0 {
+		return nil, nil
+	}
+	return r.targetRepo.ListByCompositeGroup(ctx, groupID, true)
+}
+
+func applyCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, targetID int64) bool {
+	for _, target := range targets {
+		if target.TargetGroupID != targetID || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) || target.TargetGroup.Platform != decision.TargetPlatform {
+			continue
+		}
+		decision.TargetGroupID = &target.TargetGroupID
+		decision.TargetGroup = target.TargetGroup
+		return true
+	}
+	return false
+}
+
+func applyDetectedCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, platform string) bool {
+	ordered := append([]CompositeGroupTarget(nil), targets...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Priority != ordered[j].Priority {
+			return ordered[i].Priority < ordered[j].Priority
+		}
+		return ordered[i].TargetGroupID < ordered[j].TargetGroupID
+	})
+	for _, target := range ordered {
+		if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != platform {
+			continue
+		}
+		decision.TargetGroupID = &target.TargetGroupID
+		decision.TargetGroup = target.TargetGroup
+		return true
+	}
+	return false
 }
 
 func matchCompositeRoute(routes []CompositeModelRoute, model, endpoint string) (CompositeModelRoute, bool) {
