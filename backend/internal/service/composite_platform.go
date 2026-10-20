@@ -60,6 +60,39 @@ func CompositeTargetGroupIDFromContext(ctx context.Context) (int64, bool) {
 	return id, ok && id > 0
 }
 
+func WithCompositeBillingGroup(ctx context.Context, group *Group) context.Context {
+	if ctx == nil || !IsGroupContextValid(group) {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.CompositeBillingGroup, group)
+}
+
+func CompositeBillingGroupFromContext(ctx context.Context) (*Group, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	group, ok := ctx.Value(ctxkey.CompositeBillingGroup).(*Group)
+	return group, ok && IsGroupContextValid(group)
+}
+
+func WithEffectiveCompositeGroup(ctx context.Context, group *Group) context.Context {
+	if ctx == nil || !IsGroupContextValid(group) {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.Group, group)
+}
+
+func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (*APIKey, bool) {
+	if apiKey == nil || decision.TargetGroup == nil || decision.TargetGroupID == nil {
+		return apiKey, false
+	}
+	copy := *apiKey
+	targetID := *decision.TargetGroupID
+	copy.GroupID = &targetID
+	copy.Group = decision.TargetGroup
+	return &copy, true
+}
+
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {
 	if ctx == nil {
 		return "", false

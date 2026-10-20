@@ -21,6 +21,28 @@ type compositeRouteRepoStub struct {
 	routes []service.CompositeModelRoute
 }
 
+type compositeTargetRepoStub struct {
+	targets []service.CompositeGroupTarget
+}
+
+func (s compositeTargetRepoStub) ListByCompositeGroup(_ context.Context, groupID int64, _ bool) ([]service.CompositeGroupTarget, error) {
+	out := make([]service.CompositeGroupTarget, 0, len(s.targets))
+	for _, target := range s.targets {
+		if target.CompositeGroupID == groupID {
+			out = append(out, target)
+		}
+	}
+	return out, nil
+}
+
+func (compositeTargetRepoStub) Create(context.Context, *service.CompositeGroupTarget) error {
+	return nil
+}
+func (compositeTargetRepoStub) Update(context.Context, *service.CompositeGroupTarget) error {
+	return nil
+}
+func (compositeTargetRepoStub) Delete(context.Context, int64, int64) error { return nil }
+
 func (s compositeRouteRepoStub) ListByGroup(ctx context.Context, groupID int64, includeDisabled bool) ([]service.CompositeModelRoute, error) {
 	routes := make([]service.CompositeModelRoute, 0, len(s.routes))
 	for _, route := range s.routes {
@@ -131,6 +153,42 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteAndRewritesBody(t *te
 
 	router.ServeHTTP(w, req)
 
+	require.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestCompositeTargetPlatformMiddlewareInstallsEffectiveTargetAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID, targetID := int64(1), int64(20)
+	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{
+		ID: 1, GroupID: groupID, PublicModel: "public-gpt", MatchType: service.CompositeRouteMatchExact,
+		TargetPlatform: service.PlatformOpenAI, TargetGroupID: &targetID, Endpoint: service.CompositeRouteEndpointResponses, Enabled: true,
+	}}})
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []service.CompositeGroupTarget{{
+		ID: 10, CompositeGroupID: groupID, TargetGroupID: targetID, Priority: 1, Enabled: true,
+		TargetGroup: &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true},
+	}}})
+	router := gin.New()
+	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{ID: 99, GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true}})
+		c.Next()
+	})))
+	router.Use(compositeTargetPlatformMiddleware(resolver))
+	router.POST("/v1/responses", func(c *gin.Context) {
+		apiKey, ok := servermiddleware.GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, int64(99), apiKey.ID)
+		require.Equal(t, targetID, *apiKey.GroupID)
+		require.Equal(t, service.PlatformOpenAI, apiKey.Group.Platform)
+		billingGroup, ok := service.CompositeBillingGroupFromContext(c.Request.Context())
+		require.True(t, ok)
+		require.Equal(t, groupID, billingGroup.ID)
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"public-gpt"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 

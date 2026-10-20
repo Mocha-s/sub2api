@@ -666,8 +666,13 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": decision.AmbiguousMessage()}})
 				return
 			}
+			if !decision.Matched && decision.DynamicTargetsConfigured {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "No active Composite target group matches this model"}})
+				return
+			}
 			if decision.Matched {
-				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+				installCompositeRequestTarget(c, apiKey, decision)
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
@@ -680,6 +685,16 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		requestmodel.ResetRequestBody(c.Request, body)
 		c.Next()
 	}
+}
+
+func installCompositeRequestTarget(c *gin.Context, apiKey *service.APIKey, decision service.CompositeRouteDecision) {
+	ctx := service.WithCompositeRouteDecision(c.Request.Context(), decision)
+	ctx = service.WithCompositeBillingGroup(ctx, apiKey.Group)
+	if effectiveKey, installed := service.EffectiveCompositeAPIKey(apiKey, decision); installed {
+		ctx = service.WithEffectiveCompositeGroup(ctx, effectiveKey.Group)
+		c.Set(string(middleware.ContextKeyAPIKey), effectiveKey)
+	}
+	c.Request = c.Request.WithContext(ctx)
 }
 
 func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
@@ -697,8 +712,13 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 					c.Abort()
 					return
 				}
+				if !decision.Matched && decision.DynamicTargetsConfigured {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+					c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "No active Composite target group matches this model"}})
+					return
+				}
 				if decision.Matched {
-					c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+					installCompositeRequestTarget(c, apiKey, decision)
 				}
 			}
 			if _, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); !resolved {
