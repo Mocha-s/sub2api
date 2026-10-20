@@ -1517,6 +1517,7 @@ func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int
 			continue
 		}
 		targetID := target.TargetGroupID
+		s.InvalidateAvailableModelsCache(&targetID, platform)
 		for _, model := range s.GetAvailableModels(ctx, &targetID, platform) {
 			key := strings.ToLower(strings.TrimSpace(model))
 			if key == "" {

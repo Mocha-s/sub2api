@@ -822,13 +822,13 @@ var (
 				Symbol:     "composite_group_targets_groups_composite_group",
 				Columns:    []*schema.Column{CompositeGroupTargetsColumns[6]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "composite_group_targets_groups_target_group",
 				Columns:    []*schema.Column{CompositeGroupTargetsColumns[7]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
-				OnDelete:   schema.NoAction,
+				OnDelete:   schema.Cascade,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -887,7 +887,7 @@ var (
 				Symbol:     "composite_model_routes_groups_target_group",
 				Columns:    []*schema.Column{CompositeModelRoutesColumns[13]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
-				OnDelete:   schema.SetNull,
+				OnDelete:   schema.Cascade,
 			},
 		},
 		Indexes: []*schema.Index{

@@ -42,11 +42,13 @@ func (CompositeGroupTarget) Edges() []ent.Edge {
 		edge.To("composite_group", Group.Type).
 			Unique().
 			Required().
-			Field("composite_group_id"),
+			Field("composite_group_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("target_group", Group.Type).
 			Unique().
 			Required().
-			Field("target_group_id"),
+			Field("target_group_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

@@ -86,7 +86,8 @@ func (CompositeModelRoute) Edges() []ent.Edge {
 			Field("group_id"),
 		edge.To("target_group", Group.Type).
 			Unique().
-			Field("target_group_id"),
+			Field("target_group_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 
