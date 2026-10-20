@@ -32,16 +32,18 @@ var (
 // ImageTaskRecord is the private Redis representation of an asynchronous image
 // request. Ownership fields are intentionally omitted from the public view.
 type ImageTaskRecord struct {
-	ID          string          `json:"id"`
-	UserID      int64           `json:"user_id"`
-	APIKeyID    int64           `json:"api_key_id"`
-	Status      string          `json:"status"`
-	HTTPStatus  int             `json:"http_status,omitempty"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       json.RawMessage `json:"error,omitempty"`
-	CreatedAt   int64           `json:"created_at"`
-	CompletedAt *int64          `json:"completed_at,omitempty"`
-	ExpiresAt   int64           `json:"expires_at"`
+	ID            string          `json:"id"`
+	UserID        int64           `json:"user_id"`
+	APIKeyID      int64           `json:"api_key_id"`
+	GroupID       int64           `json:"group_id,omitempty"`
+	SourceGroupID int64           `json:"source_group_id,omitempty"`
+	Status        string          `json:"status"`
+	HTTPStatus    int             `json:"http_status,omitempty"`
+	Result        json.RawMessage `json:"result,omitempty"`
+	Error         json.RawMessage `json:"error,omitempty"`
+	CreatedAt     int64           `json:"created_at"`
+	CompletedAt   *int64          `json:"completed_at,omitempty"`
+	ExpiresAt     int64           `json:"expires_at"`
 }
 
 // ImageTask is the API-safe task representation returned to callers.
@@ -60,8 +62,10 @@ type ImageTask struct {
 }
 
 type ImageTaskOwner struct {
-	UserID   int64
-	APIKeyID int64
+	UserID        int64
+	APIKeyID      int64
+	GroupID       int64
+	SourceGroupID int64
 }
 
 type ImageTaskStore interface {
@@ -156,12 +160,14 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	}
 	now := time.Now().UTC()
 	task := &ImageTaskRecord{
-		ID:        "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		UserID:    owner.UserID,
-		APIKeyID:  owner.APIKeyID,
-		Status:    ImageTaskStatusProcessing,
-		CreatedAt: now.Unix(),
-		ExpiresAt: now.Add(s.ttl).Unix(),
+		ID:            "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		UserID:        owner.UserID,
+		APIKeyID:      owner.APIKeyID,
+		GroupID:       owner.GroupID,
+		SourceGroupID: owner.SourceGroupID,
+		Status:        ImageTaskStatusProcessing,
+		CreatedAt:     now.Unix(),
+		ExpiresAt:     now.Add(s.ttl).Unix(),
 	}
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)

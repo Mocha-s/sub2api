@@ -2558,14 +2558,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				ctx = service.WithEffectiveCompositeGroup(ctx, effectiveKey.Group)
 				apiKey = effectiveKey
 				c.Set(string(middleware2.ContextKeyAPIKey), effectiveKey)
-				if effectiveKey.Group.IsSubscriptionType() {
-					targetSubscription, subscriptionErr := h.gatewayService.GetActiveSubscription(ctx, effectiveKey.User.ID, effectiveKey.Group.ID)
-					if subscriptionErr != nil || targetSubscription == nil {
-						closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "No active subscription found for target group")
-						return
-					}
-					c.Set(string(middleware2.ContextKeySubscription), targetSubscription)
+			}
+			currentKey, _ := middleware2.GetAPIKeyFromContext(c)
+			if currentKey != nil && currentKey.Group != nil && currentKey.Group.IsSubscriptionType() {
+				targetSubscription, subscriptionErr := h.gatewayService.GetActiveSubscription(ctx, currentKey.User.ID, currentKey.Group.ID)
+				if subscriptionErr != nil || targetSubscription == nil {
+					closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "No active subscription found for target group")
+					return
 				}
+				c.Set(string(middleware2.ContextKeySubscription), targetSubscription)
 			}
 			c.Request = c.Request.WithContext(ctx)
 			if blocked := blockedModelAllowlistCandidate(apiKey.Group, []string{reqModel}); blocked != "" {

@@ -21,6 +21,9 @@ func NewCompositeGroupTargetRepository(client *dbent.Client, sqlDB *sql.DB) serv
 }
 
 func (r *compositeGroupTargetRepository) ListByCompositeGroup(ctx context.Context, compositeGroupID int64, includeDisabled bool) ([]service.CompositeGroupTarget, error) {
+	if includeDisabled && r.sql != nil {
+		return r.listAllByCompositeGroup(ctx, compositeGroupID)
+	}
 	q := clientFromContext(ctx, r.client).CompositeGroupTarget.Query().
 		Where(compositegrouptarget.CompositeGroupIDEQ(compositeGroupID)).
 		WithTargetGroup().
@@ -37,6 +40,33 @@ func (r *compositeGroupTargetRepository) ListByCompositeGroup(ctx context.Contex
 		out = append(out, compositeGroupTargetEntityToService(row))
 	}
 	return out, nil
+}
+
+func (r *compositeGroupTargetRepository) listAllByCompositeGroup(ctx context.Context, compositeGroupID int64) ([]service.CompositeGroupTarget, error) {
+	rows, err := r.sql.QueryContext(ctx, `SELECT t.id,t.composite_group_id,t.target_group_id,t.priority,t.enabled,t.created_at,t.updated_at,t.deleted_at,g.id,g.name,g.platform,g.status FROM composite_group_targets t LEFT JOIN groups g ON g.id=t.target_group_id WHERE t.composite_group_id=$1 ORDER BY t.priority,t.target_group_id,t.id`, compositeGroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []service.CompositeGroupTarget
+	for rows.Next() {
+		var target service.CompositeGroupTarget
+		var deletedAt sql.NullTime
+		var targetID sql.NullInt64
+		var targetName, targetPlatform, targetStatus sql.NullString
+		if err := rows.Scan(&target.ID, &target.CompositeGroupID, &target.TargetGroupID, &target.Priority, &target.Enabled, &target.CreatedAt, &target.UpdatedAt, &deletedAt, &targetID, &targetName, &targetPlatform, &targetStatus); err != nil {
+			return nil, err
+		}
+		if deletedAt.Valid {
+			target.DeletedAt = &deletedAt.Time
+		}
+		if targetID.Valid {
+			target.TargetGroupInfo = &service.CompositeTargetGroupInfo{ID: targetID.Int64, Name: targetName.String, Platform: targetPlatform.String, Status: targetStatus.String}
+			target.TargetGroup = &service.Group{ID: targetID.Int64, Name: targetName.String, Platform: targetPlatform.String, Status: targetStatus.String, Hydrated: true}
+		}
+		out = append(out, target)
+	}
+	return out, rows.Err()
 }
 
 func (r *compositeGroupTargetRepository) Create(ctx context.Context, target *service.CompositeGroupTarget) error {

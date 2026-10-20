@@ -672,20 +672,22 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "No active Composite target group matches this model"}})
 				return
 			}
-			allowlistGroup := apiKey.Group
-			if decision.TargetGroup != nil {
-				allowlistGroup = decision.TargetGroup
-			}
-			if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(model) {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
-				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", model)}})
-				return
-			}
 			if decision.Matched {
 				installCompositeRequestTarget(c, apiKey, decision)
 				effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
 				if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
 					return
+				}
+				allowlistGroup := apiKey.Group
+				if effectiveKey != nil && effectiveKey.Group != nil {
+					allowlistGroup = effectiveKey.Group
+				}
+				for _, candidate := range requestmodel.FromBodyCandidates(routePath, c.GetHeader("Content-Type"), body) {
+					if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(candidate) {
+						service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+						c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", candidate)}})
+						return
+					}
 				}
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
@@ -748,6 +750,10 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 }
 
 func installCompositeTargetSubscription(c *gin.Context, apiKey *service.APIKey, subscriptionServices ...*service.SubscriptionService) bool {
+	if apiKey != nil && apiKey.Group != nil && !apiKey.Group.IsSubscriptionType() {
+		c.Set(string(middleware.ContextKeySubscription), (*service.UserSubscription)(nil))
+		return true
+	}
 	if len(subscriptionServices) == 0 || subscriptionServices[0] == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
 		return true
 	}

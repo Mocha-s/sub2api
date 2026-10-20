@@ -1410,12 +1410,6 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		}
 	}
 	modelsListCacheMissTotal.Add(1)
-	if models, handled := s.compositeTargetModels(ctx, groupID, platform); handled {
-		if s.modelsListCache != nil {
-			s.modelsListCache.Set(cacheKey, cloneStringSlice(models), s.modelsListCacheTTL)
-		}
-		return models
-	}
 	var accounts []Account
 	var err error
 
@@ -1532,7 +1526,7 @@ func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int
 				continue
 			}
 			seen[key] = struct{}{}
-			models = append(models, key)
+			models = append(models, model)
 		}
 	}
 	sort.Strings(models)
