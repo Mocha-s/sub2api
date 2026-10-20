@@ -2524,11 +2524,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 必须在合成路由解析和上游模型映射之前执行。
 	// 与 HTTP 准入一致：帧内重复 model 键/大小写变体可能被上游按末值绑定，
 	// 全部候选值逐一校验，任一未命中即拒绝。
-	if blocked := blockedModelAllowlistCandidate(apiKey.Group, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
-		middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
-		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked))
-		return
+	if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformComposite {
+		if blocked := blockedModelAllowlistCandidate(apiKey.Group, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+			middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked))
+			return
+		}
 	}
 	// Keep the client model in the frame for admission, response identity and usage.
 	// Apply the resolved upstream model through MapRequestModel on every turn.
@@ -2545,8 +2547,31 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, decision.AmbiguousMessage())
 			return
 		}
+		if !decision.Matched && decision.DynamicTargetsConfigured {
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "No active Composite target group matches this model")
+			return
+		}
 		if decision.Matched {
-			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+			ctx = service.WithCompositeRouteDecision(c.Request.Context(), decision)
+			ctx = service.WithCompositeBillingGroup(ctx, apiKey.Group)
+			if effectiveKey, installed := service.EffectiveCompositeAPIKey(apiKey, decision); installed {
+				ctx = service.WithEffectiveCompositeGroup(ctx, effectiveKey.Group)
+				apiKey = effectiveKey
+				c.Set(string(middleware2.ContextKeyAPIKey), effectiveKey)
+				if effectiveKey.Group.IsSubscriptionType() {
+					targetSubscription, subscriptionErr := h.gatewayService.GetActiveSubscription(ctx, effectiveKey.User.ID, effectiveKey.Group.ID)
+					if subscriptionErr != nil || targetSubscription == nil {
+						closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "No active subscription found for target group")
+						return
+					}
+					c.Set(string(middleware2.ContextKeySubscription), targetSubscription)
+				}
+			}
+			c.Request = c.Request.WithContext(ctx)
+			if blocked := blockedModelAllowlistCandidate(apiKey.Group, []string{reqModel}); blocked != "" {
+				closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked))
+				return
+			}
 			wsRouteModel = decision.UpstreamModel
 		}
 	}

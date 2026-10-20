@@ -1397,6 +1397,9 @@ func mixedListingModelAllowed(groupPlatform, model string) bool {
 }
 
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
+	if models, handled := s.compositeTargetModels(ctx, groupID, platform); handled {
+		return models
+	}
 	cacheKey := modelsListCacheKey(groupID, platform)
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
@@ -1553,9 +1556,35 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 
 	// 归属取决于配置而非运行时健康：限流/临时不可调度不应让同一模型在
 	// 「唯一归属」与「歧义」之间来回翻转，否则配置错误只会间歇暴露。
-	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
-	if err != nil {
-		return CompositeModelOwnership{}, err
+	accounts := make([]Account, 0)
+	if s.compositeResolver != nil {
+		if targets, targetErr := s.compositeResolver.ListCompositeTargets(ctx, groupID); targetErr != nil {
+			return CompositeModelOwnership{}, targetErr
+		} else if len(targets) > 0 {
+			for _, target := range targets {
+				if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) {
+					continue
+				}
+				targetID := target.TargetGroupID
+				candidateAccounts, candidateErr := s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
+				if candidateErr != nil {
+					return CompositeModelOwnership{}, candidateErr
+				}
+				accounts = append(accounts, candidateAccounts...)
+			}
+		} else {
+			var listErr error
+			accounts, listErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
+			if listErr != nil {
+				return CompositeModelOwnership{}, listErr
+			}
+		}
+	} else {
+		var listErr error
+		accounts, listErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
+		if listErr != nil {
+			return CompositeModelOwnership{}, listErr
+		}
 	}
 
 	platforms := make(map[string]struct{})

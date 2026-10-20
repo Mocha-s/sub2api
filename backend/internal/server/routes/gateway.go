@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -35,8 +36,8 @@ func RegisterGatewayRoutes(
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
-	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
-	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
+	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver, subscriptionService)
+	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver, subscriptionService)
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
@@ -618,7 +619,7 @@ func getGroupPlatform(c *gin.Context) string {
 	return apiKey.Group.Platform
 }
 
-func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
+func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, subscriptionServices ...*service.SubscriptionService) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
 	}
@@ -671,8 +672,21 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"type": "invalid_request_error", "message": "No active Composite target group matches this model"}})
 				return
 			}
+			allowlistGroup := apiKey.Group
+			if decision.TargetGroup != nil {
+				allowlistGroup = decision.TargetGroup
+			}
+			if allowlistGroup != nil && allowlistGroup.ModelAllowlistEnabled() && !allowlistGroup.ModelAllowlist.Allows(model) {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": fmt.Sprintf("Model %q is not available for this group", model)}})
+				return
+			}
 			if decision.Matched {
 				installCompositeRequestTarget(c, apiKey, decision)
+				effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
+				if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
+					return
+				}
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
@@ -697,7 +711,7 @@ func installCompositeRequestTarget(c *gin.Context, apiKey *service.APIKey, decis
 	c.Request = c.Request.WithContext(ctx)
 }
 
-func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
+func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, subscriptionServices ...*service.SubscriptionService) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
 	}
@@ -719,6 +733,10 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 				}
 				if decision.Matched {
 					installCompositeRequestTarget(c, apiKey, decision)
+					effectiveKey, _ := middleware.GetAPIKeyFromContext(c)
+					if !installCompositeTargetSubscription(c, effectiveKey, subscriptionServices...) {
+						return
+					}
 				}
 			}
 			if _, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); !resolved {
@@ -727,6 +745,19 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 		}
 		c.Next()
 	}
+}
+
+func installCompositeTargetSubscription(c *gin.Context, apiKey *service.APIKey, subscriptionServices ...*service.SubscriptionService) bool {
+	if len(subscriptionServices) == 0 || subscriptionServices[0] == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
+		return true
+	}
+	subscription, err := subscriptionServices[0].GetActiveSubscription(c.Request.Context(), apiKey.User.ID, apiKey.Group.ID)
+	if err != nil || subscription == nil {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "subscription_error", "message": "No active subscription found for target group"}})
+		return false
+	}
+	c.Set(string(middleware.ContextKeySubscription), subscription)
+	return true
 }
 
 // grokCustomVoiceEndpoint derives the upstream Voice endpoint for the

@@ -6700,6 +6700,11 @@ const handleCompositeRoutes = async (group: AdminGroup) => {
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
   showCompositeRoutesModal.value = true;
+  try {
+    sortableGroups.value = await adminAPI.groups.getAll();
+  } catch (error) {
+    console.error("Error loading Composite target groups:", error);
+  }
   await loadCompositeRoutes();
   await loadCompositeTargets();
 };

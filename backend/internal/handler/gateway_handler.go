@@ -1302,6 +1302,19 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	}
 	if groupID != nil {
 		if targetModels, configured, err := h.gatewayService.GetCompositeTargetModels(ctx, *groupID, ""); err == nil && configured {
+			seen := make(map[string]struct{}, len(targetModels))
+			for _, model := range targetModels {
+				seen[strings.ToLower(model)] = struct{}{}
+			}
+			if routeModels, routeErr := h.gatewayService.GetCompositeRouteModels(ctx, groupID, endpoint, includeSystemOne); routeErr == nil {
+				for _, model := range routeModels {
+					if _, exists := seen[strings.ToLower(model)]; exists {
+						continue
+					}
+					seen[strings.ToLower(model)] = struct{}{}
+					targetModels = append(targetModels, model)
+				}
+			}
 			return targetModels
 		}
 	}
