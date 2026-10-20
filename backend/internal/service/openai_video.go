@@ -89,17 +89,21 @@ func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, in
 	if s.cfg != nil {
 		groupMultiplier = s.cfg.Default.RateMultiplier
 	}
-	if input.APIKey != nil && input.APIKey.Group != nil {
+	billingGroup, billingGroupID, dynamicManagedRate := customerBillingGroup(ctx, input.APIKey)
+	if billingGroup != nil && billingGroupID != nil {
 		resolver := s.userGroupRateResolver
 		if resolver == nil {
 			resolver = newUserGroupRateResolver(nil, nil, resolveUserGroupRateCacheTTL(s.cfg), nil, "service.openai_gateway")
 		}
-		groupMultiplier = resolver.Resolve(ctx, input.UserID, input.GroupID, input.APIKey.Group.RateMultiplier)
+		groupMultiplier = resolver.Resolve(ctx, input.UserID, *billingGroupID, billingGroup.RateMultiplier)
 	}
-	baseMultiplier := effectiveRequestRateMultiplier(input.Account, groupMultiplier)
+	baseMultiplier := groupMultiplier
+	if dynamicManagedRate {
+		baseMultiplier = effectiveRequestRateMultiplier(input.Account, baseMultiplier)
+	}
 	selection.RateMultiplier = baseMultiplier
 	if selection.Pricing.BillingMode == BillingModePerRequest {
-		selection.RateMultiplier, _ = computePeakAwareMultipliers(input.APIKey, baseMultiplier, now)
+		selection.RateMultiplier, _ = computePeakAwareMultipliers(apiKeyWithBillingGroup(input.APIKey, billingGroup, billingGroupID), baseMultiplier, now)
 	}
 	if selection.Pricing.BillingMode == BillingModeVideo {
 		selection.RateMultiplier = resolveVideoRateMultiplier(input.APIKey, baseMultiplier)

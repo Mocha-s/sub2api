@@ -904,18 +904,21 @@ func (s *GatewayService) recordUsageMultipliers(ctx context.Context, apiKey *API
 	if s.cfg != nil {
 		multiplier = s.cfg.Default.RateMultiplier
 	}
-	if apiKey.GroupID != nil && apiKey.Group != nil {
-		multiplier = apiKey.Group.RateMultiplier
+	billingGroup, billingGroupID, dynamicManagedRate := customerBillingGroup(ctx, apiKey)
+	if billingGroupID != nil && billingGroup != nil {
+		multiplier = billingGroup.RateMultiplier
 		if user != nil {
-			multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, multiplier)
+			multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *billingGroupID, multiplier)
 		}
 	}
-	multiplier = effectiveRequestRateMultiplier(account, multiplier)
+	if dynamicManagedRate {
+		multiplier = effectiveRequestRateMultiplier(account, multiplier)
+	}
 	// 高峰因子按请求时刻现算，不并入 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
 	if pricingAt.IsZero() {
 		pricingAt = timezone.Now()
 	}
-	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, pricingAt)
+	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKeyWithBillingGroup(apiKey, billingGroup, billingGroupID), multiplier, pricingAt)
 	return multiplier, imageMultiplier, pricingAt
 }
 

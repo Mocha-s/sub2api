@@ -489,6 +489,24 @@ func TestOpenAIGatewayServiceRecordUsage_ManagedAccountRateAppliesMarkup(t *test
 	require.InDelta(t, expected.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_CompositeBillingSwitchDisablesManagedOverride(t *testing.T) {
+	groupID := int64(13)
+	accountRate := 0.02
+	markup := 1.5
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	ctx := context.WithValue(context.Background(), ctxkey.CompositeBillingGroup, &Group{ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: 0.1223})
+	apiGroup := &Group{ID: 14, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 9}
+	err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{RequestID: "openai_composite_static", Usage: OpenAIUsage{InputTokens: 1200, OutputTokens: 300}, Model: "gpt-5.1", Duration: time.Second},
+		APIKey: &APIKey{ID: 1003, GroupID: &apiGroup.ID, Group: apiGroup}, User: &User{ID: 2003},
+		Account: &Account{ID: 3003, RateMultiplier: &accountRate, Credentials: map[string]any{"pricing_managed_by": "api-pricing-sync", "pricing_markup_factor": markup}},
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.1223, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputTokens(t *testing.T) {
 	groupID := int64(14)
 	groupRate := 1.0

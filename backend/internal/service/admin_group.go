@@ -724,6 +724,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		I18n:                            i18n,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
+		DynamicRateBillingEnabled:       input.DynamicRateBillingEnabled,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
@@ -949,6 +950,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			return nil, errors.New("rate_multiplier must be > 0")
 		}
 		group.RateMultiplier = *input.RateMultiplier
+	}
+	if input.DynamicRateBillingEnabled != nil {
+		group.DynamicRateBillingEnabled = *input.DynamicRateBillingEnabled
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive

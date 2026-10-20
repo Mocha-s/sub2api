@@ -156,6 +156,58 @@ func TestGatewayServiceRecordUsage_ManagedAccountRateBillsActualAccount(t *testi
 	require.InDelta(t, expected.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
 }
 
+func TestGatewayServiceRecordUsage_CompositeBillingSwitchDisablesManagedOverride(t *testing.T) {
+	groupID := int64(21)
+	groupRate := 0.1223
+	accountRate := 0.03
+	markup := 1.45
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	ctx := context.WithValue(context.Background(), ctxkey.CompositeBillingGroup, &Group{
+		ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: groupRate,
+	})
+	apiGroup := &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 9}
+	apiKey := &APIKey{ID: 502, GroupID: &apiGroup.ID, Group: apiGroup}
+	account := &Account{ID: 702, RateMultiplier: &accountRate, Credentials: map[string]any{
+		"pricing_managed_by": "api-pricing-sync", "pricing_markup_factor": markup,
+	}}
+
+	ctx = context.WithValue(ctx, ctxkey.UserID, int64(602))
+	err := svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{RequestID: "composite_static_billing", Usage: ClaudeUsage{InputTokens: 1200, OutputTokens: 300}, Model: "claude-sonnet-4", Duration: time.Second},
+		APIKey: apiKey, User: &User{ID: 602}, Account: account,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, groupRate, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_CompositeBillingSwitchEnabledKeepsManagedOverride(t *testing.T) {
+	groupID := int64(21)
+	accountRate := 0.03
+	markup := 1.45
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	ctx := context.WithValue(context.Background(), ctxkey.CompositeBillingGroup, &Group{
+		ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: 0.1223, DynamicRateBillingEnabled: true,
+	})
+	apiGroup := &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 9}
+	apiKey := &APIKey{ID: 502, GroupID: &apiGroup.ID, Group: apiGroup}
+	account := &Account{ID: 702, RateMultiplier: &accountRate, Credentials: map[string]any{
+		"pricing_managed_by": "api-pricing-sync", "pricing_markup_factor": markup,
+	}}
+
+	err := svc.RecordUsage(ctx, &RecordUsageInput{
+		Result: &ForwardResult{RequestID: "composite_dynamic_billing", Usage: ClaudeUsage{InputTokens: 1200, OutputTokens: 300}, Model: "claude-sonnet-4", Duration: time.Second},
+		APIKey: apiKey, User: &User{ID: 602}, Account: account,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, accountRate*markup, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
 func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}

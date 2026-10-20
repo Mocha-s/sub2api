@@ -93,6 +93,33 @@ func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (
 	return &copy, true
 }
 
+// customerBillingGroup returns the group whose user-facing rate/peak policy
+// applies to this request. Target groups still own provider/account policy.
+func customerBillingGroup(ctx context.Context, apiKey *APIKey) (*Group, *int64, bool) {
+	if group, ok := CompositeBillingGroupFromContext(ctx); ok {
+		id := group.ID
+		return group, &id, group.DynamicRateBillingEnabled
+	}
+	if apiKey == nil || apiKey.Group == nil || apiKey.GroupID == nil {
+		return nil, nil, true
+	}
+	managedRate := true
+	if apiKey.Group.Platform == PlatformComposite {
+		managedRate = apiKey.Group.DynamicRateBillingEnabled
+	}
+	return apiKey.Group, apiKey.GroupID, managedRate
+}
+
+func apiKeyWithBillingGroup(apiKey *APIKey, group *Group, groupID *int64) *APIKey {
+	if apiKey == nil || group == nil || groupID == nil {
+		return apiKey
+	}
+	copy := *apiKey
+	copy.Group = group
+	copy.GroupID = groupID
+	return &copy
+}
+
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {
 	if ctx == nil {
 		return "", false
