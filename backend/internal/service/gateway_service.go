@@ -1407,7 +1407,12 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		}
 	}
 	modelsListCacheMissTotal.Add(1)
-
+	if models, handled := s.compositeTargetModels(ctx, groupID, platform); handled {
+		if s.modelsListCache != nil {
+			s.modelsListCache.Set(cacheKey, cloneStringSlice(models), s.modelsListCacheTTL)
+		}
+		return models
+	}
 	var accounts []Account
 	var err error
 
@@ -1500,6 +1505,37 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	return cloneStringSlice(models)
 }
 
+func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int64, platform string) ([]string, bool) {
+	if groupID == nil || s == nil || s.compositeResolver == nil {
+		return nil, false
+	}
+	targets, err := s.compositeResolver.ListCompositeTargets(ctx, *groupID)
+	if err != nil || len(targets) == 0 {
+		return nil, false
+	}
+	seen := make(map[string]struct{})
+	models := make([]string, 0)
+	for _, target := range targets {
+		if !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || (platform != "" && target.TargetGroup.Platform != platform) {
+			continue
+		}
+		targetID := target.TargetGroupID
+		for _, model := range s.GetAvailableModels(ctx, &targetID, platform) {
+			key := strings.ToLower(strings.TrimSpace(model))
+			if key == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			models = append(models, key)
+		}
+	}
+	sort.Strings(models)
+	return models, true
+}
+
 func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, groupID int64, model string) (CompositeModelOwnership, error) {
 	model = strings.TrimSpace(model)
 	if s == nil || s.accountRepo == nil || groupID <= 0 || model == "" {
@@ -1561,6 +1597,18 @@ func (s *GatewayService) GetCompositeRouteModels(ctx context.Context, groupID *i
 		return nil, nil
 	}
 	return s.compositeResolver.ListExactPublicModels(ctx, *groupID, endpoint, includeSystemOne)
+}
+
+func (s *GatewayService) GetCompositeTargetModels(ctx context.Context, groupID int64, platform string) ([]string, bool, error) {
+	if s == nil || s.compositeResolver == nil {
+		return nil, false, nil
+	}
+	targets, err := s.compositeResolver.ListCompositeTargets(ctx, groupID)
+	if err != nil || len(targets) == 0 {
+		return nil, false, err
+	}
+	models, _ := s.compositeTargetModels(ctx, &groupID, platform)
+	return models, true, nil
 }
 
 func (s *GatewayService) FilterCompositeCodexModels(ctx context.Context, groupID int64, models []string) ([]string, error) {

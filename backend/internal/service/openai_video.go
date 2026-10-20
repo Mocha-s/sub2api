@@ -90,12 +90,19 @@ func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, in
 		groupMultiplier = s.cfg.Default.RateMultiplier
 	}
 	billingGroup, billingGroupID, dynamicManagedRate := customerBillingGroup(ctx, input.APIKey)
-	if billingGroup != nil && billingGroupID != nil {
+	rateGroupID := input.GroupID
+	if compositeBillingGroup, ok := CompositeBillingGroupFromContext(ctx); ok {
+		billingGroup = compositeBillingGroup
+		sourceGroupID := compositeBillingGroup.ID
+		billingGroupID = &sourceGroupID
+		rateGroupID = sourceGroupID
+	}
+	if billingGroup != nil && rateGroupID > 0 {
 		resolver := s.userGroupRateResolver
 		if resolver == nil {
 			resolver = newUserGroupRateResolver(nil, nil, resolveUserGroupRateCacheTTL(s.cfg), nil, "service.openai_gateway")
 		}
-		groupMultiplier = resolver.Resolve(ctx, input.UserID, *billingGroupID, billingGroup.RateMultiplier)
+		groupMultiplier = resolver.Resolve(ctx, input.UserID, rateGroupID, billingGroup.RateMultiplier)
 	}
 	baseMultiplier := groupMultiplier
 	if dynamicManagedRate {

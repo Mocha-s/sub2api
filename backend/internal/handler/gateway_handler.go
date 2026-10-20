@@ -1300,6 +1300,11 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	if h == nil || h.gatewayService == nil {
 		return nil
 	}
+	if groupID != nil {
+		if targetModels, configured, err := h.gatewayService.GetCompositeTargetModels(ctx, *groupID, ""); err == nil && configured {
+			return targetModels
+		}
+	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
