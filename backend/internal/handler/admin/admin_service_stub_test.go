@@ -365,6 +365,26 @@ func (s *stubAdminService) PreviewCompositeRoute(ctx context.Context, groupID in
 	return &decision, nil
 }
 
+func (s *stubAdminService) ListCompositeTargets(ctx context.Context, groupID int64) ([]service.CompositeGroupTarget, error) {
+	s.advancedGroupOperationCalls++
+	return []service.CompositeGroupTarget{{ID: 1, CompositeGroupID: groupID, TargetGroupID: 20, Priority: 10, Enabled: true}}, nil
+}
+
+func (s *stubAdminService) CreateCompositeTarget(ctx context.Context, groupID int64, input service.CompositeGroupTargetInput) (*service.CompositeGroupTarget, error) {
+	s.advancedGroupOperationCalls++
+	return &service.CompositeGroupTarget{ID: 1, CompositeGroupID: groupID, TargetGroupID: input.TargetGroupID, Priority: input.Priority, Enabled: input.Enabled}, nil
+}
+
+func (s *stubAdminService) UpdateCompositeTarget(ctx context.Context, groupID, targetID int64, input service.CompositeGroupTargetInput) (*service.CompositeGroupTarget, error) {
+	s.advancedGroupOperationCalls++
+	return &service.CompositeGroupTarget{ID: targetID, CompositeGroupID: groupID, TargetGroupID: 20, Priority: input.Priority, Enabled: input.Enabled}, nil
+}
+
+func (s *stubAdminService) DeleteCompositeTarget(ctx context.Context, groupID, targetID int64) error {
+	s.advancedGroupOperationCalls++
+	return nil
+}
+
 func (s *stubAdminService) CreateGroup(ctx context.Context, input *service.CreateGroupInput) (*service.Group, error) {
 	s.createdGroups = append(s.createdGroups, input)
 	group := service.Group{ID: 200, Name: input.Name, Status: service.StatusActive}

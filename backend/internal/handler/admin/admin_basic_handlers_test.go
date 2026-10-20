@@ -39,6 +39,10 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router.POST("/api/v1/admin/groups/:id/composite-routes/preview", groupHandler.PreviewCompositeRoute)
 	router.PUT("/api/v1/admin/groups/:id/composite-routes/:route_id", groupHandler.UpdateCompositeRoute)
 	router.DELETE("/api/v1/admin/groups/:id/composite-routes/:route_id", groupHandler.DeleteCompositeRoute)
+	router.GET("/api/v1/admin/groups/:id/composite-targets", groupHandler.ListCompositeTargets)
+	router.POST("/api/v1/admin/groups/:id/composite-targets", groupHandler.CreateCompositeTarget)
+	router.PUT("/api/v1/admin/groups/:id/composite-targets/:target_id", groupHandler.UpdateCompositeTarget)
+	router.DELETE("/api/v1/admin/groups/:id/composite-targets/:target_id", groupHandler.DeleteCompositeTarget)
 	router.GET("/api/v1/admin/groups/:id", groupHandler.GetByID)
 	router.POST("/api/v1/admin/groups", groupHandler.Create)
 	router.PUT("/api/v1/admin/groups/:id", groupHandler.Update)
@@ -264,6 +268,40 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2/api-keys", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestCompositeTargetAdminEndpoints(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2/composite-targets", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"target_group_id":20`)
+
+	body, err := json.Marshal(map[string]any{"target_group_id": 20, "priority": 5, "enabled": true})
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/groups/2/composite-targets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code)
+	require.Contains(t, rec.Body.String(), `"priority":5`)
+
+	body, err = json.Marshal(map[string]any{"priority": 1, "enabled": false})
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/groups/2/composite-targets/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"enabled":false`)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/groups/2/composite-targets/1", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 4, adminSvc.advancedGroupOperationCalls)
 }
 
 func TestGroupHandlerCompositeRouteAcceptsVideoEndpoint(t *testing.T) {

@@ -340,6 +340,7 @@ type CompositeRouteRequest struct {
 	PublicModel    string `json:"public_model" binding:"required"`
 	MatchType      string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
 	TargetPlatform string `json:"target_platform" binding:"required,concrete_platform"`
+	TargetGroupID  *int64 `json:"target_group_id"`
 	UpstreamModel  string `json:"upstream_model"`
 	Endpoint       string `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images video gemini"`
 	Priority       int    `json:"priority"`
@@ -350,6 +351,12 @@ type CompositeRouteRequest struct {
 type CompositeRoutePreviewRequest struct {
 	Model    string `json:"model" binding:"required"`
 	Endpoint string `json:"endpoint" binding:"omitempty,oneof=any messages count_tokens responses chat_completions embeddings images video gemini"`
+}
+
+type CompositeTargetRequest struct {
+	TargetGroupID int64 `json:"target_group_id"`
+	Priority      int   `json:"priority"`
+	Enabled       *bool `json:"enabled"`
 }
 
 // List handles listing all groups with pagination
@@ -515,6 +522,102 @@ func (h *GroupHandler) PreviewCompositeRoute(c *gin.Context) {
 	response.Success(c, decision)
 }
 
+func (h *GroupHandler) ListCompositeTargets(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	targets, err := h.adminService.ListCompositeTargets(c.Request.Context(), groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, targets)
+}
+
+func (h *GroupHandler) CreateCompositeTarget(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req CompositeTargetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body: "+err.Error())
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	target, err := h.adminService.CreateCompositeTarget(c.Request.Context(), groupID, service.CompositeGroupTargetInput{
+		TargetGroupID: req.TargetGroupID,
+		Priority:      req.Priority,
+		Enabled:       enabled,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Created(c, target)
+}
+
+func (h *GroupHandler) UpdateCompositeTarget(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	targetID, ok := parsePositiveIDParam(c, "target_id")
+	if !ok {
+		return
+	}
+	var req CompositeTargetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body: "+err.Error())
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	target, err := h.adminService.UpdateCompositeTarget(c.Request.Context(), groupID, targetID, service.CompositeGroupTargetInput{
+		Priority: req.Priority,
+		Enabled:  enabled,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, target)
+}
+
+func (h *GroupHandler) DeleteCompositeTarget(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	targetID, ok := parsePositiveIDParam(c, "target_id")
+	if !ok {
+		return
+	}
+	if err := h.adminService.DeleteCompositeTarget(c.Request.Context(), groupID, targetID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"message": "Composite target deleted"})
+}
+
 func compositeRouteRequestToInput(req CompositeRouteRequest, defaultEnabled bool) service.CompositeRouteInput {
 	enabled := defaultEnabled
 	if req.Enabled != nil {
@@ -524,6 +627,7 @@ func compositeRouteRequestToInput(req CompositeRouteRequest, defaultEnabled bool
 		PublicModel:    req.PublicModel,
 		MatchType:      req.MatchType,
 		TargetPlatform: req.TargetPlatform,
+		TargetGroupID:  req.TargetGroupID,
 		UpstreamModel:  req.UpstreamModel,
 		Endpoint:       req.Endpoint,
 		Priority:       req.Priority,
