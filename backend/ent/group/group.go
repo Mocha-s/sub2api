@@ -30,6 +30,8 @@ const (
 	FieldI18n = "i18n"
 	// FieldRateMultiplier holds the string denoting the rate_multiplier field in the database.
 	FieldRateMultiplier = "rate_multiplier"
+	// FieldDynamicRateBillingEnabled holds the string denoting the dynamic_rate_billing_enabled field in the database.
+	FieldDynamicRateBillingEnabled = "dynamic_rate_billing_enabled"
 	// FieldPeakRateEnabled holds the string denoting the peak_rate_enabled field in the database.
 	FieldPeakRateEnabled = "peak_rate_enabled"
 	// FieldPeakStart holds the string denoting the peak_start field in the database.
@@ -234,6 +236,7 @@ var Columns = []string{
 	FieldDescription,
 	FieldI18n,
 	FieldRateMultiplier,
+	FieldDynamicRateBillingEnabled,
 	FieldPeakRateEnabled,
 	FieldPeakStart,
 	FieldPeakEnd,
@@ -336,6 +339,8 @@ var (
 	DefaultI18n domain.GroupI18n
 	// DefaultRateMultiplier holds the default value on creation for the "rate_multiplier" field.
 	DefaultRateMultiplier float64
+	// DefaultDynamicRateBillingEnabled holds the default value on creation for the "dynamic_rate_billing_enabled" field.
+	DefaultDynamicRateBillingEnabled bool
 	// DefaultPeakRateEnabled holds the default value on creation for the "peak_rate_enabled" field.
 	DefaultPeakRateEnabled bool
 	// DefaultPeakStart holds the default value on creation for the "peak_start" field.
@@ -482,6 +487,11 @@ func ByDescription(opts ...sql.OrderTermOption) OrderOption {
 // ByRateMultiplier orders the results by the rate_multiplier field.
 func ByRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRateMultiplier, opts...).ToFunc()
+}
+
+// ByDynamicRateBillingEnabled orders the results by the dynamic_rate_billing_enabled field.
+func ByDynamicRateBillingEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDynamicRateBillingEnabled, opts...).ToFunc()
 }
 
 // ByPeakRateEnabled orders the results by the peak_rate_enabled field.

@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/compositegrouptarget"
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
@@ -79,6 +80,7 @@ const (
 	TypeChannelMonitorDailyRollup     = "ChannelMonitorDailyRollup"
 	TypeChannelMonitorHistory         = "ChannelMonitorHistory"
 	TypeChannelMonitorRequestTemplate = "ChannelMonitorRequestTemplate"
+	TypeCompositeGroupTarget          = "CompositeGroupTarget"
 	TypeCompositeModelRoute           = "CompositeModelRoute"
 	TypeErrorPassthroughRule          = "ErrorPassthroughRule"
 	TypeGroup                         = "Group"
@@ -19706,30 +19708,840 @@ func (m *ChannelMonitorRequestTemplateMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ChannelMonitorRequestTemplate edge %s", name)
 }
 
+// CompositeGroupTargetMutation represents an operation that mutates the CompositeGroupTarget nodes in the graph.
+type CompositeGroupTargetMutation struct {
+	config
+	op                     Op
+	typ                    string
+	id                     *int64
+	created_at             *time.Time
+	updated_at             *time.Time
+	deleted_at             *time.Time
+	priority               *int
+	addpriority            *int
+	enabled                *bool
+	clearedFields          map[string]struct{}
+	composite_group        *int64
+	clearedcomposite_group bool
+	target_group           *int64
+	clearedtarget_group    bool
+	done                   bool
+	oldValue               func(context.Context) (*CompositeGroupTarget, error)
+	predicates             []predicate.CompositeGroupTarget
+}
+
+var _ ent.Mutation = (*CompositeGroupTargetMutation)(nil)
+
+// compositegrouptargetOption allows management of the mutation configuration using functional options.
+type compositegrouptargetOption func(*CompositeGroupTargetMutation)
+
+// newCompositeGroupTargetMutation creates new mutation for the CompositeGroupTarget entity.
+func newCompositeGroupTargetMutation(c config, op Op, opts ...compositegrouptargetOption) *CompositeGroupTargetMutation {
+	m := &CompositeGroupTargetMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeCompositeGroupTarget,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withCompositeGroupTargetID sets the ID field of the mutation.
+func withCompositeGroupTargetID(id int64) compositegrouptargetOption {
+	return func(m *CompositeGroupTargetMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *CompositeGroupTarget
+		)
+		m.oldValue = func(ctx context.Context) (*CompositeGroupTarget, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().CompositeGroupTarget.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withCompositeGroupTarget sets the old CompositeGroupTarget of the mutation.
+func withCompositeGroupTarget(node *CompositeGroupTarget) compositegrouptargetOption {
+	return func(m *CompositeGroupTargetMutation) {
+		m.oldValue = func(context.Context) (*CompositeGroupTarget, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m CompositeGroupTargetMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m CompositeGroupTargetMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *CompositeGroupTargetMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *CompositeGroupTargetMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().CompositeGroupTarget.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *CompositeGroupTargetMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *CompositeGroupTargetMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *CompositeGroupTargetMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *CompositeGroupTargetMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *CompositeGroupTargetMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *CompositeGroupTargetMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDeletedAt sets the "deleted_at" field.
+func (m *CompositeGroupTargetMutation) SetDeletedAt(t time.Time) {
+	m.deleted_at = &t
+}
+
+// DeletedAt returns the value of the "deleted_at" field in the mutation.
+func (m *CompositeGroupTargetMutation) DeletedAt() (r time.Time, exists bool) {
+	v := m.deleted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeletedAt returns the old "deleted_at" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldDeletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeletedAt: %w", err)
+	}
+	return oldValue.DeletedAt, nil
+}
+
+// ClearDeletedAt clears the value of the "deleted_at" field.
+func (m *CompositeGroupTargetMutation) ClearDeletedAt() {
+	m.deleted_at = nil
+	m.clearedFields[compositegrouptarget.FieldDeletedAt] = struct{}{}
+}
+
+// DeletedAtCleared returns if the "deleted_at" field was cleared in this mutation.
+func (m *CompositeGroupTargetMutation) DeletedAtCleared() bool {
+	_, ok := m.clearedFields[compositegrouptarget.FieldDeletedAt]
+	return ok
+}
+
+// ResetDeletedAt resets all changes to the "deleted_at" field.
+func (m *CompositeGroupTargetMutation) ResetDeletedAt() {
+	m.deleted_at = nil
+	delete(m.clearedFields, compositegrouptarget.FieldDeletedAt)
+}
+
+// SetCompositeGroupID sets the "composite_group_id" field.
+func (m *CompositeGroupTargetMutation) SetCompositeGroupID(i int64) {
+	m.composite_group = &i
+}
+
+// CompositeGroupID returns the value of the "composite_group_id" field in the mutation.
+func (m *CompositeGroupTargetMutation) CompositeGroupID() (r int64, exists bool) {
+	v := m.composite_group
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompositeGroupID returns the old "composite_group_id" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldCompositeGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompositeGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompositeGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompositeGroupID: %w", err)
+	}
+	return oldValue.CompositeGroupID, nil
+}
+
+// ResetCompositeGroupID resets all changes to the "composite_group_id" field.
+func (m *CompositeGroupTargetMutation) ResetCompositeGroupID() {
+	m.composite_group = nil
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (m *CompositeGroupTargetMutation) SetTargetGroupID(i int64) {
+	m.target_group = &i
+}
+
+// TargetGroupID returns the value of the "target_group_id" field in the mutation.
+func (m *CompositeGroupTargetMutation) TargetGroupID() (r int64, exists bool) {
+	v := m.target_group
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetGroupID returns the old "target_group_id" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldTargetGroupID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetGroupID: %w", err)
+	}
+	return oldValue.TargetGroupID, nil
+}
+
+// ResetTargetGroupID resets all changes to the "target_group_id" field.
+func (m *CompositeGroupTargetMutation) ResetTargetGroupID() {
+	m.target_group = nil
+}
+
+// SetPriority sets the "priority" field.
+func (m *CompositeGroupTargetMutation) SetPriority(i int) {
+	m.priority = &i
+	m.addpriority = nil
+}
+
+// Priority returns the value of the "priority" field in the mutation.
+func (m *CompositeGroupTargetMutation) Priority() (r int, exists bool) {
+	v := m.priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriority returns the old "priority" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldPriority(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriority: %w", err)
+	}
+	return oldValue.Priority, nil
+}
+
+// AddPriority adds i to the "priority" field.
+func (m *CompositeGroupTargetMutation) AddPriority(i int) {
+	if m.addpriority != nil {
+		*m.addpriority += i
+	} else {
+		m.addpriority = &i
+	}
+}
+
+// AddedPriority returns the value that was added to the "priority" field in this mutation.
+func (m *CompositeGroupTargetMutation) AddedPriority() (r int, exists bool) {
+	v := m.addpriority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPriority resets all changes to the "priority" field.
+func (m *CompositeGroupTargetMutation) ResetPriority() {
+	m.priority = nil
+	m.addpriority = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *CompositeGroupTargetMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *CompositeGroupTargetMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the CompositeGroupTarget entity.
+// If the CompositeGroupTarget object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeGroupTargetMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *CompositeGroupTargetMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// ClearCompositeGroup clears the "composite_group" edge to the Group entity.
+func (m *CompositeGroupTargetMutation) ClearCompositeGroup() {
+	m.clearedcomposite_group = true
+	m.clearedFields[compositegrouptarget.FieldCompositeGroupID] = struct{}{}
+}
+
+// CompositeGroupCleared reports if the "composite_group" edge to the Group entity was cleared.
+func (m *CompositeGroupTargetMutation) CompositeGroupCleared() bool {
+	return m.clearedcomposite_group
+}
+
+// CompositeGroupIDs returns the "composite_group" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// CompositeGroupID instead. It exists only for internal usage by the builders.
+func (m *CompositeGroupTargetMutation) CompositeGroupIDs() (ids []int64) {
+	if id := m.composite_group; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetCompositeGroup resets all changes to the "composite_group" edge.
+func (m *CompositeGroupTargetMutation) ResetCompositeGroup() {
+	m.composite_group = nil
+	m.clearedcomposite_group = false
+}
+
+// ClearTargetGroup clears the "target_group" edge to the Group entity.
+func (m *CompositeGroupTargetMutation) ClearTargetGroup() {
+	m.clearedtarget_group = true
+	m.clearedFields[compositegrouptarget.FieldTargetGroupID] = struct{}{}
+}
+
+// TargetGroupCleared reports if the "target_group" edge to the Group entity was cleared.
+func (m *CompositeGroupTargetMutation) TargetGroupCleared() bool {
+	return m.clearedtarget_group
+}
+
+// TargetGroupIDs returns the "target_group" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TargetGroupID instead. It exists only for internal usage by the builders.
+func (m *CompositeGroupTargetMutation) TargetGroupIDs() (ids []int64) {
+	if id := m.target_group; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTargetGroup resets all changes to the "target_group" edge.
+func (m *CompositeGroupTargetMutation) ResetTargetGroup() {
+	m.target_group = nil
+	m.clearedtarget_group = false
+}
+
+// Where appends a list predicates to the CompositeGroupTargetMutation builder.
+func (m *CompositeGroupTargetMutation) Where(ps ...predicate.CompositeGroupTarget) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the CompositeGroupTargetMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *CompositeGroupTargetMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.CompositeGroupTarget, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *CompositeGroupTargetMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *CompositeGroupTargetMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (CompositeGroupTarget).
+func (m *CompositeGroupTargetMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *CompositeGroupTargetMutation) Fields() []string {
+	fields := make([]string, 0, 7)
+	if m.created_at != nil {
+		fields = append(fields, compositegrouptarget.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, compositegrouptarget.FieldUpdatedAt)
+	}
+	if m.deleted_at != nil {
+		fields = append(fields, compositegrouptarget.FieldDeletedAt)
+	}
+	if m.composite_group != nil {
+		fields = append(fields, compositegrouptarget.FieldCompositeGroupID)
+	}
+	if m.target_group != nil {
+		fields = append(fields, compositegrouptarget.FieldTargetGroupID)
+	}
+	if m.priority != nil {
+		fields = append(fields, compositegrouptarget.FieldPriority)
+	}
+	if m.enabled != nil {
+		fields = append(fields, compositegrouptarget.FieldEnabled)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *CompositeGroupTargetMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case compositegrouptarget.FieldCreatedAt:
+		return m.CreatedAt()
+	case compositegrouptarget.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case compositegrouptarget.FieldDeletedAt:
+		return m.DeletedAt()
+	case compositegrouptarget.FieldCompositeGroupID:
+		return m.CompositeGroupID()
+	case compositegrouptarget.FieldTargetGroupID:
+		return m.TargetGroupID()
+	case compositegrouptarget.FieldPriority:
+		return m.Priority()
+	case compositegrouptarget.FieldEnabled:
+		return m.Enabled()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *CompositeGroupTargetMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case compositegrouptarget.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case compositegrouptarget.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case compositegrouptarget.FieldDeletedAt:
+		return m.OldDeletedAt(ctx)
+	case compositegrouptarget.FieldCompositeGroupID:
+		return m.OldCompositeGroupID(ctx)
+	case compositegrouptarget.FieldTargetGroupID:
+		return m.OldTargetGroupID(ctx)
+	case compositegrouptarget.FieldPriority:
+		return m.OldPriority(ctx)
+	case compositegrouptarget.FieldEnabled:
+		return m.OldEnabled(ctx)
+	}
+	return nil, fmt.Errorf("unknown CompositeGroupTarget field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CompositeGroupTargetMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case compositegrouptarget.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case compositegrouptarget.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case compositegrouptarget.FieldDeletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeletedAt(v)
+		return nil
+	case compositegrouptarget.FieldCompositeGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompositeGroupID(v)
+		return nil
+	case compositegrouptarget.FieldTargetGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetGroupID(v)
+		return nil
+	case compositegrouptarget.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriority(v)
+		return nil
+	case compositegrouptarget.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *CompositeGroupTargetMutation) AddedFields() []string {
+	var fields []string
+	if m.addpriority != nil {
+		fields = append(fields, compositegrouptarget.FieldPriority)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *CompositeGroupTargetMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case compositegrouptarget.FieldPriority:
+		return m.AddedPriority()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CompositeGroupTargetMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case compositegrouptarget.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriority(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *CompositeGroupTargetMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(compositegrouptarget.FieldDeletedAt) {
+		fields = append(fields, compositegrouptarget.FieldDeletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *CompositeGroupTargetMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *CompositeGroupTargetMutation) ClearField(name string) error {
+	switch name {
+	case compositegrouptarget.FieldDeletedAt:
+		m.ClearDeletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *CompositeGroupTargetMutation) ResetField(name string) error {
+	switch name {
+	case compositegrouptarget.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case compositegrouptarget.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case compositegrouptarget.FieldDeletedAt:
+		m.ResetDeletedAt()
+		return nil
+	case compositegrouptarget.FieldCompositeGroupID:
+		m.ResetCompositeGroupID()
+		return nil
+	case compositegrouptarget.FieldTargetGroupID:
+		m.ResetTargetGroupID()
+		return nil
+	case compositegrouptarget.FieldPriority:
+		m.ResetPriority()
+		return nil
+	case compositegrouptarget.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *CompositeGroupTargetMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.composite_group != nil {
+		edges = append(edges, compositegrouptarget.EdgeCompositeGroup)
+	}
+	if m.target_group != nil {
+		edges = append(edges, compositegrouptarget.EdgeTargetGroup)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *CompositeGroupTargetMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case compositegrouptarget.EdgeCompositeGroup:
+		if id := m.composite_group; id != nil {
+			return []ent.Value{*id}
+		}
+	case compositegrouptarget.EdgeTargetGroup:
+		if id := m.target_group; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *CompositeGroupTargetMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *CompositeGroupTargetMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *CompositeGroupTargetMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedcomposite_group {
+		edges = append(edges, compositegrouptarget.EdgeCompositeGroup)
+	}
+	if m.clearedtarget_group {
+		edges = append(edges, compositegrouptarget.EdgeTargetGroup)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *CompositeGroupTargetMutation) EdgeCleared(name string) bool {
+	switch name {
+	case compositegrouptarget.EdgeCompositeGroup:
+		return m.clearedcomposite_group
+	case compositegrouptarget.EdgeTargetGroup:
+		return m.clearedtarget_group
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *CompositeGroupTargetMutation) ClearEdge(name string) error {
+	switch name {
+	case compositegrouptarget.EdgeCompositeGroup:
+		m.ClearCompositeGroup()
+		return nil
+	case compositegrouptarget.EdgeTargetGroup:
+		m.ClearTargetGroup()
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *CompositeGroupTargetMutation) ResetEdge(name string) error {
+	switch name {
+	case compositegrouptarget.EdgeCompositeGroup:
+		m.ResetCompositeGroup()
+		return nil
+	case compositegrouptarget.EdgeTargetGroup:
+		m.ResetTargetGroup()
+		return nil
+	}
+	return fmt.Errorf("unknown CompositeGroupTarget edge %s", name)
+}
+
 // CompositeModelRouteMutation represents an operation that mutates the CompositeModelRoute nodes in the graph.
 type CompositeModelRouteMutation struct {
 	config
-	op              Op
-	typ             string
-	id              *int64
-	created_at      *time.Time
-	updated_at      *time.Time
-	deleted_at      *time.Time
-	public_model    *string
-	match_type      *string
-	target_platform *string
-	upstream_model  *string
-	endpoint        *string
-	priority        *int
-	addpriority     *int
-	enabled         *bool
-	notes           *string
-	clearedFields   map[string]struct{}
-	group           *int64
-	clearedgroup    bool
-	done            bool
-	oldValue        func(context.Context) (*CompositeModelRoute, error)
-	predicates      []predicate.CompositeModelRoute
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	deleted_at          *time.Time
+	public_model        *string
+	match_type          *string
+	target_platform     *string
+	upstream_model      *string
+	endpoint            *string
+	priority            *int
+	addpriority         *int
+	enabled             *bool
+	notes               *string
+	clearedFields       map[string]struct{}
+	group               *int64
+	clearedgroup        bool
+	target_group        *int64
+	clearedtarget_group bool
+	done                bool
+	oldValue            func(context.Context) (*CompositeModelRoute, error)
+	predicates          []predicate.CompositeModelRoute
 }
 
 var _ ent.Mutation = (*CompositeModelRouteMutation)(nil)
@@ -19985,6 +20797,55 @@ func (m *CompositeModelRouteMutation) OldGroupID(ctx context.Context) (v int64, 
 // ResetGroupID resets all changes to the "group_id" field.
 func (m *CompositeModelRouteMutation) ResetGroupID() {
 	m.group = nil
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (m *CompositeModelRouteMutation) SetTargetGroupID(i int64) {
+	m.target_group = &i
+}
+
+// TargetGroupID returns the value of the "target_group_id" field in the mutation.
+func (m *CompositeModelRouteMutation) TargetGroupID() (r int64, exists bool) {
+	v := m.target_group
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetGroupID returns the old "target_group_id" field's value of the CompositeModelRoute entity.
+// If the CompositeModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CompositeModelRouteMutation) OldTargetGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetGroupID: %w", err)
+	}
+	return oldValue.TargetGroupID, nil
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (m *CompositeModelRouteMutation) ClearTargetGroupID() {
+	m.target_group = nil
+	m.clearedFields[compositemodelroute.FieldTargetGroupID] = struct{}{}
+}
+
+// TargetGroupIDCleared returns if the "target_group_id" field was cleared in this mutation.
+func (m *CompositeModelRouteMutation) TargetGroupIDCleared() bool {
+	_, ok := m.clearedFields[compositemodelroute.FieldTargetGroupID]
+	return ok
+}
+
+// ResetTargetGroupID resets all changes to the "target_group_id" field.
+func (m *CompositeModelRouteMutation) ResetTargetGroupID() {
+	m.target_group = nil
+	delete(m.clearedFields, compositemodelroute.FieldTargetGroupID)
 }
 
 // SetPublicModel sets the "public_model" field.
@@ -20335,6 +21196,33 @@ func (m *CompositeModelRouteMutation) ResetGroup() {
 	m.clearedgroup = false
 }
 
+// ClearTargetGroup clears the "target_group" edge to the Group entity.
+func (m *CompositeModelRouteMutation) ClearTargetGroup() {
+	m.clearedtarget_group = true
+	m.clearedFields[compositemodelroute.FieldTargetGroupID] = struct{}{}
+}
+
+// TargetGroupCleared reports if the "target_group" edge to the Group entity was cleared.
+func (m *CompositeModelRouteMutation) TargetGroupCleared() bool {
+	return m.TargetGroupIDCleared() || m.clearedtarget_group
+}
+
+// TargetGroupIDs returns the "target_group" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TargetGroupID instead. It exists only for internal usage by the builders.
+func (m *CompositeModelRouteMutation) TargetGroupIDs() (ids []int64) {
+	if id := m.target_group; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTargetGroup resets all changes to the "target_group" edge.
+func (m *CompositeModelRouteMutation) ResetTargetGroup() {
+	m.target_group = nil
+	m.clearedtarget_group = false
+}
+
 // Where appends a list predicates to the CompositeModelRouteMutation builder.
 func (m *CompositeModelRouteMutation) Where(ps ...predicate.CompositeModelRoute) {
 	m.predicates = append(m.predicates, ps...)
@@ -20369,7 +21257,7 @@ func (m *CompositeModelRouteMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CompositeModelRouteMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.created_at != nil {
 		fields = append(fields, compositemodelroute.FieldCreatedAt)
 	}
@@ -20381,6 +21269,9 @@ func (m *CompositeModelRouteMutation) Fields() []string {
 	}
 	if m.group != nil {
 		fields = append(fields, compositemodelroute.FieldGroupID)
+	}
+	if m.target_group != nil {
+		fields = append(fields, compositemodelroute.FieldTargetGroupID)
 	}
 	if m.public_model != nil {
 		fields = append(fields, compositemodelroute.FieldPublicModel)
@@ -20422,6 +21313,8 @@ func (m *CompositeModelRouteMutation) Field(name string) (ent.Value, bool) {
 		return m.DeletedAt()
 	case compositemodelroute.FieldGroupID:
 		return m.GroupID()
+	case compositemodelroute.FieldTargetGroupID:
+		return m.TargetGroupID()
 	case compositemodelroute.FieldPublicModel:
 		return m.PublicModel()
 	case compositemodelroute.FieldMatchType:
@@ -20455,6 +21348,8 @@ func (m *CompositeModelRouteMutation) OldField(ctx context.Context, name string)
 		return m.OldDeletedAt(ctx)
 	case compositemodelroute.FieldGroupID:
 		return m.OldGroupID(ctx)
+	case compositemodelroute.FieldTargetGroupID:
+		return m.OldTargetGroupID(ctx)
 	case compositemodelroute.FieldPublicModel:
 		return m.OldPublicModel(ctx)
 	case compositemodelroute.FieldMatchType:
@@ -20507,6 +21402,13 @@ func (m *CompositeModelRouteMutation) SetField(name string, value ent.Value) err
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetGroupID(v)
+		return nil
+	case compositemodelroute.FieldTargetGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetGroupID(v)
 		return nil
 	case compositemodelroute.FieldPublicModel:
 		v, ok := value.(string)
@@ -20612,6 +21514,9 @@ func (m *CompositeModelRouteMutation) ClearedFields() []string {
 	if m.FieldCleared(compositemodelroute.FieldDeletedAt) {
 		fields = append(fields, compositemodelroute.FieldDeletedAt)
 	}
+	if m.FieldCleared(compositemodelroute.FieldTargetGroupID) {
+		fields = append(fields, compositemodelroute.FieldTargetGroupID)
+	}
 	if m.FieldCleared(compositemodelroute.FieldNotes) {
 		fields = append(fields, compositemodelroute.FieldNotes)
 	}
@@ -20631,6 +21536,9 @@ func (m *CompositeModelRouteMutation) ClearField(name string) error {
 	switch name {
 	case compositemodelroute.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case compositemodelroute.FieldTargetGroupID:
+		m.ClearTargetGroupID()
 		return nil
 	case compositemodelroute.FieldNotes:
 		m.ClearNotes()
@@ -20654,6 +21562,9 @@ func (m *CompositeModelRouteMutation) ResetField(name string) error {
 		return nil
 	case compositemodelroute.FieldGroupID:
 		m.ResetGroupID()
+		return nil
+	case compositemodelroute.FieldTargetGroupID:
+		m.ResetTargetGroupID()
 		return nil
 	case compositemodelroute.FieldPublicModel:
 		m.ResetPublicModel()
@@ -20685,9 +21596,12 @@ func (m *CompositeModelRouteMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *CompositeModelRouteMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.group != nil {
 		edges = append(edges, compositemodelroute.EdgeGroup)
+	}
+	if m.target_group != nil {
+		edges = append(edges, compositemodelroute.EdgeTargetGroup)
 	}
 	return edges
 }
@@ -20700,13 +21614,17 @@ func (m *CompositeModelRouteMutation) AddedIDs(name string) []ent.Value {
 		if id := m.group; id != nil {
 			return []ent.Value{*id}
 		}
+	case compositemodelroute.EdgeTargetGroup:
+		if id := m.target_group; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *CompositeModelRouteMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	return edges
 }
 
@@ -20718,9 +21636,12 @@ func (m *CompositeModelRouteMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *CompositeModelRouteMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.clearedgroup {
 		edges = append(edges, compositemodelroute.EdgeGroup)
+	}
+	if m.clearedtarget_group {
+		edges = append(edges, compositemodelroute.EdgeTargetGroup)
 	}
 	return edges
 }
@@ -20731,6 +21652,8 @@ func (m *CompositeModelRouteMutation) EdgeCleared(name string) bool {
 	switch name {
 	case compositemodelroute.EdgeGroup:
 		return m.clearedgroup
+	case compositemodelroute.EdgeTargetGroup:
+		return m.clearedtarget_group
 	}
 	return false
 }
@@ -20742,6 +21665,9 @@ func (m *CompositeModelRouteMutation) ClearEdge(name string) error {
 	case compositemodelroute.EdgeGroup:
 		m.ClearGroup()
 		return nil
+	case compositemodelroute.EdgeTargetGroup:
+		m.ClearTargetGroup()
+		return nil
 	}
 	return fmt.Errorf("unknown CompositeModelRoute unique edge %s", name)
 }
@@ -20752,6 +21678,9 @@ func (m *CompositeModelRouteMutation) ResetEdge(name string) error {
 	switch name {
 	case compositemodelroute.EdgeGroup:
 		m.ResetGroup()
+		return nil
+	case compositemodelroute.EdgeTargetGroup:
+		m.ResetTargetGroup()
 		return nil
 	}
 	return fmt.Errorf("unknown CompositeModelRoute edge %s", name)
@@ -22091,6 +23020,7 @@ type GroupMutation struct {
 	i18n                                    *domain.GroupI18n
 	rate_multiplier                         *float64
 	addrate_multiplier                      *float64
+	dynamic_rate_billing_enabled            *bool
 	peak_rate_enabled                       *bool
 	peak_start                              *string
 	peak_end                                *string
@@ -22599,6 +23529,42 @@ func (m *GroupMutation) AddedRateMultiplier() (r float64, exists bool) {
 func (m *GroupMutation) ResetRateMultiplier() {
 	m.rate_multiplier = nil
 	m.addrate_multiplier = nil
+}
+
+// SetDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field.
+func (m *GroupMutation) SetDynamicRateBillingEnabled(b bool) {
+	m.dynamic_rate_billing_enabled = &b
+}
+
+// DynamicRateBillingEnabled returns the value of the "dynamic_rate_billing_enabled" field in the mutation.
+func (m *GroupMutation) DynamicRateBillingEnabled() (r bool, exists bool) {
+	v := m.dynamic_rate_billing_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDynamicRateBillingEnabled returns the old "dynamic_rate_billing_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldDynamicRateBillingEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDynamicRateBillingEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDynamicRateBillingEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDynamicRateBillingEnabled: %w", err)
+	}
+	return oldValue.DynamicRateBillingEnabled, nil
+}
+
+// ResetDynamicRateBillingEnabled resets all changes to the "dynamic_rate_billing_enabled" field.
+func (m *GroupMutation) ResetDynamicRateBillingEnabled() {
+	m.dynamic_rate_billing_enabled = nil
 }
 
 // SetPeakRateEnabled sets the "peak_rate_enabled" field.
@@ -25997,7 +26963,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 68)
+	fields := make([]string, 0, 69)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26018,6 +26984,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
+	}
+	if m.dynamic_rate_billing_enabled != nil {
+		fields = append(fields, group.FieldDynamicRateBillingEnabled)
 	}
 	if m.peak_rate_enabled != nil {
 		fields = append(fields, group.FieldPeakRateEnabled)
@@ -26224,6 +27193,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.I18n()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
+	case group.FieldDynamicRateBillingEnabled:
+		return m.DynamicRateBillingEnabled()
 	case group.FieldPeakRateEnabled:
 		return m.PeakRateEnabled()
 	case group.FieldPeakStart:
@@ -26369,6 +27340,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldI18n(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
+	case group.FieldDynamicRateBillingEnabled:
+		return m.OldDynamicRateBillingEnabled(ctx)
 	case group.FieldPeakRateEnabled:
 		return m.OldPeakRateEnabled(ctx)
 	case group.FieldPeakStart:
@@ -26548,6 +27521,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRateMultiplier(v)
+		return nil
+	case group.FieldDynamicRateBillingEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDynamicRateBillingEnabled(v)
 		return nil
 	case group.FieldPeakRateEnabled:
 		v, ok := value.(bool)
@@ -27507,6 +28487,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
+		return nil
+	case group.FieldDynamicRateBillingEnabled:
+		m.ResetDynamicRateBillingEnabled()
 		return nil
 	case group.FieldPeakRateEnabled:
 		m.ResetPeakRateEnabled()
