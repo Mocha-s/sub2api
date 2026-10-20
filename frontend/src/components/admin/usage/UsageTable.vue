@@ -53,27 +53,53 @@
         </template>
 
         <template #cell-model="{ row }">
-          <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5 text-xs">
-            <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
-                 class="break-all"
-                 :class="i === 0 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
-                 :style="i > 0 ? `padding-left: ${i * 0.75}rem` : ''">
-              <span v-if="i > 0" class="mr-0.5">↳</span>{{ step }}
+          <div class="space-y-0.5 text-xs">
+            <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">
+              <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
+                   class="break-all"
+                   :class="i === 0 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
+                   :style="i > 0 ? `padding-left: ${i * 0.75}rem` : ''">
+                <span v-if="i > 0" class="mr-0.5">↳</span>{{ step }}
+              </div>
+            </div>
+            <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5">
+              <div class="break-all font-medium text-gray-900 dark:text-white">
+                {{ row.model }}
+              </div>
+              <div class="break-all text-gray-500 dark:text-gray-400">
+                <span class="mr-0.5">↳</span>{{ row.upstream_model }}
+              </div>
+            </div>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+            <div
+              v-if="row.upstream_model_mismatch === true && row.upstream_response_model"
+              class="break-all pl-3 text-[11px]"
+              :class="isLikelyModelVariant(row) ? 'text-amber-600 dark:text-amber-400' : 'text-orange-600 dark:text-orange-400'"
+              :title="modelAuditTitle(row)"
+            >
+              <span class="mr-1">↳ {{ t('usage.upstreamResponseModel') }}:</span>{{ row.upstream_response_model }}
+              <span
+                class="ml-1 inline-flex rounded px-1 py-px text-[10px] font-medium ring-1 ring-inset"
+                :class="isLikelyModelVariant(row)
+                  ? 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30'
+                  : 'bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:ring-orange-500/30'"
+              >
+                {{ isLikelyModelVariant(row) ? t('usage.modelVariant') : t('usage.modelMismatch') }}
+              </span>
             </div>
           </div>
-          <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5 text-xs">
-            <div class="break-all font-medium text-gray-900 dark:text-white">
-              {{ row.model }}
-            </div>
-            <div class="break-all text-gray-500 dark:text-gray-400">
-              <span class="mr-0.5">↳</span>{{ row.upstream_model }}
-            </div>
-          </div>
-          <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
         </template>
 
         <template #cell-reasoning_effort="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">
+          <div v-if="hasReasoningEffortMapping(row)" data-testid="reasoning-effort-cell" class="space-y-0.5 text-xs">
+            <div class="font-medium text-gray-900 dark:text-white">
+              {{ formatReasoningEffort(row.reasoning_effort) }}
+            </div>
+            <div class="text-gray-500 dark:text-gray-400">
+              <span class="mr-0.5">↳</span>{{ formatReasoningEffort(row.upstream_reasoning_effort) }}
+            </div>
+          </div>
+          <span v-else data-testid="reasoning-effort-cell" class="text-sm text-gray-900 dark:text-white">
             {{ formatReasoningEffort(row.reasoning_effort) }}
           </span>
         </template>
@@ -99,9 +125,18 @@
         </template>
 
         <template #cell-stream="{ row }">
-          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
-            {{ getRequestTypeLabel(row) }}
-          </span>
+          <div class="flex flex-wrap items-center gap-1">
+            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
+              {{ getRequestTypeLabel(row) }}
+            </span>
+            <span
+              v-if="row.native_compaction_v2"
+              data-testid="native-compaction-badge"
+              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
+            >
+              {{ t('usage.nativeCompactionV2') }}
+            </span>
+          </div>
         </template>
 
         <template #cell-billing_mode="{ row }">
@@ -111,11 +146,8 @@
         </template>
 
         <template #cell-tokens="{ row }">
-          <div v-if="isVideoUsage(row)" class="text-sm font-medium text-gray-900 dark:text-white">
-            {{ formatVideoMetadata(row) }}
-          </div>
           <!-- 图片生成请求（仅按次计费时显示图片格式） -->
-          <div v-else-if="isImageUsage(row)" class="flex items-center gap-1.5">
+          <div v-if="isImageUsage(row)" class="flex items-center gap-1.5">
             <svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -176,40 +208,26 @@
         <template #cell-cost="{ row }">
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-green-600 dark:text-green-400">${{ netActualCost(row).toFixed(6) }}</span>
+              <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
+                :title="t('admin.usage.longContextPricingTooltip')"
                 class="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30"
-              >x2</span>
-              <span
-                v-if="isRefunded(row)"
-                class="inline-flex items-center rounded bg-gray-100 px-1 py-px text-[10px] font-medium leading-tight text-gray-600 ring-1 ring-inset ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600"
-                :aria-label="t('usage.refundedLabel')"
-              >{{ t('usage.refunded') }}</span>
+              >{{ t('admin.usage.longContext') }}</span>
               <!-- Cost Detail Tooltip -->
-              <button
-                type="button"
-                data-testid="cost-details-trigger"
-                class="group relative inline-flex h-8 w-8 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-dark-900"
-                :aria-label="t('usage.costDetails')"
-                :aria-expanded="tooltipVisible && tooltipData?.request_id === row.request_id"
-                :aria-controls="costTooltipId"
-                :aria-describedby="tooltipVisible && tooltipData?.request_id === row.request_id ? costTooltipId : undefined"
-                @mouseenter="showTooltip($event, row, 'hover')"
-                @mouseleave="hideTooltip('hover')"
-                @focus="showTooltip($event, row, 'focus')"
-                @blur="hideTooltip('focus')"
-                @click="toggleTooltip($event, row)"
-                @keydown.esc.prevent.stop="hideTooltip()"
+              <div
+                class="group relative"
+                @mouseenter="showTooltip($event, row)"
+                @mouseleave="hideTooltip"
               >
                 <div class="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-blue-100 dark:bg-gray-700 dark:group-hover:bg-blue-900/50">
                   <Icon name="infoCircle" size="xs" class="text-gray-400 group-hover:text-blue-500 dark:text-gray-500 dark:group-hover:text-blue-400" />
                 </div>
-              </button>
+              </div>
             </div>
             <div v-if="showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
-              A ${{ netAccountCost(row).toFixed(6) }}
+              A ${{ accountBilled(row).toFixed(6) }}
             </div>
           </div>
         </template>
@@ -230,12 +248,50 @@
               <span v-else class="text-gray-400 dark:text-gray-500">-</span>
               <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
               <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+              <span class="text-gray-400 dark:text-gray-500" :title="t('usage.outputTpsHint')">{{ t('usage.outputTps') }}</span>
+              <span data-testid="output-tps" class="font-medium tabular-nums text-gray-700 dark:text-gray-300">{{ formatUsageOutputRate(row) }}</span>
             </div>
           </div>
         </template>
 
         <template #cell-created_at="{ value }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
+        </template>
+
+        <template #cell-request_id="{ row }">
+          <div v-if="row.request_id" class="flex max-w-[160px] items-center gap-1.5">
+            <span class="truncate font-mono text-xs text-gray-500 dark:text-gray-400" :title="row.request_id">
+              {{ row.request_id }}
+            </span>
+            <button
+              type="button"
+              class="shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+              :class="copiedRequestId === row.request_id ? 'text-green-500 hover:text-green-500' : ''"
+              :title="copiedRequestId === row.request_id ? t('keys.copied') : t('keys.copyToClipboard')"
+              @click="copyRequestId(row.request_id)"
+            >
+              <Icon :name="copiedRequestId === row.request_id ? 'check' : 'copy'" size="sm" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
+        <template #cell-upstream_request_id="{ row }">
+          <div v-if="row.upstream_request_id" class="flex max-w-[160px] items-center gap-1.5">
+            <span class="truncate font-mono text-xs text-gray-500 dark:text-gray-400" :title="row.upstream_request_id">
+              {{ row.upstream_request_id }}
+            </span>
+            <button
+              type="button"
+              class="shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+              :class="copiedRequestId === row.upstream_request_id ? 'text-green-500 hover:text-green-500' : ''"
+              :title="copiedRequestId === row.upstream_request_id ? t('keys.copied') : t('keys.copyToClipboard')"
+              @click="copyUpstreamRequestId(row.upstream_request_id)"
+            >
+              <Icon :name="copiedRequestId === row.upstream_request_id ? 'check' : 'copy'" size="sm" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
         <template #cell-user_agent="{ row }">
@@ -344,37 +400,32 @@
   <Teleport to="body">
     <div
       v-if="tooltipVisible"
-      ref="costTooltipRef"
-      :id="costTooltipId"
-      role="tooltip"
-      :data-side="tooltipSide"
-      class="fixed z-[9999] pointer-events-none"
+      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
       :style="{
         left: tooltipPosition.x + 'px',
-        top: tooltipPosition.y + 'px',
-        visibility: tooltipPositioned ? 'visible' : 'hidden'
+        top: tooltipPosition.y + 'px'
       }"
     >
-      <div class="cost-tooltip max-h-[calc(100vh-1rem)] max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto whitespace-normal rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+      <div class="whitespace-nowrap rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-1.5">
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-gray-700 pb-1.5">
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.costDetails') }}</div>
             <div v-if="tooltipData && tooltipData.input_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.inputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && hasImageInputCost(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.imageInputCost') }}</span>
-              <span class="font-medium text-fuchsia-300">${{ tooltipData.image_input_cost.toFixed(6) }}</span>
+              <span class="font-medium text-fuchsia-300">${{ tooltipData.image_input_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && tooltipData.output_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.outputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && hasImageOutputCost(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.imageOutputCost') }}</span>
-              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(8) }}</span>
             </div>
             <!-- Token billing: show unit prices per 1M tokens -->
             <template v-if="tooltipData && !isImageUsage(tooltipData) && (!tooltipData.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN)">
@@ -422,67 +473,24 @@
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageUnitPrice') }}</span>
-                <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(6) }}</span>
+                <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(8) }}</span>
               </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageTotalPrice') }}</span>
-                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
-              </div>
-            </template>
-            <template v-else-if="tooltipData && isVideoUsage(tooltipData)">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.videoResolution') }}</span>
-                <span class="font-medium text-white">{{ tooltipData.video_resolution || '-' }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.videoDuration') }}</span>
-                <span class="font-medium text-white">{{ formatVideoDuration(tooltipData) }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.videoOutputCount') }}</span>
-                <span class="font-medium text-white">{{ formatVideoCount(tooltipData) }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.videoUnitPrice') }}</span>
-                <span class="font-medium text-sky-300">${{ formatVideoPrice(videoUnitPrice(tooltipData)) }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.videoPriceCalculation') }}</span>
-                <span class="font-medium text-white">
-                  <template v-if="hasVideoPriceCalculation(tooltipData)">
-                    {{ formatVideoPriceCalculation(tooltipData) }}
-                  </template>
-                  <template v-else>-</template>
-                </span>
+                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(8) || '0.00000000' }}</span>
               </div>
             </template>
             <div v-else class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.unitPrice') }}</span>
-              <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
+              <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(8) || '0.00000000' }}</span>
             </div>
-            <template v-if="tooltipData && isRefunded(tooltipData)">
-              <div data-testid="customer-refund-details" class="flex flex-wrap flex-col gap-1.5">
-                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-gray-700 pt-1.5">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.grossCost') }}</span>
-                  <span class="font-medium text-white">${{ (tooltipData.actual_cost ?? 0).toFixed(6) }}</span>
-                </div>
-                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.refund') }}</span>
-                  <span class="font-medium text-white">-${{ (tooltipData.refunded_cost ?? 0).toFixed(6) }}</span>
-                </div>
-                <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.netCost') }}</span>
-                  <span class="font-semibold text-green-400">${{ netActualCost(tooltipData).toFixed(6) }}</span>
-                </div>
-              </div>
-            </template>
             <div v-if="tooltipData && tooltipData.cache_creation_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheCreationCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(8) }}</span>
             </div>
             <div v-if="tooltipData && tooltipData.cache_read_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheReadCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(8) }}</span>
             </div>
           </div>
           <!-- Rate and Summary -->
@@ -492,15 +500,15 @@
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.rate') }}</span>
-            <span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier || 1) }}x</span>
+            <span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier ?? 1) }}x</span>
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.original') }}</span>
-            <span class="font-medium text-white">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
+            <span class="font-medium text-white">${{ tooltipData?.total_cost?.toFixed(8) || '0.00000000' }}</span>
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
-            <span class="font-semibold text-green-400">${{ netActualCost(tooltipData).toFixed(6) }}</span>
+            <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(8) || '0.00000000' }}</span>
           </div>
           <!-- Account billing (separated from user billing) -->
           <template v-if="showAccountBilling">
@@ -510,43 +518,27 @@
             </div>
             <div class="flex items-center justify-between gap-6">
               <span class="text-gray-400">{{ t('usage.accountBilled') }}</span>
-              <span class="font-semibold text-green-400">${{ netAccountCost(tooltipData).toFixed(6) }}</span>
+              <span class="font-semibold text-green-400">
+                ${{ accountBilled({
+                  total_cost: tooltipData?.total_cost,
+                  account_stats_cost: tooltipData?.account_stats_cost,
+                  account_rate_multiplier: tooltipData?.account_rate_multiplier,
+                }).toFixed(8) }}
+              </span>
             </div>
-            <template v-if="tooltipData && isRefunded(tooltipData)">
-              <div data-testid="account-refund-details" class="flex flex-wrap flex-col gap-1.5">
-                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.grossCost') }}</span>
-                  <span class="font-medium text-white">${{ grossAccountCost(tooltipData).toFixed(6) }}</span>
-                </div>
-                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.refund') }}</span>
-                  <span class="font-medium text-white">-${{ (tooltipData.refunded_account_cost ?? 0).toFixed(6) }}</span>
-                </div>
-                <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-                  <span class="min-w-0 text-gray-400">{{ t('usage.netCost') }}</span>
-                  <span class="font-semibold text-green-400">${{ netAccountCost(tooltipData).toFixed(6) }}</span>
-                </div>
-              </div>
-            </template>
           </template>
         </div>
-        <div
-          v-if="tooltipSide === 'right'"
-          class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"
-        ></div>
-        <div
-          v-else
-          class="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-l-[6px] border-t-[6px] border-b-transparent border-l-gray-900 border-t-transparent dark:border-l-gray-800"
-        ></div>
+        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, getCurrentInstance, nextTick, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { formatDateTime, formatReasoningEffort } from '@/utils/format'
+import { useAppStore } from '@/stores/app'
+import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
@@ -558,19 +550,15 @@ import {
   LATENCY_TEXT_CLASSES,
   durationSeverity,
   firstTokenSeverity,
+  formatUsageOutputRate,
 } from '@/utils/latencyHealth'
 import {
   BILLING_MODE_TOKEN,
-  BILLING_MODE_VIDEO,
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
   getDisplayBillingMode,
   imageUnitPrice,
-  isVideoUsage,
-  grossAccountCost,
-  netAccountCost,
-  netActualCost,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -585,6 +573,14 @@ import {
   textInputTokens,
   hasImageInputCost,
 } from '@/utils/imageUsage'
+
+/** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
+function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {
+  const base = row.account_stats_cost != null ? row.account_stats_cost : (row.total_cost ?? 0)
+  const result = base * (row.account_rate_multiplier ?? 1)
+  return Number.isNaN(result) ? 0 : result
+}
+
 
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -622,55 +618,40 @@ const emit = defineEmits<{
   ipGeoBatchFailed: []
 }>()
 const { t } = useI18n()
+const appStore = useAppStore()
+const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 
-const isRefunded = (row: AdminUsageLog | null | undefined): boolean =>
-  Boolean(row?.refunded_at || (row?.refunded_cost ?? 0) > 0 || (row?.refunded_total_cost ?? 0) > 0 || (row?.refunded_account_cost ?? 0) > 0)
-
-const formatVideoMetadata = (row: AdminUsageLog): string => {
-  const duration = row.video_duration_seconds == null ? '-' : `${row.video_duration_seconds}s`
-  const resolution = row.video_resolution || '-'
-  const count = row.video_count ?? 0
-  return `${duration} · ${resolution} · ${t('usage.videoCount', { count }, count)}`
-}
-
-const formatVideoDuration = (row: AdminUsageLog): string =>
-  row.video_duration_seconds != null && row.video_duration_seconds > 0 ? `${row.video_duration_seconds}s` : '-'
-
-const formatVideoCount = (row: AdminUsageLog): string => {
-  const count = row.video_count ?? 0
-  return count > 0 ? t('usage.videoCount', { count }, count) : '-'
-}
-
-const hasVideoPriceCalculation = (row: AdminUsageLog): boolean =>
-  row.billing_mode === BILLING_MODE_VIDEO && (row.video_duration_seconds ?? 0) > 0 && (row.video_count ?? 0) > 0
-
-const videoUnitPrice = (row: AdminUsageLog): number => {
-  if (!hasVideoPriceCalculation(row)) return 0
-  const price = (row.total_cost ?? 0) / (row.video_duration_seconds! * row.video_count!)
-  return Number.isFinite(price) ? price : 0
-}
-
-const formatVideoPrice = (value: number | null | undefined): string =>
-  typeof value === 'number' && Number.isFinite(value) ? value.toFixed(6) : '0.000000'
-
-const formatVideoPriceCalculation = (row: AdminUsageLog): string => {
-  const duration = row.video_duration_seconds ?? 0
-  const count = row.video_count ?? 0
-  const unitPrice = videoUnitPrice(row)
-  const totalCost = typeof row.total_cost === 'number' && Number.isFinite(row.total_cost) ? row.total_cost : 0
-  const displayedUnitPrice = Number(formatVideoPrice(unitPrice))
-  const displayedTotalCost = Number(formatVideoPrice(totalCost))
-  const displayedProduct = displayedUnitPrice * duration * count
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(displayedProduct), Math.abs(displayedTotalCost)) * 16
-  const operator = Math.abs(displayedProduct - displayedTotalCost) <= tolerance ? '=' : '≈'
-
-  return `$${formatVideoPrice(unitPrice)} x ${duration} x ${count} ${operator} $${formatVideoPrice(totalCost)}`
-}
-
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
+
+const hasReasoningEffortMapping = (row: AdminUsageLog): boolean => {
+  const requested = row.reasoning_effort?.trim() || ''
+  const forwarded = row.upstream_reasoning_effort?.trim() || ''
+  return requested !== '' && forwarded !== '' && !reasoningEffortValuesEqual(requested, forwarded)
+}
+
+const sentUpstreamModel = (row: AdminUsageLog): string => row.upstream_model?.trim() || row.model?.trim() || ''
+
+const normalizeModelVariant = (model: string): string => model
+  .trim()
+  .toLowerCase()
+  .replace(/-latest$/, '')
+  .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  .replace(/-\d{8}$/, '')
+
+const isLikelyModelVariant = (row: AdminUsageLog): boolean => {
+  const sent = sentUpstreamModel(row)
+  const response = row.upstream_response_model?.trim() || ''
+  return sent !== '' && response !== '' && normalizeModelVariant(sent) === normalizeModelVariant(response)
+}
+
+const modelAuditTitle = (row: AdminUsageLog): string => [
+  `${t('usage.requestedModel')}: ${row.model || '-'}`,
+  `${t('usage.sentUpstreamModel')}: ${sentUpstreamModel(row) || '-'}`,
+  `${t('usage.upstreamResponseModel')}: ${row.upstream_response_model || '-'}`,
+].join('\n')
 
 const currentPageIps = computed(() =>
   Array.from(new Set(props.data.map((row) => row.ip_address).filter((ip): ip is string => Boolean(ip))))
@@ -694,94 +675,27 @@ const handleBatchFetchIpGeo = async () => {
   }
 }
 
+const copyIdentifier = async (value: string, copiedMessage: string) => {
+  try {
+    await navigator.clipboard.writeText(value)
+    copiedRequestId.value = value
+    appStore.showSuccess(copiedMessage)
+    window.setTimeout(() => {
+      if (copiedRequestId.value === value) copiedRequestId.value = null
+    }, 2000)
+  } catch {
+    appStore.showError(t('common.copyFailed'))
+  }
+}
+
+const copyRequestId = (requestId: string) => copyIdentifier(requestId, t('admin.usage.requestIdCopied'))
+const copyUpstreamRequestId = (upstreamRequestId: string) =>
+  copyIdentifier(upstreamRequestId, t('admin.usage.upstreamRequestIdCopied'))
+
 // Tooltip state - cost
 const tooltipVisible = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
 const tooltipData = ref<AdminUsageLog | null>(null)
-const costTooltipRef = ref<HTMLElement | null>(null)
-const costTooltipTriggerRef = ref<HTMLElement | null>(null)
-const tooltipPositioned = ref(false)
-const tooltipSide = ref<'left' | 'right'>('right')
-const costTooltipId = `usage-cost-tooltip-${getCurrentInstance()?.uid ?? 'fallback'}`
-type CostTooltipInteraction = 'hover' | 'focus' | 'pinned'
-const tooltipInteraction = ref<CostTooltipInteraction | null>(null)
-const TOOLTIP_VIEWPORT_PADDING = 8
-const TOOLTIP_GAP = 8
-let tooltipViewportListenersAttached = false
-let tooltipOutsideListenerAttached = false
-
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), Math.max(min, max))
-
-const updateTooltipPosition = async () => {
-  await nextTick()
-  if (!tooltipVisible.value || !costTooltipRef.value || !costTooltipTriggerRef.value) return
-
-  const triggerRect = costTooltipTriggerRef.value.getBoundingClientRect()
-  const measuredRect = costTooltipRef.value.getBoundingClientRect()
-  const viewportWidth = window.innerWidth
-  const viewportHeight = window.innerHeight
-  const maxWidth = Math.max(0, viewportWidth - TOOLTIP_VIEWPORT_PADDING * 2)
-  const maxHeight = Math.max(0, viewportHeight - TOOLTIP_VIEWPORT_PADDING * 2)
-  const tooltipWidth = Math.min(measuredRect.width, maxWidth)
-  const tooltipHeight = Math.min(measuredRect.height, maxHeight)
-
-  const rightX = triggerRect.right + TOOLTIP_GAP
-  if (rightX + tooltipWidth <= viewportWidth - TOOLTIP_VIEWPORT_PADDING) {
-    tooltipSide.value = 'right'
-    tooltipPosition.value.x = rightX
-  } else {
-    tooltipSide.value = 'left'
-    tooltipPosition.value.x = clamp(
-      triggerRect.left - TOOLTIP_GAP - tooltipWidth,
-      TOOLTIP_VIEWPORT_PADDING,
-      viewportWidth - TOOLTIP_VIEWPORT_PADDING - tooltipWidth
-    )
-  }
-
-  const centeredY = triggerRect.top + triggerRect.height / 2 - tooltipHeight / 2
-  const aboveY = triggerRect.top - TOOLTIP_GAP - tooltipHeight
-  tooltipPosition.value.y = centeredY + tooltipHeight > viewportHeight - TOOLTIP_VIEWPORT_PADDING && aboveY >= TOOLTIP_VIEWPORT_PADDING
-    ? aboveY
-    : clamp(centeredY, TOOLTIP_VIEWPORT_PADDING, viewportHeight - TOOLTIP_VIEWPORT_PADDING - tooltipHeight)
-  tooltipPositioned.value = true
-}
-
-const handleTooltipViewportChange = () => {
-  if (tooltipVisible.value) void updateTooltipPosition()
-}
-
-const attachTooltipViewportListeners = () => {
-  if (tooltipViewportListenersAttached) return
-  window.addEventListener('resize', handleTooltipViewportChange)
-  window.addEventListener('scroll', handleTooltipViewportChange, true)
-  tooltipViewportListenersAttached = true
-}
-
-const detachTooltipViewportListeners = () => {
-  if (!tooltipViewportListenersAttached) return
-  window.removeEventListener('resize', handleTooltipViewportChange)
-  window.removeEventListener('scroll', handleTooltipViewportChange, true)
-  tooltipViewportListenersAttached = false
-}
-
-const handleTooltipOutsidePointerDown = (event: PointerEvent) => {
-  if (tooltipInteraction.value !== 'pinned') return
-  const target = event.target as Node | null
-  if (!target || costTooltipTriggerRef.value?.contains(target) || costTooltipRef.value?.contains(target)) return
-  hideTooltip()
-}
-
-const attachTooltipOutsideListener = () => {
-  if (tooltipOutsideListenerAttached) return
-  document.addEventListener('pointerdown', handleTooltipOutsidePointerDown)
-  tooltipOutsideListenerAttached = true
-}
-
-const detachTooltipOutsideListener = () => {
-  if (!tooltipOutsideListenerAttached) return
-  document.removeEventListener('pointerdown', handleTooltipOutsidePointerDown)
-  tooltipOutsideListenerAttached = false
-}
 
 // Tooltip state - token
 const tokenTooltipVisible = ref(false)
@@ -791,6 +705,7 @@ const tokenTooltipData = ref<AdminUsageLog | null>(null)
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return t('usage.cyber')
+  if (requestType === 'live') return t('usage.live')
   if (requestType === 'ws_v2') return t('usage.ws')
   if (requestType === 'stream') return t('usage.stream')
   if (requestType === 'sync') return t('usage.sync')
@@ -800,6 +715,7 @@ const getRequestTypeLabel = (row: AdminUsageLog): string => {
 const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+  if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
   if (requestType === 'ws_v2') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
   if (requestType === 'stream') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
   if (requestType === 'sync') return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
@@ -823,48 +739,19 @@ const formatDuration = (ms: number | null | undefined): string => {
 }
 
 // Cost tooltip functions
-const showTooltip = (event: MouseEvent | FocusEvent, row: AdminUsageLog, interaction: Exclude<CostTooltipInteraction, 'pinned'>) => {
-  if (tooltipInteraction.value === 'pinned') return
+const showTooltip = (event: MouseEvent, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
-  costTooltipTriggerRef.value = target
+  const rect = target.getBoundingClientRect()
   tooltipData.value = row
+  tooltipPosition.value.x = rect.right + 8
+  tooltipPosition.value.y = rect.top + rect.height / 2
   tooltipVisible.value = true
-  tooltipInteraction.value = interaction
-  tooltipPositioned.value = false
-  attachTooltipViewportListeners()
-  void updateTooltipPosition()
 }
 
-const hideTooltip = (interaction?: Exclude<CostTooltipInteraction, 'pinned'>) => {
-  if (interaction && tooltipInteraction.value !== interaction) return
+const hideTooltip = () => {
   tooltipVisible.value = false
   tooltipData.value = null
-  tooltipInteraction.value = null
-  tooltipPositioned.value = false
-  costTooltipTriggerRef.value = null
-  detachTooltipViewportListeners()
-  detachTooltipOutsideListener()
 }
-
-const toggleTooltip = (event: MouseEvent, row: AdminUsageLog) => {
-  if (tooltipInteraction.value === 'pinned' && tooltipData.value?.request_id === row.request_id) {
-    hideTooltip()
-    return
-  }
-  costTooltipTriggerRef.value = event.currentTarget as HTMLElement
-  tooltipData.value = row
-  tooltipVisible.value = true
-  tooltipInteraction.value = 'pinned'
-  tooltipPositioned.value = false
-  attachTooltipViewportListeners()
-  attachTooltipOutsideListener()
-  void updateTooltipPosition()
-}
-
-onUnmounted(() => {
-  detachTooltipViewportListeners()
-  detachTooltipOutsideListener()
-})
 
 // Token tooltip functions
 const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {

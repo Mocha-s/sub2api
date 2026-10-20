@@ -82,6 +82,31 @@ func TestExtractOpenAIUsageFromJSONBytes_NoToolUsageUnchanged(t *testing.T) {
 	assert.Equal(t, 0, usage.ImageInputTokens, "no image tokens without tool_usage")
 }
 
+func TestExtractOpenAIImagesUsageFromJSONBytes_ClassifiesUnsplitOutputAsImageTokens(t *testing.T) {
+	body := []byte(`{
+		"data": [{"b64_json": "aW1hZ2U="}],
+		"usage": {"input_tokens": 120, "output_tokens": 397}
+	}`)
+
+	usage, ok := extractOpenAIImagesUsageFromJSONBytes(body)
+
+	assert.True(t, ok)
+	assert.Equal(t, 120, usage.InputTokens)
+	assert.Equal(t, 397, usage.OutputTokens)
+	assert.Equal(t, 397, usage.ImageOutputTokens, "images endpoints report output tokens as image tokens when no split is provided")
+
+	cost := (&BillingService{}).computeTokenBreakdown(&ModelPricing{
+		InputPricePerToken:       5e-6,
+		ImageOutputPricePerToken: 30e-6,
+	}, UsageTokens{
+		InputTokens:       usage.InputTokens,
+		OutputTokens:      usage.OutputTokens,
+		ImageOutputTokens: usage.ImageOutputTokens,
+	}, 1, "", false)
+	assert.InDelta(t, 120*5e-6, cost.InputCost, 1e-12)
+	assert.InDelta(t, 397*30e-6, cost.ImageOutputCost, 1e-12)
+}
+
 func TestExtractOpenAIUsageFromJSONBytes_BaseUsageHasImageTokensNoOverride(t *testing.T) {
 	// If base usage already has image tokens (e.g. from output_tokens_details),
 	// tool_usage should NOT override them.

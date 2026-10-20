@@ -5,8 +5,45 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"testing"
 )
+
+func TestNormalizeVideoTaskRequestBodyDerivesAspectRatioFromMultipartSize(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("model", "minimax-h3-768p-930-8-22"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("prompt", "city"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("size", "720x1280"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("seconds", "8"); err != nil {
+		t.Fatal(err)
+	}
+	contentType := writer.FormDataContentType()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	normalized, normalizedContentType, err := NormalizeVideoTaskRequestBody(body.Bytes(), contentType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalizedContentType != "application/json" {
+		t.Fatalf("content type = %q", normalizedContentType)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(normalized, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["aspect_ratio"] != "9:16" {
+		t.Fatalf("aspect_ratio = %#v, want 9:16", payload["aspect_ratio"])
+	}
+}
 
 func TestNormalizeOpenAIVideoStatus(t *testing.T) {
 	tests := []struct {

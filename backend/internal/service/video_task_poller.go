@@ -307,6 +307,32 @@ func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if task.ExpiresAt != nil {
+		now := p.currentTime()
+		if !now.Before(*task.ExpiresAt) {
+			completedAt := now
+			applied, err := p.persistProviderUpdate(ctx, task.PublicTaskID, leaseToken, completedAt, VideoTaskProviderUpdate{
+				Status:          VideoTaskStatusFailed,
+				ProviderStatus:  "local_timeout",
+				ErrorMessage:    "video task polling deadline exceeded",
+				CompletedAt:     &completedAt,
+				ClearNextPollAt: true,
+			})
+			if err != nil {
+				return false, err
+			}
+			if !applied {
+				return true, nil
+			}
+			if p.settlement != nil {
+				if err := p.settlement.ReconcilePersistedTask(ctx, task.PublicTaskID); err != nil {
+					return false, errors.Join(ErrVideoTaskSettlementRetriable, err)
+				}
+			}
+			return false, nil
+		}
+	}
+
 	account, err := p.accountLookup.GetByID(ctx, task.AccountID)
 	if err != nil {
 		return p.rescheduleAfterPollError(ctx, task, leaseToken, p.currentTime(), fmt.Errorf("video task %s account %d: %w", task.PublicTaskID, task.AccountID, err))

@@ -1,4 +1,5 @@
-import type { AccountStatsModelPricing, BillingMode, ChannelModelPricing, PricingInterval } from '@/api/admin/channels'
+import type { BillingMode, ChannelTimePricing, PricingInterval } from '@/api/admin/channels'
+import { REASONING_EFFORT_LEVELS } from '@/constants/channel'
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string
 
@@ -9,30 +10,168 @@ export interface IntervalFormEntry {
   input_price: number | string | null
   output_price: number | string | null
   cache_write_price: number | string | null
+  cache_write_1h_price?: number | string | null
   cache_read_price: number | string | null
+  input_multiplier: number | string | null
+  output_multiplier: number | string | null
+  cache_write_multiplier: number | string | null
+  cache_read_multiplier: number | string | null
   per_request_price: number | string | null
-  video_price_per_second: number | string | null
+  video_price_per_second?: number | string | null
   sort_order: number
 }
 
 export interface PricingFormEntry {
   models: string[]
-  description: string
+  description?: string
   billing_mode: BillingMode
   input_price: number | string | null
   output_price: number | string | null
   cache_write_price: number | string | null
+  cache_write_1h_price?: number | string | null
   cache_read_price: number | string | null
+  fast_multiplier?: number | string | null
+  flex_multiplier?: number | string | null
+  reasoning_effort_multipliers?: Record<string, number | string> | null
   image_input_price: number | string | null
   image_output_price: number | string | null
   per_request_price: number | string | null
-  video_price_per_second: number | string | null
-  video_default_seconds: number | string | null
-  video_allowed_seconds: number[]
+  video_price_per_second?: number | string | null
+  video_default_seconds?: number | null
+  video_allowed_seconds?: number[]
   intervals: IntervalFormEntry[]
+  time_pricing: TimePricingFormEntry
 }
 
-export const DEFAULT_VIDEO_SECONDS = 10
+export interface TimePricingPeriodFormEntry {
+  start_time: string
+  end_time: string
+  multiplier: number | string
+}
+
+export interface TimePricingFormEntry {
+  timezone: string
+  weekdays_only: boolean
+  periods: TimePricingPeriodFormEntry[]
+}
+
+export const DEFAULT_TIME_PRICING_TIMEZONE = 'Asia/Shanghai'
+
+const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/
+const LEGACY_CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+const TWO_DECIMAL_MULTIPLIER = /^\d+(?:\.\d{1,2})?$/
+
+export function isValidTimePricingMultiplier(value: number | string): boolean {
+  const multiplier = String(value)
+  const numericValue = Number(multiplier)
+  return TWO_DECIMAL_MULTIPLIER.test(multiplier) &&
+    Number.isFinite(numericValue) && numericValue > 0
+}
+
+export const COMMON_TIMEZONES = [
+  'UTC', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Asia/Kolkata',
+  'Australia/Sydney', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Toronto', 'America/Sao_Paulo', 'Pacific/Auckland', 'Pacific/Honolulu',
+]
+
+export function createDefaultTimePricingForm(): TimePricingFormEntry {
+  return { timezone: DEFAULT_TIME_PRICING_TIMEZONE, weekdays_only: false, periods: [] }
+}
+
+export function apiTimePricingToForm(value: ChannelTimePricing | null | undefined): TimePricingFormEntry {
+  if (!value) return createDefaultTimePricingForm()
+  return {
+    timezone: value.timezone || DEFAULT_TIME_PRICING_TIMEZONE,
+    weekdays_only: value.weekdays_only === true,
+    periods: (value.periods || []).map(period => ({
+      start_time: LEGACY_CLOCK_TIME.test(period.start_time) ? `${period.start_time}:00` : period.start_time,
+      end_time: LEGACY_CLOCK_TIME.test(period.end_time) ? `${period.end_time}:00` : period.end_time,
+      multiplier: Number(period.multiplier).toFixed(2),
+    })),
+  }
+}
+
+export function formTimePricingToAPI(value: TimePricingFormEntry | null | undefined): ChannelTimePricing | null {
+  if (!value?.periods?.length) return null
+  const timezone = typeof value.timezone === 'string' ? value.timezone.trim() : ''
+  return {
+    timezone,
+    weekdays_only: value.weekdays_only === true,
+    periods: value.periods.map(period => ({
+      start_time: period.start_time,
+      end_time: period.end_time,
+      multiplier: Number(period.multiplier),
+    })),
+  }
+}
+
+function timeToSeconds(time: string, isEnd: boolean): number {
+  if (isEnd && time === '00:00:00') return 24 * 60 * 60
+  const [hours, minutes, seconds] = time.split(':').map(Number)
+  return hours * 60 * 60 + minutes * 60 + seconds
+}
+
+function timePricingValidationMessage(t: TranslateFn, key: string): string {
+  return t(`admin.channels.timePricingValidation.${key}`)
+}
+
+export function validateTimePricing(value: TimePricingFormEntry, t: TranslateFn): string | null {
+  if (!value?.periods?.length) return null
+
+  if (typeof value.timezone !== 'string' || value.timezone.trim() === '') {
+    return timePricingValidationMessage(t, 'timezone')
+  }
+  const timezone = value.timezone.trim()
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+  } catch {
+    return timePricingValidationMessage(t, 'timezone')
+  }
+
+  const periods = [] as { start: number, end: number }[]
+  for (const period of value.periods) {
+    if (!CLOCK_TIME.test(period.start_time) || !CLOCK_TIME.test(period.end_time)) {
+      return timePricingValidationMessage(t, 'format')
+    }
+    if (period.start_time === period.end_time) {
+      return timePricingValidationMessage(t, 'range')
+    }
+
+    const start = timeToSeconds(period.start_time, false)
+    const end = timeToSeconds(period.end_time, true)
+    if (start >= end) return timePricingValidationMessage(t, 'range')
+
+    if (!isValidTimePricingMultiplier(period.multiplier)) {
+      return timePricingValidationMessage(t, 'multiplier')
+    }
+    periods.push({ start, end })
+  }
+
+  const sorted = [...periods].sort((a, b) => a.start - b.start)
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].start < sorted[i - 1].end) {
+      return timePricingValidationMessage(t, 'overlap')
+    }
+  }
+  return null
+}
+
+export function formatTimezoneOffset(timezone: string, at = new Date()): string {
+  try {
+    const part = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(at).find(item => item.type === 'timeZoneName')?.value
+    if (!part || part === 'GMT') return 'UTC+00:00'
+    const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
+    if (!match) return ''
+    return `UTC${match[1]}${match[2].padStart(2, '0')}:${match[3] || '00'}`
+  } catch {
+    return ''
+  }
+}
 
 // 价格转换：后端存 per-token，前端显示 per-MTok ($/1M tokens)
 const MTOK = 1_000_000
@@ -41,6 +180,36 @@ export function toNullableNumber(val: number | string | null | undefined): numbe
   if (val === null || val === undefined || val === '') return null
   const num = Number(val)
   return isNaN(num) ? null : num
+}
+
+export function isValidPositiveMultiplier(val: number | string | null | undefined): boolean {
+  if (val === null || val === undefined || val === '') return true
+  const multiplier = Number(val)
+  return Number.isFinite(multiplier) && multiplier > 0
+}
+
+export function formReasoningEffortMultipliersToAPI(
+  value: PricingFormEntry['reasoning_effort_multipliers'],
+): Record<string, number> | null {
+  const entries = Object.entries(value || {})
+    .filter(([, multiplier]) => multiplier !== '')
+    .map(([effort, multiplier]) => [effort, Number(multiplier)])
+  return entries.length ? Object.fromEntries(entries) : null
+}
+
+export function validateReasoningEffortMultipliers(
+  value: PricingFormEntry['reasoning_effort_multipliers'],
+  t: TranslateFn,
+): string | null {
+  for (const [effort, multiplier] of Object.entries(value || {})) {
+    if (!REASONING_EFFORT_LEVELS.some(level => level === effort)) {
+      return t('admin.channels.form.reasoningEffortLevelInvalid', { effort })
+    }
+    if (multiplier !== '' && !isValidPositiveMultiplier(multiplier)) {
+      return t('admin.channels.form.reasoningEffortMultiplierPositive', { effort })
+    }
+  }
+  return null
 }
 
 /** 前端显示值($/MTok) → 后端存储值(per-token) */
@@ -56,70 +225,6 @@ export function perTokenToMTok(val: number | null | undefined): number | null {
   return parseFloat((val * MTOK).toPrecision(10))
 }
 
-/** Normalizes video durations while retaining invalid values for submit-time feedback. */
-export function normalizeVideoAllowedSeconds(seconds: number[]): number[] {
-  return [...new Set(seconds)].sort((a, b) => a - b)
-}
-
-export function normalizeVideoDefaultSeconds(
-  value: number | string | null | undefined,
-  allowedSeconds: number[] = [],
-): number {
-  const candidate = toNullableNumber(value)
-  if (candidate != null && Number.isInteger(candidate) && candidate >= 1 && candidate <= 3600) {
-    return candidate
-  }
-  const fallback = allowedSeconds
-    .map(Number)
-    .find(seconds => Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600)
-  return fallback ?? DEFAULT_VIDEO_SECONDS
-}
-
-/** Returns the canonical label used by backend video quote tier matching. */
-export function normalizeVideoTierLabel(value: string): string {
-  const label = value.trim().toLowerCase()
-  switch (label) {
-    case '854x480':
-    case '480p':
-      return '480p'
-    case '1280x720':
-    case '720p':
-      return '720p'
-    case '1920x1080':
-    case '1080p':
-      return '1080p'
-    case '3840x2160':
-    case '2160p':
-    case '4k':
-      return '4k'
-    default:
-      return label
-  }
-}
-
-/** Video prices are already USD/s and must not use token-price conversion. */
-export function apiVideoPricingToForm(
-  pricing: Pick<ChannelModelPricing, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'>,
-): Pick<PricingFormEntry, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'> {
-  const allowedSeconds = (pricing.video_allowed_seconds || []).map(seconds => Number(seconds))
-  return {
-    video_price_per_second: pricing.video_price_per_second,
-    video_default_seconds: normalizeVideoDefaultSeconds(pricing.video_default_seconds, allowedSeconds),
-    video_allowed_seconds: allowedSeconds,
-  }
-}
-
-/** Converts video pricing fields without applying the token-price display conversion. */
-export function formVideoPricingToAPI(
-  pricing: Pick<PricingFormEntry, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'>,
-): Pick<ChannelModelPricing, 'video_price_per_second' | 'video_default_seconds' | 'video_allowed_seconds'> {
-  return {
-    video_price_per_second: toNullableNumber(pricing.video_price_per_second),
-    video_default_seconds: toNullableNumber(pricing.video_default_seconds),
-    video_allowed_seconds: normalizeVideoAllowedSeconds(pricing.video_allowed_seconds || []),
-  }
-}
-
 export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEntry[] {
   return (intervals || []).map(iv => ({
     min_tokens: iv.min_tokens,
@@ -128,7 +233,12 @@ export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEn
     input_price: perTokenToMTok(iv.input_price),
     output_price: perTokenToMTok(iv.output_price),
     cache_write_price: perTokenToMTok(iv.cache_write_price),
+    cache_write_1h_price: perTokenToMTok(iv.cache_write_1h_price),
     cache_read_price: perTokenToMTok(iv.cache_read_price),
+    input_multiplier: iv.input_multiplier,
+    output_multiplier: iv.output_multiplier,
+    cache_write_multiplier: iv.cache_write_multiplier,
+    cache_read_multiplier: iv.cache_read_multiplier,
     per_request_price: iv.per_request_price,
     video_price_per_second: iv.video_price_per_second,
     sort_order: iv.sort_order
@@ -139,65 +249,20 @@ export function formIntervalsToAPI(intervals: IntervalFormEntry[]): PricingInter
   return (intervals || []).map(iv => ({
     min_tokens: iv.min_tokens,
     max_tokens: iv.max_tokens,
-    tier_label: iv.tier_label.trim(),
+    tier_label: iv.tier_label,
     input_price: mTokToPerToken(iv.input_price),
     output_price: mTokToPerToken(iv.output_price),
     cache_write_price: mTokToPerToken(iv.cache_write_price),
+    cache_write_1h_price: mTokToPerToken(iv.cache_write_1h_price),
     cache_read_price: mTokToPerToken(iv.cache_read_price),
+    input_multiplier: toNullableNumber(iv.input_multiplier),
+    output_multiplier: toNullableNumber(iv.output_multiplier),
+    cache_write_multiplier: toNullableNumber(iv.cache_write_multiplier),
+    cache_read_multiplier: toNullableNumber(iv.cache_read_multiplier),
     per_request_price: toNullableNumber(iv.per_request_price),
     video_price_per_second: toNullableNumber(iv.video_price_per_second),
     sort_order: iv.sort_order
   }))
-}
-
-function formIntervalsForMode(intervals: IntervalFormEntry[], mode: BillingMode): PricingInterval[] {
-  return (intervals || []).map(iv => ({
-    min_tokens: mode === 'video' ? 0 : iv.min_tokens,
-    max_tokens: mode === 'video' ? null : iv.max_tokens,
-    tier_label: mode === 'video' ? normalizeVideoTierLabel(iv.tier_label) : iv.tier_label.trim(),
-    input_price: mode === 'token' ? mTokToPerToken(iv.input_price) : null,
-    output_price: mode === 'token' ? mTokToPerToken(iv.output_price) : null,
-    cache_write_price: mode === 'token' ? mTokToPerToken(iv.cache_write_price) : null,
-    cache_read_price: mode === 'token' ? mTokToPerToken(iv.cache_read_price) : null,
-    per_request_price: mode === 'image' || mode === 'per_request' ? toNullableNumber(iv.per_request_price) : null,
-    video_price_per_second: mode === 'video' ? toNullableNumber(iv.video_price_per_second) : null,
-    sort_order: iv.sort_order,
-  }))
-}
-
-function formPricingFieldsToAPI(entry: PricingFormEntry, platform: string): AccountStatsModelPricing {
-  const tokenMode = entry.billing_mode === 'token'
-  const requestMode = entry.billing_mode === 'image' || entry.billing_mode === 'per_request'
-  const videoMode = entry.billing_mode === 'video'
-  const video = videoMode
-    ? formVideoPricingToAPI(entry)
-    : { video_price_per_second: null, video_default_seconds: null, video_allowed_seconds: [] }
-
-  return {
-    platform,
-    models: [...entry.models],
-    billing_mode: entry.billing_mode,
-    input_price: tokenMode ? mTokToPerToken(entry.input_price) : null,
-    output_price: tokenMode ? mTokToPerToken(entry.output_price) : null,
-    cache_write_price: tokenMode ? mTokToPerToken(entry.cache_write_price) : null,
-    cache_read_price: tokenMode ? mTokToPerToken(entry.cache_read_price) : null,
-    image_input_price: tokenMode ? mTokToPerToken(entry.image_input_price) : null,
-    image_output_price: tokenMode ? mTokToPerToken(entry.image_output_price) : null,
-    per_request_price: requestMode ? toNullableNumber(entry.per_request_price) : null,
-    ...video,
-    intervals: formIntervalsForMode(entry.intervals || [], entry.billing_mode),
-  }
-}
-
-export function formPricingToAPI(entry: PricingFormEntry, platform: string): ChannelModelPricing {
-  return {
-    ...formPricingFieldsToAPI(entry, platform),
-    description: entry.description.trim(),
-  }
-}
-
-export function formAccountStatsPricingToAPI(entry: PricingFormEntry, platform: string): AccountStatsModelPricing {
-  return formPricingFieldsToAPI(entry, platform)
 }
 
 // ── 模型模式冲突检测 ──────────────────────────────────────
@@ -245,7 +310,7 @@ export function findModelConflict(models: string[]): [string, string] | null {
  *
  * mode 决定区间语义：
  * - token：区间是上下文 token 数分段 (min, max]，不能重叠，无上限段必须放最后
- * - per_request / image / video：区间是按 tier_label 分层（1K/2K/4K 等），后端按 label
+ * - per_request / image：区间是按 tier_label 分层（1K/2K/4K 等），后端按 label
  *   匹配，不依赖 min/max，因此跳过重叠 / last-unlimited 校验
  */
 export function validateIntervals(
@@ -255,24 +320,15 @@ export function validateIntervals(
 ): string | null {
   if (!intervals || intervals.length === 0) return null
 
-  // 视频层级按分辨率标签匹配，不使用 token 范围。
-  const sorted = mode === 'video'
-    ? [...intervals]
-    : [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
+  // 按 min_tokens 排序（不修改原数组）
+  const sorted = [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
 
   for (let i = 0; i < sorted.length; i++) {
-    const err = validateSingleInterval(sorted[i], i, mode, t)
+    const err = validateSingleInterval(sorted[i], i, t)
     if (err) return err
   }
 
-  if (mode === 'video') {
-    const labels = sorted.map(interval => normalizeVideoTierLabel(interval.tier_label))
-    if (new Set(labels).size !== labels.length) {
-      return intervalValidationMessage(t, 'tierLabelUnique', {})
-    }
-  }
-
-  // per_request / image / video 模式按 tier_label 匹配，不做 token 区间重叠校验
+  // per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
   if (mode !== 'token') return null
   return checkIntervalOverlap(sorted, t)
 }
@@ -289,72 +345,45 @@ function intervalPriceLabel(t: TranslateFn, key: string): string {
   return t(`admin.channels.intervalValidation.price.${key}`)
 }
 
-function validateSingleInterval(iv: IntervalFormEntry, idx: number, mode: BillingMode, t: TranslateFn): string | null {
+function validateSingleInterval(iv: IntervalFormEntry, idx: number, t: TranslateFn): string | null {
   const index = idx + 1
-  if (mode === 'video') {
-    if (!iv.tier_label.trim()) {
+  if (iv.min_tokens < 0) {
+    return intervalValidationMessage(
+      t,
+      'negativeMin',
+      { index, value: iv.min_tokens },
+    )
+  }
+  if (iv.max_tokens != null) {
+    if (iv.max_tokens <= 0) {
       return intervalValidationMessage(
         t,
-        'videoTierLabelRequired',
-        { index },
+        'maxPositive',
+        { index, value: iv.max_tokens },
       )
     }
-    if (iv.video_price_per_second == null || iv.video_price_per_second === '') {
+    if (iv.max_tokens <= iv.min_tokens) {
       return intervalValidationMessage(
         t,
-        'videoTierPriceRequired',
-        { index },
+        'maxGreaterThanMin',
+        { index, max: iv.max_tokens, min: iv.min_tokens },
       )
-    }
-  } else {
-    if (iv.min_tokens < 0) {
-      return intervalValidationMessage(
-        t,
-        'negativeMin',
-        { index, value: iv.min_tokens },
-      )
-    }
-    if (iv.max_tokens != null) {
-      if (iv.max_tokens <= 0) {
-        return intervalValidationMessage(
-          t,
-          'maxPositive',
-          { index, value: iv.max_tokens },
-        )
-      }
-      if (iv.max_tokens <= iv.min_tokens) {
-        return intervalValidationMessage(
-          t,
-          'maxGreaterThanMin',
-          { index, max: iv.max_tokens, min: iv.min_tokens },
-        )
-      }
     }
   }
-  return validateIntervalPrices(iv, idx, mode, t)
+  return validateIntervalPrices(iv, idx, t)
 }
 
-function validateIntervalPrices(iv: IntervalFormEntry, idx: number, mode: BillingMode, t: TranslateFn): string | null {
+function validateIntervalPrices(iv: IntervalFormEntry, idx: number, t: TranslateFn): string | null {
   const index = idx + 1
-  const prices: [string, number | string | null][] = mode === 'token'
-    ? [
-        ['inputPrice', iv.input_price],
-        ['outputPrice', iv.output_price],
-        ['cacheWritePrice', iv.cache_write_price],
-        ['cacheReadPrice', iv.cache_read_price],
-      ]
-    : mode === 'video'
-      ? [['videoPricePerSecond', iv.video_price_per_second]]
-      : [['perRequestPrice', iv.per_request_price]]
+  const prices: [string, number | string | null][] = [
+    ['inputPrice', iv.input_price],
+    ['outputPrice', iv.output_price],
+    ['cacheWritePrice', iv.cache_write_price],
+    ['cacheWrite1hPrice', iv.cache_write_1h_price ?? null],
+    ['cacheReadPrice', iv.cache_read_price],
+    ['perRequestPrice', iv.per_request_price],
+  ]
   for (const [key, val] of prices) {
-    if (val != null && val !== '' && !Number.isFinite(Number(val))) {
-      const field = intervalPriceLabel(t, key)
-      return intervalValidationMessage(
-        t,
-        'nonFinitePrice',
-        { index, field },
-      )
-    }
     if (val != null && val !== '' && Number(val) < 0) {
       const field = intervalPriceLabel(t, key)
       return intervalValidationMessage(
@@ -364,84 +393,21 @@ function validateIntervalPrices(iv: IntervalFormEntry, idx: number, mode: Billin
       )
     }
   }
-  return null
-}
-
-function hasPrice(value: number | string | null): boolean {
-  return value != null && value !== ''
-}
-
-function validatePricingPrices(entry: PricingFormEntry, t: TranslateFn): string | null {
-  const prices: [string, number | string | null][] = entry.billing_mode === 'token'
-    ? [
-        ['inputPrice', entry.input_price],
-        ['outputPrice', entry.output_price],
-        ['cacheWritePrice', entry.cache_write_price],
-        ['cacheReadPrice', entry.cache_read_price],
-        ['imageTokenPrice', entry.image_output_price],
-      ]
-    : entry.billing_mode === 'video'
-      ? [['videoPricePerSecond', entry.video_price_per_second]]
-      : [['perRequestPrice', entry.per_request_price]]
-  for (const [key, value] of prices) {
-    if (!hasPrice(value)) continue
-    const numberValue = Number(value)
-    if (!Number.isFinite(numberValue) || numberValue < 0) {
-      return t('admin.channels.pricingValidation.invalidPrice', {
-        field: t(`admin.channels.form.${key}`),
+  const multipliers: [string, number | string | null][] = [
+    ['inputMultiplier', iv.input_multiplier],
+    ['outputMultiplier', iv.output_multiplier],
+    ['cacheWriteMultiplier', iv.cache_write_multiplier],
+    ['cacheReadMultiplier', iv.cache_read_multiplier],
+  ]
+  for (const [key, val] of multipliers) {
+    if (!isValidPositiveMultiplier(val)) {
+      return intervalValidationMessage(t, 'multiplierPositive', {
+        index,
+        field: intervalPriceLabel(t, key),
       })
     }
   }
   return null
-}
-
-export function validateVideoPricing(entry: PricingFormEntry, t: TranslateFn): string | null {
-  const priceError = validatePricingPrices(entry, t)
-  if (priceError) return priceError
-
-  const defaultSeconds = toNullableNumber(entry.video_default_seconds)
-  if (
-    defaultSeconds == null ||
-    !Number.isInteger(defaultSeconds) ||
-    defaultSeconds < 1 ||
-    defaultSeconds > 3600
-  ) {
-    return t('admin.channels.videoValidation.defaultSeconds')
-  }
-
-  const allowedSeconds = entry.video_allowed_seconds || []
-  if (allowedSeconds.some(seconds => !Number.isInteger(seconds) || seconds < 1 || seconds > 3600)) {
-    return t('admin.channels.videoValidation.allowedSecondsBounds')
-  }
-  if (new Set(allowedSeconds).size !== allowedSeconds.length) {
-    return t('admin.channels.videoValidation.allowedSecondsUnique')
-  }
-  if (allowedSeconds.length > 0 && !allowedSeconds.includes(defaultSeconds)) {
-    return t('admin.channels.videoValidation.defaultNotAllowed')
-  }
-
-  if (!hasPrice(entry.video_price_per_second) && !entry.intervals.some(interval => hasPrice(interval.video_price_per_second))) {
-    return t('admin.channels.videoValidation.missingPrice')
-  }
-
-  return validateIntervals(entry.intervals || [], entry.billing_mode, t)
-}
-
-export function validatePricingEntry(entry: PricingFormEntry, t: TranslateFn): string | null {
-  if (entry.billing_mode === 'video') {
-    return validateVideoPricing(entry, t)
-  }
-
-  const priceError = validatePricingPrices(entry, t)
-  if (priceError) return priceError
-  if (
-    (entry.billing_mode === 'per_request' || entry.billing_mode === 'image') &&
-    !hasPrice(entry.per_request_price) &&
-    entry.intervals.length === 0
-  ) {
-    return t('admin.channels.form.perRequestPriceRequired')
-  }
-  return validateIntervals(entry.intervals || [], entry.billing_mode, t)
 }
 
 function checkIntervalOverlap(sorted: IntervalFormEntry[], t: TranslateFn): string | null {
@@ -477,6 +443,9 @@ export function getPlatformTagClass(platform: string): string {
     case 'gemini': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
     case 'antigravity': return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
     case 'grok': return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+    case 'kimi': return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'
+    case 'zhipu': return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+    case 'deepseek': return 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
     default: return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400'
   }
 }
@@ -489,6 +458,9 @@ export function getPlatformTextClass(platform: string): string {
     case 'gemini': return 'text-blue-700 dark:text-blue-400'
     case 'antigravity': return 'text-purple-700 dark:text-purple-400'
     case 'grok': return 'text-slate-700 dark:text-slate-300'
+    case 'kimi': return 'text-pink-700 dark:text-pink-400'
+    case 'zhipu': return 'text-indigo-700 dark:text-indigo-400'
+    case 'deepseek': return 'text-teal-700 dark:text-teal-400'
     default: return ''
   }
 }

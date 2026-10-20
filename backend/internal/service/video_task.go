@@ -1,15 +1,21 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +29,7 @@ const (
 	VideoTaskEndpointVideos           = "videos"
 	VideoTaskEndpointVideoGenerations = "video_generations"
 	VideoTaskEndpointMetadataKey      = "video_task_endpoint"
+	videoTaskDefaultLifetime          = 30 * time.Minute
 )
 
 var (
@@ -108,6 +115,102 @@ type VideoTaskCreateEnvelope struct {
 	RequestHash string
 	PromptHash  string
 	RawBody     []byte
+}
+
+func NormalizeVideoTaskRequestBody(body []byte, contentType string) ([]byte, string, error) {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
+		return body, contentType, nil
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil, "", errors.New("multipart boundary is required")
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	fields := make(map[string]string)
+	images := make([]string, 0, 4)
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read video multipart body: %w", err)
+		}
+		name := strings.TrimSpace(part.FormName())
+		data, readErr := io.ReadAll(io.LimitReader(part, 20<<20+1))
+		fileName := part.FileName()
+		partType := strings.TrimSpace(part.Header.Get("Content-Type"))
+		_ = part.Close()
+		if readErr != nil {
+			return nil, "", fmt.Errorf("read video multipart field %s: %w", name, readErr)
+		}
+		if len(data) > 20<<20 {
+			return nil, "", fmt.Errorf("video multipart field %s exceeds 20 MiB", name)
+		}
+		lowerType := strings.ToLower(partType)
+		if fileName != "" || strings.HasPrefix(lowerType, "video/") || strings.HasPrefix(lowerType, "image/") {
+			if partType == "" || partType == "application/octet-stream" {
+				partType = mime.TypeByExtension(filepath.Ext(fileName))
+			}
+			if partType == "" {
+				partType = "application/octet-stream"
+			}
+			images = append(images, "data:"+partType+";base64,"+base64.StdEncoding.EncodeToString(data))
+			continue
+		}
+		if name != "" {
+			fields[name] = string(data)
+		}
+	}
+	payload := map[string]any{}
+	for _, key := range []string{"model", "prompt", "seconds", "duration", "duration_seconds", "size", "resolution", "resolution_name", "aspect_ratio", "ratio", "generate_audio", "watermark"} {
+		if value := strings.TrimSpace(fields[key]); value != "" {
+			if key == "generate_audio" || key == "watermark" {
+				parsed, parseErr := strconv.ParseBool(value)
+				if parseErr != nil {
+					return nil, "", fmt.Errorf("%s must be boolean", key)
+				}
+				payload[key] = parsed
+			} else {
+				payload[key] = value
+			}
+		}
+	}
+	if resolution := strings.TrimSpace(fields["resolution_name"]); resolution != "" {
+		payload["resolution"] = resolution
+		delete(payload, "resolution_name")
+	}
+	if _, exists := payload["aspect_ratio"]; !exists {
+		if ratio := videoAspectRatioFromSize(fields["size"]); ratio != "" {
+			payload["aspect_ratio"] = ratio
+		}
+	}
+	if len(images) > 0 {
+		payload["images"] = images
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("encode normalized video request: %w", err)
+	}
+	return normalized, "application/json", nil
+}
+
+func videoAspectRatioFromSize(size string) string {
+	parts := strings.Split(strings.TrimSpace(size), "x")
+	if len(parts) != 2 {
+		return ""
+	}
+	width, errWidth := strconv.Atoi(parts[0])
+	height, errHeight := strconv.Atoi(parts[1])
+	if errWidth != nil || errHeight != nil || width <= 0 || height <= 0 {
+		return ""
+	}
+	originalWidth, originalHeight := width, height
+	for height != 0 {
+		width, height = height, width%height
+	}
+	return strconv.Itoa(originalWidth/width) + ":" + strconv.Itoa(originalHeight/width)
 }
 
 func ParseVideoTaskCreateEnvelope(body []byte) (*VideoTaskCreateEnvelope, error) {

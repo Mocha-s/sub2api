@@ -87,31 +87,37 @@
             </label>
             <Select
               :modelValue="entry.billing_mode"
-              @update:modelValue="updateBillingMode($event as BillingMode)"
+              @update:modelValue="emit('update', {
+                ...entry,
+                billing_mode: $event as BillingMode,
+                intervals: [],
+                time_pricing: { ...entry.time_pricing, periods: [] },
+              })"
               :options="billingModeOptions"
               class="mt-1"
             />
           </div>
         </div>
 
-        <div v-if="props.showDescription" class="mt-3">
-          <div class="flex items-center justify-between gap-2">
-            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div v-if="showDescription" class="mt-3">
+          <div class="flex items-center justify-between">
+            <label :for="descriptionInputId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('admin.channels.form.pricingDescription') }}
             </label>
-            <span data-test="pricing-description-count" class="text-xs text-gray-400">
+            <span data-test="pricing-description-count" class="text-xs text-gray-400 dark:text-dark-500">
               {{ descriptionLength }}/500
             </span>
           </div>
           <textarea
-            :value="entry.description"
-            rows="3"
-            maxlength="500"
+            :id="descriptionInputId"
             data-test="pricing-description"
-            class="input mt-1 text-sm"
+            :value="entry.description || ''"
             :placeholder="t('admin.channels.form.pricingDescriptionPlaceholder')"
-            @input="emit('update', { ...entry, description: ($event.target as HTMLTextAreaElement).value })"
-          ></textarea>
+            maxlength="500"
+            rows="2"
+            class="input mt-1 resize-y text-sm"
+            @input="updateDescription(($event.target as HTMLTextAreaElement).value)"
+          />
         </div>
 
         <!-- Token mode -->
@@ -121,7 +127,7 @@
             {{ t('admin.channels.form.defaultPrices') }}
             <span class="ml-1 font-normal text-gray-400">$/MTok</span>
           </label>
-          <div class="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-6">
+          <div class="pricing-default-grid mt-1 grid gap-2">
             <div>
               <label class="text-xs text-gray-400">{{ t('admin.channels.form.inputPrice') }}</label>
               <input :value="entry.input_price" @input="emitField('input_price', ($event.target as HTMLInputElement).value)"
@@ -133,8 +139,13 @@
                 type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
             </div>
             <div>
-              <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWritePrice') }}</label>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite5mPrice') }}</label>
               <input :value="entry.cache_write_price" @input="emitField('cache_write_price', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite1hPrice') }}</label>
+              <input :value="entry.cache_write_1h_price" @input="emitField('cache_write_1h_price', ($event.target as HTMLInputElement).value)"
                 type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
             </div>
             <div>
@@ -154,8 +165,21 @@
             </div>
           </div>
 
-          <!-- Token intervals -->
-          <div class="mt-3">
+          <div v-if="enableTierMultipliers" class="mt-3 grid max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.fastMultiplier') }}</label>
+              <input :value="entry.fast_multiplier" @input="emitField('fast_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0.000001" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.flexMultiplier') }}</label>
+              <input :value="entry.flex_multiplier" @input="emitField('flex_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0.000001" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.multiplierPlaceholder')" />
+            </div>
+          </div>
+
+          <!-- Channel token intervals; the group long-context toggle controls whether tiers apply. -->
+          <div v-if="!hideTokenIntervals" class="mt-3">
             <div class="flex items-center justify-between">
               <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('admin.channels.form.intervals') }}
@@ -171,12 +195,18 @@
                 :key="idx"
                 :interval="iv"
                 :mode="entry.billing_mode"
-                :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
+                :enable-multipliers="enableTierMultipliers"
                 @update="updateInterval(idx, $event)"
                 @remove="removeInterval(idx)"
               />
             </div>
           </div>
+
+          <TimePricingSection
+            v-if="enableTimePricing"
+            :model-value="entry.time_pricing"
+            @update:model-value="emit('update', { ...entry, time_pricing: $event })"
+          />
         </div>
 
         <!-- Per-request mode -->
@@ -201,12 +231,11 @@
             </button>
           </div>
           <div v-if="entry.intervals && entry.intervals.length > 0" class="mt-2 space-y-2">
-              <IntervalRow
+            <IntervalRow
               v-for="(iv, idx) in entry.intervals"
               :key="idx"
               :interval="iv"
-                :mode="entry.billing_mode"
-                :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
+              :mode="entry.billing_mode"
               @update="updateInterval(idx, $event)"
               @remove="removeInterval(idx)"
             />
@@ -216,11 +245,11 @@
           </div>
         </div>
 
-        <!-- Image mode -->
-        <div v-else-if="entry.billing_mode === 'image'">
+        <!-- Image/video mode -->
+        <div v-else-if="entry.billing_mode === 'image' || entry.billing_mode === 'video'">
           <!-- Default image price (per-request, same as per_request mode) -->
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ t('admin.channels.form.defaultImagePrice') }}
+            {{ entry.billing_mode === 'video' ? t('admin.channels.form.defaultVideoPrice') : t('admin.channels.form.defaultImagePrice') }}
             <span class="ml-1 font-normal text-gray-400">$</span>
           </label>
           <div class="mt-1 w-48">
@@ -231,71 +260,59 @@
           <!-- Image tiers -->
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.channels.form.imageTiers') }}
+              {{ entry.billing_mode === 'video' ? t('admin.channels.form.videoTiers') : t('admin.channels.form.imageTiers') }}
             </label>
-            <button type="button" @click="addImageTier" class="text-xs text-primary-600 hover:text-primary-700">
+            <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
               + {{ t('admin.channels.form.addTier') }}
             </button>
           </div>
           <div v-if="entry.intervals && entry.intervals.length > 0" class="mt-2 space-y-2">
-              <IntervalRow
+            <IntervalRow
               v-for="(iv, idx) in entry.intervals"
               :key="idx"
               :interval="iv"
-                :mode="entry.billing_mode"
-                :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
+              :mode="entry.billing_mode"
               @update="updateInterval(idx, $event)"
               @remove="removeInterval(idx)"
             />
           </div>
         </div>
 
-        <!-- Video mode -->
-        <div v-else-if="entry.billing_mode === 'video'">
-          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <div>
-              <label :for="videoDefaultPriceId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t('admin.channels.form.defaultVideoPrice') }}
-                <span class="ml-1 font-normal text-gray-400">USD/s</span>
-              </label>
-              <input :id="videoDefaultPriceId" :value="entry.video_price_per_second" @input="emitField('video_price_per_second', ($event.target as HTMLInputElement).value)"
-                type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
-            </div>
-            <div>
-              <label :for="videoDefaultSecondsId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t('admin.channels.form.videoDefaultSeconds') }}
-              </label>
-              <input :id="videoDefaultSecondsId" :value="entry.video_default_seconds" @input="emitField('video_default_seconds', ($event.target as HTMLInputElement).value)"
-                type="number" step="1" min="1" max="3600" required class="input mt-0.5 text-sm" />
-            </div>
-            <div>
-              <label :for="videoAllowedSecondsId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                {{ t('admin.channels.form.videoAllowedSeconds') }}
-              </label>
-              <input :id="videoAllowedSecondsId" :value="allowedSecondsInput" @focus="allowedSecondsFocused = true" @input="emitAllowedSeconds(($event.target as HTMLInputElement).value)" @blur="normalizeAllowedSeconds"
-                type="text" class="input mt-0.5 text-sm" :aria-label="t('admin.channels.form.videoAllowedSeconds')" :placeholder="t('admin.channels.form.videoAllowedSecondsPlaceholder')" />
-            </div>
-          </div>
-
-          <div class="mt-3 flex items-center justify-between">
+        <div class="mt-3 border-t border-gray-200 pt-3 dark:border-dark-600" data-testid="reasoning-effort-multipliers">
+          <div class="flex items-center justify-between gap-2">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.channels.form.videoTiers') }}
+              {{ t('admin.channels.form.reasoningEffortMultipliers') }}
             </label>
-            <button type="button" @click="addVideoTier" class="text-xs text-primary-600 hover:text-primary-700">
-              + {{ t('admin.channels.form.addTier') }}
+            <button
+              v-if="Object.keys(entry.reasoning_effort_multipliers || {}).length"
+              type="button"
+              class="text-xs text-gray-500 hover:text-red-500"
+              @click="emit('update', { ...entry, reasoning_effort_multipliers: null })"
+            >
+              {{ t('admin.channels.form.clearReasoningEffortMultipliers') }}
             </button>
           </div>
-          <div v-if="entry.intervals && entry.intervals.length > 0" class="mt-2 space-y-2">
-              <IntervalRow
-              v-for="(iv, idx) in entry.intervals"
-              :key="idx"
-              :interval="iv"
-                :mode="entry.billing_mode"
-                :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
-              @update="updateInterval(idx, $event)"
-              @remove="removeInterval(idx)"
-            />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.channels.form.reasoningEffortMultipliersHint') }}</p>
+          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            <label v-for="effort in REASONING_EFFORT_LEVELS" :key="effort" class="text-xs text-gray-500 dark:text-gray-400">
+              {{ effort }}
+              <input
+                :value="entry.reasoning_effort_multipliers?.[effort]"
+                :aria-label="t('admin.channels.form.reasoningEffortMultiplierLabel', { effort })"
+                :aria-invalid="!isValidPositiveMultiplier(entry.reasoning_effort_multipliers?.[effort])"
+                :data-reasoning-effort="effort"
+                @input="updateReasoningEffortMultiplier(effort, ($event.target as HTMLInputElement).value)"
+                type="number"
+                step="any"
+                min="0"
+                class="input mt-0.5 text-sm"
+                :placeholder="t('admin.channels.form.reasoningEffortMultiplierDefault')"
+              />
+            </label>
           </div>
+          <p v-if="reasoningEffortMultiplierError" role="alert" class="mt-1 text-xs text-red-500">
+            {{ reasoningEffortMultiplierError }}
+          </p>
         </div>
       </div>
     </div>
@@ -303,25 +320,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, toRaw, watch } from 'vue'
+import { ref, computed, getCurrentInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import IntervalRow from './IntervalRow.vue'
 import ModelTagInput from './ModelTagInput.vue'
+import TimePricingSection from './TimePricingSection.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
-import { getPlatformTagClass, normalizeVideoDefaultSeconds, perTokenToMTok } from './types'
+import { perTokenToMTok, getPlatformTagClass, isValidPositiveMultiplier, validateReasoningEffortMultipliers } from './types'
+import { REASONING_EFFORT_LEVELS, type ReasoningEffortLevel } from '@/constants/channel'
 import type { BillingMode } from '@/api/admin/channels'
 import channelsAPI from '@/api/admin/channels'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entry: PricingFormEntry
   platform?: string
-  inputIdPrefix: string
-  showDescription: boolean
-}>()
+  hideTokenIntervals?: boolean
+  enableTimePricing?: boolean
+  enableTierMultipliers?: boolean
+  inputIdPrefix?: string
+  showDescription?: boolean
+}>(), {
+  hideTokenIntervals: false,
+  enableTimePricing: false,
+  enableTierMultipliers: false,
+  inputIdPrefix: '',
+  showDescription: true,
+})
 
 const emit = defineEmits<{
   update: [entry: PricingFormEntry]
@@ -330,20 +358,6 @@ const emit = defineEmits<{
 
 // Collapse state: entries with existing models default to collapsed
 const collapsed = ref(props.entry.models.length > 0)
-const allowedSecondsInput = ref(props.entry.video_allowed_seconds.join(', '))
-const allowedSecondsFocused = ref(false)
-let lastAllowedSecondsEntry: PricingFormEntry | null = null
-
-watch(() => props.entry, entry => {
-  if (allowedSecondsFocused.value && toRaw(entry) === lastAllowedSecondsEntry) return
-  allowedSecondsInput.value = entry.video_allowed_seconds.join(', ')
-  lastAllowedSecondsEntry = null
-})
-
-const videoDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-default-price`)
-const videoDefaultSecondsId = computed(() => `${props.inputIdPrefix}-video-default-seconds`)
-const videoAllowedSecondsId = computed(() => `${props.inputIdPrefix}-video-allowed-seconds`)
-const descriptionLength = computed(() => Array.from(props.entry.description).length)
 
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },
@@ -357,19 +371,29 @@ const billingModeLabel = computed(() => {
   return opt ? opt.label : props.entry.billing_mode
 })
 
+const descriptionLength = computed(() => (props.entry.description || '').length)
+const descriptionInputId = computed(() => `${props.inputIdPrefix || `pricing-entry-${getCurrentInstance()?.uid ?? 0}`}-description`)
+
+const reasoningEffortMultiplierError = computed(() =>
+  validateReasoningEffortMultipliers(props.entry.reasoning_effort_multipliers, t)
+)
+
+function updateReasoningEffortMultiplier(effort: ReasoningEffortLevel, value: string) {
+  const multipliers = { ...props.entry.reasoning_effort_multipliers }
+  if (value === '') delete multipliers[effort]
+  else multipliers[effort] = value
+  emit('update', {
+    ...props.entry,
+    reasoning_effort_multipliers: Object.keys(multipliers).length ? multipliers : null,
+  })
+}
+
 function emitField(field: keyof PricingFormEntry, value: string) {
   emit('update', { ...props.entry, [field]: value === '' ? null : value })
 }
 
-function updateBillingMode(mode: BillingMode) {
-  const updated = { ...props.entry, billing_mode: mode, intervals: [] }
-  if (mode === 'video') {
-    updated.video_default_seconds = normalizeVideoDefaultSeconds(
-      props.entry.video_default_seconds,
-      props.entry.video_allowed_seconds,
-    )
-  }
-  emit('update', updated)
+function updateDescription(value: string) {
+  emit('update', { ...props.entry, description: value })
 }
 
 function addInterval() {
@@ -377,60 +401,30 @@ function addInterval() {
   intervals.push({
     min_tokens: 0, max_tokens: null, tier_label: '',
     input_price: null, output_price: null, cache_write_price: null,
-    cache_read_price: null, per_request_price: null, video_price_per_second: null,
-    sort_order: intervals.length
-  })
-  emit('update', { ...props.entry, intervals })
-}
-
-function addImageTier() {
-  const intervals = [...(props.entry.intervals || [])]
-  const labels = ['1K', '2K', '4K', 'HD']
-  intervals.push({
-    min_tokens: 0, max_tokens: null, tier_label: labels[intervals.length] || '',
-    input_price: null, output_price: null, cache_write_price: null,
+    cache_write_1h_price: null,
     cache_read_price: null, per_request_price: null,
-    video_price_per_second: null,
+    input_multiplier: null, output_multiplier: null,
+    cache_write_multiplier: null, cache_read_multiplier: null,
     sort_order: intervals.length
   })
   emit('update', { ...props.entry, intervals })
 }
 
-function addVideoTier() {
+function addMediaTier() {
   const intervals = [...(props.entry.intervals || [])]
-  const labels = ['480p', '720p', '1080p', '4K']
+  const labels = props.entry.billing_mode === 'video'
+    ? ['480p', '720p', '1080p']
+    : ['1K', '2K', '4K', 'HD']
   intervals.push({
     min_tokens: 0, max_tokens: null, tier_label: labels[intervals.length] || '',
     input_price: null, output_price: null, cache_write_price: null,
-    cache_read_price: null, per_request_price: null, video_price_per_second: null,
+    cache_write_1h_price: null,
+    cache_read_price: null, per_request_price: null,
+    input_multiplier: null, output_multiplier: null,
+    cache_write_multiplier: null, cache_read_multiplier: null,
     sort_order: intervals.length
   })
   emit('update', { ...props.entry, intervals })
-}
-
-function emitAllowedSeconds(value: string) {
-  allowedSecondsInput.value = value
-  const seconds = value
-    .split(',')
-    .map(part => part.trim())
-    .filter(part => part !== '')
-    .map(Number)
-  const updated = { ...props.entry, video_allowed_seconds: seconds }
-  lastAllowedSecondsEntry = updated
-  emit('update', updated)
-}
-
-function normalizeAllowedSeconds() {
-  allowedSecondsFocused.value = false
-  const seconds = allowedSecondsInput.value
-    .split(',')
-    .map(part => part.trim())
-    .filter(part => part !== '')
-    .map(Number)
-  allowedSecondsInput.value = seconds.join(', ')
-  const updated = { ...props.entry, video_allowed_seconds: seconds }
-  lastAllowedSecondsEntry = updated
-  emit('update', updated)
 }
 
 function updateInterval(idx: number, updated: IntervalFormEntry) {
@@ -449,14 +443,16 @@ async function onModelsUpdate(newModels: string[]) {
   const oldModels = props.entry.models
   emit('update', { ...props.entry, models: newModels })
 
-  // 只在新增模型且当前无价格时自动填充
+  // 仅在「空条目首次加入单个模型」时自动填充默认价：
+  // 条目已有模型时（即使价格留空、按各模型的官方默认价回退）追加模型不应改写整条价格，
+  // 一次加入多个模型也不应把第一个模型的价格套用到整条，否则条目内所有模型都会被静默改价。
   const addedModels = newModels.filter(m => !oldModels.includes(m))
-  if (addedModels.length === 0) return
+  if (oldModels.length !== 0 || addedModels.length !== 1) return
 
   // 检查是否所有价格字段都为空
   const e = props.entry
   const hasPrice = e.input_price != null || e.output_price != null ||
-                   e.cache_write_price != null || e.cache_read_price != null
+                   e.cache_write_price != null || e.cache_write_1h_price != null || e.cache_read_price != null
   if (hasPrice) return
 
   // 查询第一个新增模型的默认价格
@@ -469,9 +465,11 @@ async function onModelsUpdate(newModels: string[]) {
         input_price: perTokenToMTok(result.input_price ?? null),
         output_price: perTokenToMTok(result.output_price ?? null),
         cache_write_price: perTokenToMTok(result.cache_write_price ?? null),
+        cache_write_1h_price: perTokenToMTok(result.cache_write_1h_price ?? null),
         cache_read_price: perTokenToMTok(result.cache_read_price ?? null),
         image_input_price: perTokenToMTok(result.image_input_price ?? null),
         image_output_price: perTokenToMTok(result.image_output_price ?? null),
+        reasoning_effort_multipliers: props.entry.reasoning_effort_multipliers ?? result.reasoning_effort_multipliers ?? null,
       })
     }
   } catch {
@@ -481,6 +479,10 @@ async function onModelsUpdate(newModels: string[]) {
 </script>
 
 <style scoped>
+.pricing-default-grid {
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
 .collapsible-content {
   display: grid;
   grid-template-rows: 1fr;

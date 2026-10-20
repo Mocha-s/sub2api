@@ -24,7 +24,23 @@ const (
 
 	CompositeRouteSourceExplicit = "route"
 	CompositeRouteSourceDetector = "detector"
+	CompositeRouteSourceAccount  = "account_model"
 )
+
+// CompositeModelOwnership identifies the concrete provider that exposes a
+// public model through an account-level exact mapping.
+type CompositeModelOwnership struct {
+	TargetPlatform string
+	Matched        bool
+	Ambiguous      bool
+	// OpenAIGatewayOAuthClaimed 表示声明方中含 OpenAI 网关族平台的 OAuth /
+	// setup-token 凭据。歧义请求无法解析平台，会落到默认的 Anthropic 网关
+	// handler：Anthropic / Gemini / Antigravity 的 OAuth 在那里有原生或兼容
+	// 转发，API Key 上游可能兼容多种格式，唯独这类凭据只能走 OpenAI 网关。
+	OpenAIGatewayOAuthClaimed bool
+}
+
+type CompositeModelOwnershipResolver func(context.Context, int64, string) (CompositeModelOwnership, error)
 
 var (
 	ErrCompositeRouteNotFound = infraerrors.NotFound("COMPOSITE_ROUTE_NOT_FOUND", "composite route not found")
@@ -120,7 +136,12 @@ func normalizeCompositeRouteInput(input CompositeRouteInput) CompositeRouteInput
 	input.TargetPlatform = strings.TrimSpace(input.TargetPlatform)
 	input.UpstreamModel = strings.TrimSpace(input.UpstreamModel)
 	input.Endpoint = normalizeCompositeRouteEndpoint(input.Endpoint)
-	if input.UpstreamModel == "" {
+	// 仅对 exact 路由把空 upstream_model 回填成 public_model：exact 命中时请求模型
+	// 恒等于 public_model，回填只影响持久化/后台展示，保留原有契约不变。
+	// prefix 路由留空则不回填——Resolve 会回退到具体请求模型，从而透传原始模型
+	// （否则 public=deepseek-v4 的前缀路由会把 deepseek-v4-flash / deepseek-v4-pro
+	// 都塌缩成固定的 deepseek-v4）。显式填写 upstream_model 时任何模式都原样固定转发。
+	if input.UpstreamModel == "" && input.MatchType == CompositeRouteMatchExact {
 		input.UpstreamModel = input.PublicModel
 	}
 	input.Notes = strings.TrimSpace(input.Notes)

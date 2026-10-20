@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 const videoTaskPollerStopTestTimeout = 6 * time.Second
@@ -130,6 +132,32 @@ func TestVideoTaskPollerPollOnceSchedulesNonTerminalTask(t *testing.T) {
 	if update.ClearNextPollAt {
 		t.Fatalf("ClearNextPollAt = true, want false")
 	}
+}
+
+func TestVideoTaskPollerExpiresTaskPastLocalDeadlineWithoutProviderFetch(t *testing.T) {
+	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+	expiredAt := now.Add(-time.Second)
+	repo := &pollerVideoTaskRepositoryFake{claimed: []*VideoTask{{
+		PublicTaskID:   "task_expired",
+		ProviderTaskID: "upstream_task",
+		AccountID:      99,
+		Status:         VideoTaskStatusInProgress,
+		ExpiresAt:      &expiredAt,
+	}}}
+	provider := &pollerVideoTaskProviderFake{results: map[string]*VideoProviderFetchResult{
+		"task_expired": {Status: VideoTaskStatusCompleted},
+	}}
+	hook := &reconcileHookFake{}
+
+	poller := newVideoTaskPoller(repo, &pollerAccountRepositoryFake{accounts: map[int64]*Account{99: {ID: 99}}}, provider, hook)
+	require.NoError(t, poller.PollOnce(context.Background(), "worker-1", now))
+
+	update, ok := repo.updates["task_expired"]
+	require.True(t, ok)
+	require.Equal(t, VideoTaskStatusFailed, update.Status)
+	require.True(t, update.ClearNextPollAt)
+	require.Empty(t, provider.fetchAccountIDs)
+	require.Equal(t, 1, hook.calls)
 }
 
 func TestVideoTaskPollerPollOnceSchedulesFromTaskCompletionTime(t *testing.T) {

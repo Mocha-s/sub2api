@@ -7,29 +7,29 @@ import GroupsView from '../GroupsView.vue'
 const {
   listGroups,
   getAllGroups,
-  getModelsListCandidates,
+  getModelAllowlistCandidates,
   getUsageSummary,
   getCapacitySummary,
+  getLiveCapability,
   listAccounts,
-  createGroupRequest,
-  updateGroupRequest,
   showError,
   showSuccess,
   isCurrentStep,
   nextStep,
+  authState,
 } = vi.hoisted(() => ({
   listGroups: vi.fn(),
   getAllGroups: vi.fn(),
-  getModelsListCandidates: vi.fn(),
+  getModelAllowlistCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
+  getLiveCapability: vi.fn(),
   listAccounts: vi.fn(),
-  createGroupRequest: vi.fn(),
-  updateGroupRequest: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
+  authState: { isSimpleMode: false },
 }))
 
 const messages: Record<string, string> = {
@@ -45,7 +45,9 @@ const messages: Record<string, string> = {
   'admin.groups.columns.usage': 'Usage',
   'admin.groups.columns.status': 'Status',
   'admin.groups.columns.actions': 'Actions',
-  'admin.groups.allowVideoGeneration': 'Allow video generation for this group',
+  'admin.groups.usageToday': 'Today',
+  'admin.groups.usageYesterday': 'Yesterday',
+  'admin.groups.usageTotal': 'Total',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -53,11 +55,12 @@ vi.mock('@/api/admin', () => ({
     groups: {
       list: listGroups,
       getAll: getAllGroups,
-      getModelsListCandidates,
+      getModelAllowlistCandidates,
       getUsageSummary,
       getCapacitySummary,
-      create: createGroupRequest,
-      update: updateGroupRequest,
+      getLiveCapability,
+      create: vi.fn(),
+      update: vi.fn(),
       delete: vi.fn(),
       updateSortOrder: vi.fn(),
     },
@@ -72,6 +75,10 @@ vi.mock('@/stores/app', () => ({
     showError,
     showSuccess,
   }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authState,
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -105,7 +112,6 @@ const createGroup = (overrides: Partial<AdminGroup> = {}): AdminGroup => ({
   weekly_limit_usd: null,
   monthly_limit_usd: null,
   allow_image_generation: false,
-  allow_video_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null,
@@ -128,7 +134,7 @@ const createGroup = (overrides: Partial<AdminGroup> = {}): AdminGroup => ({
   account_count: 3,
   active_account_count: 2,
   rate_limited_account_count: 1,
-  models_list_config: undefined,
+  model_allowlist: undefined,
   sort_order: 10,
   ...overrides,
 })
@@ -154,8 +160,8 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
-      <div v-for="row in data" :key="row.id">
-        <slot name="cell-actions" :row="row" />
+      <div v-if="data.length" data-test="usage-cell">
+        <slot name="cell-usage" :row="data[0]" />
       </div>
     </div>
   `,
@@ -233,16 +239,16 @@ describe('admin GroupsView column settings', () => {
 
     listGroups.mockReset()
     getAllGroups.mockReset()
-    getModelsListCandidates.mockReset()
+    getModelAllowlistCandidates.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
+    getLiveCapability.mockReset()
     listAccounts.mockReset()
-    createGroupRequest.mockReset()
-    updateGroupRequest.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     isCurrentStep.mockReset()
     nextStep.mockReset()
+    authState.isSimpleMode = false
 
     listGroups.mockResolvedValue({
       items: [createGroup()],
@@ -252,72 +258,29 @@ describe('admin GroupsView column settings', () => {
       pages: 1,
     })
     getAllGroups.mockResolvedValue([])
-    getModelsListCandidates.mockResolvedValue([])
+    getModelAllowlistCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
+    getLiveCapability.mockResolvedValue({ supported: false })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
-    createGroupRequest.mockResolvedValue(createGroup())
-    updateGroupRequest.mockResolvedValue(createGroup())
     isCurrentStep.mockReturnValue(false)
   })
 
-  it('submits video generation permission when creating an OpenAI group', async () => {
+  it('does not call advanced group APIs or expose the exclusive filter in simple mode', async () => {
+    authState.isSimpleMode = true
     const wrapper = await mountView()
 
-    await wrapper.get('[data-tour="groups-create-btn"]').trigger('click')
-    expect(wrapper.text()).not.toContain('Allow video generation for this group')
-
-    await wrapper.get('[data-tour="group-form-platform"]').setValue('openai')
-    await wrapper.get('[data-tour="group-form-name"]').setValue('OpenAI Video')
-
-    const label = wrapper
-      .findAll('label')
-      .find((item) => item.text().includes('Allow video generation for this group'))
-    expect(label).toBeTruthy()
-    await label!.get('input[type="checkbox"]').setValue(true)
-    await wrapper.get('#create-group-form').trigger('submit')
-    await flushPromises()
-
-    expect(createGroupRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        platform: 'openai',
-        allow_video_generation: true,
-      }),
+    expect(getLiveCapability).not.toHaveBeenCalled()
+    expect(getModelAllowlistCandidates).not.toHaveBeenCalled()
+    expect(getUsageSummary).not.toHaveBeenCalled()
+    expect(getCapacitySummary).not.toHaveBeenCalled()
+    expect(listGroups).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.any(Number),
+      expect.objectContaining({ is_exclusive: undefined }),
+      expect.anything(),
     )
-  })
-
-  it('loads and submits video generation permission when editing an OpenAI group', async () => {
-    listGroups.mockResolvedValue({
-      items: [createGroup({ platform: 'openai', allow_video_generation: true })],
-      total: 1,
-      page: 1,
-      page_size: 20,
-      pages: 1,
-    })
-    const wrapper = await mountView()
-
-    const editButton = wrapper
-      .findAll('button')
-      .find((item) => item.text().includes('common.edit'))
-    expect(editButton).toBeTruthy()
-    await editButton!.trigger('click')
-    await flushPromises()
-
-    const label = wrapper
-      .findAll('label')
-      .find((item) => item.text().includes('Allow video generation for this group'))
-    expect(label).toBeTruthy()
-    const checkbox = label!.get('input[type="checkbox"]')
-    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
-
-    await checkbox.setValue(false)
-    await wrapper.get('#edit-group-form').trigger('submit')
-    await flushPromises()
-
-    expect(updateGroupRequest).toHaveBeenCalledWith(
-      1,
-      expect.objectContaining({ allow_video_generation: false }),
-    )
+    expect(wrapper.find('select').text()).not.toContain('admin.groups.allGroups')
   })
 
   afterEach(() => {
@@ -446,10 +409,26 @@ describe('admin GroupsView column settings', () => {
     await openColumnSettings(wrapper)
     await clickColumnToggle(wrapper, 'Usage')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
+    expect(getUsageSummary).toHaveBeenCalledWith()
     expect(getCapacitySummary).not.toHaveBeenCalled()
 
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders yesterday usage between today and total', async () => {
+    getUsageSummary.mockResolvedValue([
+      { group_id: 1, today_cost: 1.25, yesterday_cost: 2.5, total_cost: 9.75 },
+    ])
+
+    const wrapper = await mountView()
+    const text = wrapper.get('[data-test="usage-cell"]').text()
+
+    expect(text).toContain('Today$1.25')
+    expect(text).toContain('Yesterday$2.50')
+    expect(text).toContain('Total$9.75')
+    expect(text.indexOf('Today')).toBeLessThan(text.indexOf('Yesterday'))
+    expect(text.indexOf('Yesterday')).toBeLessThan(text.indexOf('Total'))
   })
 })

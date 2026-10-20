@@ -29,36 +29,45 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 
 	audited := map[string][]string{
 		"/messages":                 {"gateway_handler.go", "openai_gateway_handler.go"},
+		"/systemone":                {"gateway_systemone.go"},
 		"/responses":                {"gateway_handler_responses.go", "openai_gateway_handler.go"},
 		"/responses/*subpath":       {"gateway_handler_responses.go", "openai_gateway_handler.go"},
 		"/chat/completions":         {"gateway_handler_chat_completions.go", "openai_chat_completions.go"},
 		"/embeddings":               {"openai_embeddings.go"},
 		"/alpha/search":             {"openai_alpha_search.go"},
+		"/live":                     {"openai_live.go"},
+		"/realtime/calls":           {"openai_live.go"},
 		"/images/generations":       {"openai_images.go", "grok_media.go"},
 		"/images/edits":             {"openai_images.go", "grok_media.go"},
 		"/images/generations/async": {"image_task_handler.go"},
 		"/images/edits/async":       {"image_task_handler.go"},
 		"/images/batches":           {"batch_image_handler.go"},
-		"/video/generations":        {"openai_video.go"},
-		"/videos":                   {"openai_video.go"},
+		"/videos":                   {"grok_media.go"},
 		"/videos/generations":       {"grok_media.go"},
+		"/video/generations":        {"openai_video.go"},
 		"/videos/edits":             {"grok_media.go"},
 		"/videos/extensions":        {"grok_media.go"},
 		"/models/*modelAction":      {"gemini_v1beta_handler.go"},
+		"/cachedContents":           {"gemini_cached_contents_handler.go"},
+		"/tts":                      {"grok_audio.go"},
+		"/web_search":               {"gateway_web_search.go"},
+		"/x_search":                 {"gateway_web_search.go"},
 	}
 	excluded := map[string]string{
 		"/messages/count_tokens":                 "tokenization only; it does not execute a model request",
 		"/images/batches/:id/cancel":             "control-plane cancellation with no user prompt",
-		"/video/generations/:request_id/cancel":  "video task control-plane cancellation with no new user prompt",
-		"/video/generations/:request_id/refresh": "video task control-plane refresh with no new user prompt",
-		"/video/generations/estimate":            "video cost estimation only; it does not execute a model request",
-		"/video/generations/material-assets":     "video asset helper; it does not execute a model request",
-		"/video/generations/references":          "video asset helper; it does not execute a model request",
-		"/videos/:request_id/cancel":             "video task control-plane cancellation with no new user prompt",
-		"/videos/:request_id/refresh":            "video task control-plane refresh with no new user prompt",
-		"/videos/estimate":                       "video cost estimation only; it does not execute a model request",
-		"/videos/material-assets":                "video asset helper; it does not execute a model request",
-		"/videos/references":                     "video asset helper; it does not execute a model request",
+		"/stt":                                   "speech transcription is not a text-generation prompt",
+		"/custom-voices":                         "voice profile management has no model prompt",
+		"/video/generations/:request_id/refresh": "video task control-plane refresh has no prompt",
+		"/video/generations/:request_id/cancel":  "video task control-plane cancellation has no prompt",
+		"/videos/:request_id/refresh":            "video task control-plane refresh has no prompt",
+		"/videos/:request_id/cancel":             "video task control-plane cancellation has no prompt",
+		"/video/generations/estimate":            "video estimate has no generation prompt",
+		"/video/generations/references":          "video reference upload has no prompt",
+		"/video/generations/material-assets":     "video material upload has no prompt",
+		"/videos/estimate":                       "video estimate has no generation prompt",
+		"/videos/references":                     "video reference upload has no prompt",
+		"/videos/material-assets":                "video material upload has no prompt",
 	}
 
 	unclassified := make([]string, 0)
@@ -125,7 +134,7 @@ func TestPromptAuditAdminRoutesRejectUnauthenticatedAndNonAdminRequests(t *testi
 	})
 	auditLog := servermiddleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() })
 	stepUp := servermiddleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() })
-	RegisterAdminRoutes(router.Group("/api/v1"), handlers, adminAuth, auditLog, stepUp, nil)
+	RegisterAdminRoutes(router.Group("/api/v1"), handlers, adminAuth, auditLog, stepUp, nil, nil)
 
 	for _, tc := range []struct {
 		name       string

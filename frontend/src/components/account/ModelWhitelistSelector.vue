@@ -47,28 +47,44 @@
           />
         </div>
         <div class="max-h-52 overflow-auto">
-          <button
+          <div
             v-for="model in filteredModels"
             :key="model.value"
-            type="button"
-            @click="toggleModel(model.value)"
-            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-600"
+            data-testid="model-option"
+            class="group flex items-center hover:bg-gray-100 dark:hover:bg-dark-600"
           >
-            <span
-              :class="[
-                'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                modelValue.includes(model.value)
-                  ? 'border-primary-500 bg-primary-500 text-white'
-                  : 'border-gray-300 dark:border-dark-500'
-              ]"
+            <button
+              type="button"
+              data-testid="select-model"
+              class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm"
+              @click="toggleModel(model.value)"
             >
-              <svg v-if="modelValue.includes(model.value)" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-              </svg>
-            </span>
-            <ModelIcon :model="model.value" size="18px" />
-            <span class="truncate text-gray-900 dark:text-white">{{ model.value }}</span>
-          </button>
+              <span
+                :class="[
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                  modelValue.includes(model.value)
+                    ? 'border-primary-500 bg-primary-500 text-white'
+                    : 'border-gray-300 dark:border-dark-500'
+                ]"
+              >
+                <svg v-if="modelValue.includes(model.value)" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                </svg>
+              </span>
+              <ModelIcon :model="model.value" size="18px" />
+              <span class="truncate text-gray-900 dark:text-white">{{ model.value }}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="copy-model-id"
+              class="mr-2 rounded p-1.5 text-gray-400 opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:text-gray-500 dark:hover:bg-dark-500 dark:hover:text-primary-400"
+              :title="`${t('common.copy')} ${model.value}`"
+              :aria-label="`${t('common.copy')} ${model.value}`"
+              @click="copyModelId(model.value)"
+            >
+              <Icon name="copy" size="sm" />
+            </button>
+          </div>
           <div v-if="filteredModels.length === 0" class="px-3 py-4 text-center text-sm text-gray-500">
             {{ t('admin.accounts.noMatchingModels') }}
           </div>
@@ -134,14 +150,18 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
 import type { SyncUpstreamPreviewParams } from '@/api/admin/accounts'
+import { useClipboard } from '@/composables/useClipboard'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
+import { supportsUpstreamModelSync } from '@/constants/platformCatalog'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   modelValue: string[]
+  modelMappings?: { from: string; to: string }[]
   platform?: string
   platforms?: string[]
   accountId?: number
@@ -155,9 +175,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
+  'upstream-synced': []
 }>()
 
 const appStore = useAppStore()
+const { copyToClipboard } = useClipboard()
 
 const showDropdown = ref(false)
 const searchQuery = ref('')
@@ -181,14 +203,13 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity', 'grok'])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
     if (normalizedPlatforms.value.length === 0) return true
-    return normalizedPlatforms.value.some(platform => upstreamSyncPlatforms.has(platform.toLowerCase()))
+    return normalizedPlatforms.value.some(supportsUpstreamModelSync)
   }
   if (props.syncCredentials) {
-    return upstreamSyncPlatforms.has(props.syncCredentials.platform.toLowerCase())
+    return supportsUpstreamModelSync(props.syncCredentials.platform)
   }
   return false
 })
@@ -233,11 +254,20 @@ const toggleModel = (model: string) => {
   }
 }
 
+const copyModelId = async (model: string) => {
+  await copyToClipboard(model)
+}
+
 const addCustom = () => {
   const model = customModel.value.trim()
   if (!model) return
   if (props.modelValue.includes(model)) {
     appStore.showInfo(t('admin.accounts.modelExists'))
+    return
+  }
+  const conflict = props.modelMappings?.find(mapping => mapping.from.trim() === model && mapping.to.trim() && mapping.to.trim() !== model)
+  if (conflict) {
+    appStore.showInfo(t('admin.accounts.modelMappingConflict', { from: model, to: conflict.to.trim() }))
     return
   }
   emit('update:modelValue', [...props.modelValue, model])
@@ -261,8 +291,7 @@ const fillRelated = () => {
 }
 
 const syncUpstreamModels = async () => {
-  if (isSyncingUpstream.value) return
-  if (!props.accountId && !props.syncCredentials) return
+  if (isSyncingUpstream.value || !canSyncUpstream.value) return
 
   isSyncingUpstream.value = true
   try {
@@ -281,6 +310,10 @@ const syncUpstreamModels = async () => {
       return
     }
 
+    if (!props.accountId) {
+      emit('upstream-synced')
+    }
+
     const newModels = [...props.modelValue]
     let addedCount = 0
     for (const model of upstreamModels) {
@@ -291,13 +324,27 @@ const syncUpstreamModels = async () => {
     }
 
     emit('update:modelValue', newModels)
+    const warnings = result.warnings ?? []
+    const hasPartialMetadata = warnings.some(
+      warning => warning.code === 'upstream_model_metadata_partial'
+    )
+    const hasIncompleteMetadata = warnings.some(
+      warning => warning.code === 'upstream_model_metadata_incomplete'
+    )
+    if (hasIncompleteMetadata) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+      return
+    }
     if (addedCount > 0) {
       appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
     } else {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsNoChanges', { count: upstreamModels.length }))
     }
+    if (hasPartialMetadata) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
+    const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
     isSyncingUpstream.value = false

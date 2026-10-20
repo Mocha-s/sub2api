@@ -291,31 +291,20 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 		return 0, fmt.Errorf("cleanup filters missing time range")
 	}
 	args = append(args, limit)
+	if db, ok := r.sql.(*sql.DB); ok {
+		return r.deleteUsageLogsBatchWithRollupInvalidation(ctx, db, whereClause, args)
+	}
 	query := fmt.Sprintf(`
 		WITH target AS (
-			SELECT ul.id
-			FROM usage_logs ul
+			SELECT id
+			FROM usage_logs
 			WHERE %s
-			AND NOT EXISTS (
-				SELECT 1 FROM video_task_refund_reporting_jobs j
-				WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
-			)
-			ORDER BY ul.created_at ASC, ul.id ASC
-			FOR UPDATE OF ul SKIP LOCKED
+			ORDER BY created_at ASC, id ASC
 			LIMIT $%d
-		), deleted_jobs AS (
-			DELETE FROM video_task_refund_reporting_jobs j
-			USING target
-			WHERE j.usage_log_id=target.id AND j.completed_at IS NOT NULL
-			RETURNING j.id
 		)
-		DELETE FROM usage_logs ul
-		WHERE ul.id IN (SELECT id FROM target)
-		AND NOT EXISTS (
-			SELECT 1 FROM video_task_refund_reporting_jobs j
-			WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
-		)
-		RETURNING ul.id
+		DELETE FROM usage_logs
+		WHERE id IN (SELECT id FROM target)
+		RETURNING created_at
 	`, whereClause, len(args))
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -329,6 +318,68 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 		deleted++
 	}
 	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
+func (r *usageCleanupRepository) deleteUsageLogsBatchWithRollupInvalidation(ctx context.Context, db *sql.DB, whereClause string, args []any) (int64, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	rollback := func(err error) (int64, error) {
+		_ = tx.Rollback()
+		return 0, err
+	}
+
+	if err := lockGroupUsageRollupState(ctx, tx); err != nil {
+		return rollback(err)
+	}
+	query := fmt.Sprintf(`
+		WITH target AS (
+			SELECT id
+			FROM usage_logs
+			WHERE %s
+			ORDER BY created_at ASC, id ASC
+			LIMIT $%d
+		)
+		DELETE FROM usage_logs
+		WHERE id IN (SELECT id FROM target)
+		RETURNING created_at
+	`, whereClause, len(args))
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return rollback(err)
+	}
+
+	var deleted int64
+	var earliestDeletedAt time.Time
+	for rows.Next() {
+		var deletedAt time.Time
+		if err := rows.Scan(&deletedAt); err != nil {
+			_ = rows.Close()
+			return rollback(err)
+		}
+		deleted++
+		if earliestDeletedAt.IsZero() || deletedAt.Before(earliestDeletedAt) {
+			earliestDeletedAt = deletedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return rollback(err)
+	}
+	if err := rows.Close(); err != nil {
+		return rollback(err)
+	}
+
+	if deleted > 0 {
+		if err := invalidateGroupUsageRollupsAt(ctx, tx, earliestDeletedAt); err != nil {
+			return rollback(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return deleted, nil

@@ -16,6 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestVideoTaskProviderContextSurvivesClientCancellationWithDeadline(t *testing.T) {
+	clientCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	providerCtx, release := videoTaskProviderContext(clientCtx)
+	defer release()
+
+	require.NoError(t, providerCtx.Err())
+	deadline, ok := providerCtx.Deadline()
+	require.True(t, ok)
+	require.True(t, deadline.After(time.Now()))
+}
+
 func TestNewVideoTaskServiceUsesAccountVideoTaskProvider(t *testing.T) {
 	svc := NewVideoTaskService(newFakeVideoTaskRepository(nil), nil, nil, nil)
 
@@ -414,6 +427,33 @@ func TestVideoTaskServiceCreateVideoPricingStoresQuoteAndNormalizesOnlyForwarded
 	require.InDelta(t, 0.2, snapshot.ActualCostUSD, 1e-12)
 	require.InDelta(t, 0.5, snapshot.AccountCostUSD, 1e-12)
 	require.Equal(t, 1, pricing.calls)
+}
+
+func TestVideoTaskServiceCreateProviderFailureReleasesReservedCharge(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	providerErr := errors.New("upstream ratio rejected")
+	provider := &fakeVideoTaskProvider{events: events, createErr: providerErr}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	price, seconds := 0.08, 5
+	settlement := &fakeVideoTaskSettlementOrchestrator{events: events}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+	svc.pricingResolver = &fakeVideoTaskPricingResolver{events: events, selection: VideoTaskPricingSelection{
+		Pricing:      &ChannelModelPricing{BillingMode: BillingModeVideo, VideoPricePerSecond: &price, VideoDefaultSeconds: &seconds},
+		BillingModel: "seedance2.0-900-3", RateMultiplier: 1, AccountRateMultiplier: 1,
+	}}
+	svc.settlement = settlement
+
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{
+		APIKey: videoTaskTestAPIKey(), User: &User{ID: 7},
+		Body:        []byte(`{"model":"seedance2.0-900-3","prompt":"city","ratio":"16:9"}`),
+		ContentType: "application/json",
+	})
+
+	require.Nil(t, result)
+	require.ErrorIs(t, err, providerErr)
+	require.Equal(t, 1, settlement.failAndReleaseCalls)
+	require.Zero(t, settlement.captureCalls)
 }
 
 func TestVideoTaskServiceCreateWithoutVideoPricingNormalizesDurationAndExplicitSeconds(t *testing.T) {

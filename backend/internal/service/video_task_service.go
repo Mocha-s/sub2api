@@ -414,6 +414,8 @@ func isVideoTaskPreSubmitAdapterMismatch(err error) bool {
 
 func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, params VideoTaskCreateParams, created *VideoTask, account *Account, forwardBody []byte, upstreamModel string, quote *VideoTaskQuote) (*VideoTaskCreateResult, error) {
 	publicTaskID := created.PublicTaskID
+	providerCtx, cancelProvider := videoTaskProviderContext(providerCtx)
+	defer cancelProvider()
 	providerResult, err := s.provider.Create(providerCtx, account, forwardBody, params.ContentType, upstreamModel)
 	if err != nil {
 		if quote != nil {
@@ -460,6 +462,11 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		}
 	}
 	submittedAt := time.Now()
+	expiresAt := providerResult.ExpiresAt
+	if expiresAt == nil {
+		fallbackExpiresAt := submittedAt.Add(videoTaskDefaultLifetime)
+		expiresAt = &fallbackExpiresAt
+	}
 	var nextPollAt *time.Time
 	clearNextPollAt := providerResult.Status.Terminal()
 	if !clearNextPollAt {
@@ -474,7 +481,7 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		ResponseBody:    providerResult.RawBody,
 		Metadata:        providerResult.Metadata,
 		SubmittedAt:     &submittedAt,
-		ExpiresAt:       providerResult.ExpiresAt,
+		ExpiresAt:       expiresAt,
 		NextPollAt:      nextPollAt,
 		ClearNextPollAt: clearNextPollAt,
 	}
@@ -1237,6 +1244,13 @@ func copyVideoTaskMetadata(metadata map[string]any) map[string]any {
 
 func videoTaskPersistenceContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), videoTaskPersistenceTimeout)
+}
+
+func videoTaskProviderContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), videoTaskDefaultLifetime)
 }
 
 func (s *VideoTaskService) videoTaskAccount(ctx context.Context, accountID int64) (*Account, error) {

@@ -240,6 +240,10 @@ func seedanceCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 	if prompt := rawStringField(payload, "prompt"); prompt != "" {
 		out["prompt"] = prompt
 	}
+	ratio := strings.TrimSpace(rawStringField(payload, "ratio"))
+	if ratio == "" {
+		ratio = strings.TrimSpace(rawStringField(payload, "aspect_ratio"))
+	}
 	if duration, ok, err := seedanceRawNumericField(payload, "duration"); err != nil {
 		return nil, err
 	} else if ok {
@@ -253,9 +257,7 @@ func seedanceCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 	} else if ok {
 		out["duration"] = durationSeconds
 	}
-	if ratio := rawStringField(payload, "ratio"); ratio != "" {
-		out["ratio"] = ratio
-	} else if ratio := rawStringField(payload, "aspect_ratio"); ratio != "" {
+	if ratio != "" {
 		out["ratio"] = ratio
 	}
 	for _, key := range []string{"resolution", "generate_audio", "return_last_frame", "web_search", "content", "images", "videos", "audios"} {

@@ -67,6 +67,13 @@ func (h *VideoTaskHandler) Create(c *gin.Context) {
 	if !ok {
 		return
 	}
+	normalized, contentType, err := service.NormalizeVideoTaskRequestBody(body, c.GetHeader("Content-Type"))
+	if err != nil {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	c.Request.Header.Set("Content-Type", contentType)
+	body = normalized
 	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideos, false)
 }
 
@@ -84,6 +91,13 @@ func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
 	if !ok {
 		return
 	}
+	normalized, contentType, err := service.NormalizeVideoTaskRequestBody(body, c.GetHeader("Content-Type"))
+	if err != nil {
+		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	c.Request.Header.Set("Content-Type", contentType)
+	body = normalized
 
 	h.createWithBody(c, svc, apiKey, body, service.VideoTaskEndpointVideoGenerations, true)
 }
