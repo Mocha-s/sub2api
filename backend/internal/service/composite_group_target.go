@@ -15,6 +15,14 @@ type CompositeGroupTarget struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
 	TargetGroup      *Group     `json:"-"`
+	TargetGroupInfo  *CompositeTargetGroupInfo `json:"target_group,omitempty"`
+}
+
+type CompositeTargetGroupInfo struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+	Status   string `json:"status"`
 }
 
 type CompositeGroupTargetInput struct {

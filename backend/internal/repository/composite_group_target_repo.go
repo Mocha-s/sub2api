@@ -101,6 +101,10 @@ func compositeGroupTargetEntityToService(row *dbent.CompositeGroupTarget) servic
 	}
 	if row.Edges.TargetGroup != nil {
 		target.TargetGroup = groupEntityToService(row.Edges.TargetGroup)
+		target.TargetGroupInfo = &service.CompositeTargetGroupInfo{
+			ID: row.Edges.TargetGroup.ID, Name: row.Edges.TargetGroup.Name,
+			Platform: row.Edges.TargetGroup.Platform, Status: row.Edges.TargetGroup.Status,
+		}
 	}
 	return target
 }

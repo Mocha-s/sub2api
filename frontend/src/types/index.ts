@@ -638,6 +638,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  dynamic_rate_billing_enabled: boolean
   // 管理端的 name / description 始终是原字段，各语言译文另放在 i18n 里
   i18n?: GroupI18n
   force_openai_fast: boolean
@@ -674,6 +675,15 @@ export interface AdminGroup extends Group {
   sort_order: number
 }
 
+export interface CompositeGroupTarget {
+  id: number
+  composite_group_id: number
+  target_group_id: number
+  priority: number
+  enabled: boolean
+  target_group?: Pick<AdminGroup, 'id' | 'name' | 'platform' | 'status'>
+}
+
 export interface ModelAllowlist {
   enabled: boolean
   models: string[]
@@ -707,6 +717,7 @@ export interface CompositeModelRoute {
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
+  target_group_id?: number
   upstream_model: string
   endpoint: CompositeRouteEndpoint
   priority: number
@@ -720,6 +731,7 @@ export interface CompositeModelRouteInput {
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
+  target_group_id?: number
   upstream_model?: string
   endpoint: CompositeRouteEndpoint
   priority?: number
@@ -810,6 +822,7 @@ export interface CreateGroupRequest {
   i18n?: GroupI18n
   platform?: GroupPlatform
   rate_multiplier?: number
+  dynamic_rate_billing_enabled?: boolean
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
@@ -877,6 +890,7 @@ export interface UpdateGroupRequest {
   i18n?: GroupI18n
   platform?: GroupPlatform
   rate_multiplier?: number
+  dynamic_rate_billing_enabled?: boolean
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType

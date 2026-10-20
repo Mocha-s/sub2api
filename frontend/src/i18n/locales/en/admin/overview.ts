@@ -1195,6 +1195,8 @@ export default {
         matchType: 'Match',
         endpoint: 'Endpoint',
         targetPlatform: 'Target Platform',
+        targetGroup: 'Target Group',
+        targetGroupAuto: 'Auto by platform',
         upstreamModel: 'Upstream Model',
         upstreamModelHint: 'Leave empty to pass the original requested model through: under prefix match each matched model forwards verbatim (e.g. deepseek-v4-flash and deepseek-v4-pro each forwarded as-is); set a value to forward every matched request to that fixed model.',
         notes: 'Notes',
@@ -1230,6 +1232,19 @@ export default {
           route: 'Route',
           detector: 'Detector'
         }
+      },
+      compositeTargets: {
+        title: 'Dynamic Target Groups',
+        hint: 'Accounts are read from these groups dynamically. Static account copying remains a legacy fallback.',
+        targetGroup: 'Concrete group',
+        selectTarget: 'Select a target group',
+        priority: 'Priority',
+        add: 'Add target',
+        failedToLoad: 'Failed to load target groups',
+        failedToSave: 'Failed to save target group',
+        failedToDelete: 'Failed to remove target group',
+        deleteConfirm: 'Remove this target group?',
+        billingUpdated: 'Dynamic billing setting updated'
       },
       claudeCode: {
         title: 'Claude Code Client Restriction',
@@ -1283,12 +1298,12 @@ export default {
         noFallback: 'No Fallback'
       },
       copyAccounts: {
-        title: 'Copy Accounts from Groups',
+        title: 'Copy Accounts from Groups (Legacy)',
         tooltip: 'Select one or more groups of the same platform. After creation, all accounts from these groups will be automatically bound to the new group (deduplicated).',
         tooltipEdit: 'Select one or more groups of the same platform. After saving, current group accounts will be replaced with accounts from these groups (deduplicated).',
         selectPlaceholder: 'Select groups to copy accounts from...',
         hint: 'Multiple groups can be selected, accounts will be deduplicated',
-        hintEdit: '⚠️ Warning: This will replace all existing account bindings'
+        hintEdit: '⚠️ Warning: This will replace all existing account bindings. Use Dynamic Target Groups for live account pools.'
       },
       modelRouting: {
         title: 'Model Routing',

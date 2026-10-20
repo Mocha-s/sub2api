@@ -1192,6 +1192,8 @@ export default {
         matchType: '匹配方式',
         endpoint: '端点',
         targetPlatform: '目标平台',
+        targetGroup: '目标分组',
+        targetGroupAuto: '按平台自动选择',
         upstreamModel: '上游模型',
         upstreamModelHint: '留空表示透传原始请求模型：前缀匹配下每个命中模型各自原样转发（如 deepseek-v4-flash、deepseek-v4-pro 分别转发）；填写则所有命中请求都固定转发该模型。',
         notes: '备注',
@@ -1227,6 +1229,19 @@ export default {
           route: '路由',
           detector: '内置识别'
         }
+      },
+      compositeTargets: {
+        title: '动态目标分组',
+        hint: '账号池会动态读取这些分组；静态复制账号仅作为旧配置兜底。',
+        targetGroup: '具体分组',
+        selectTarget: '选择目标分组',
+        priority: '优先级',
+        add: '添加目标',
+        failedToLoad: '加载目标分组失败',
+        failedToSave: '保存目标分组失败',
+        failedToDelete: '移除目标分组失败',
+        deleteConfirm: '确定移除此目标分组？',
+        billingUpdated: '动态计费设置已更新'
       },
       claudeCode: {
         title: 'Claude Code 客户端限制',
@@ -1281,12 +1296,12 @@ export default {
         noFallback: '不兜底'
       },
       copyAccounts: {
-        title: '从分组复制账号',
+        title: '从分组复制账号（旧版）',
         tooltip: '选择一个或多个相同平台的分组，创建后会自动将这些分组的所有账号绑定到新分组（去重）。',
         tooltipEdit: '选择一个或多个相同平台的分组，保存后当前分组的账号会被替换为这些分组的账号（去重）。',
         selectPlaceholder: '选择分组以复制其账号...',
         hint: '可选多个分组，账号会自动去重',
-        hintEdit: '⚠️ 注意：这会替换当前分组的所有账号绑定'
+        hintEdit: '⚠️ 注意：这会替换当前分组的所有账号绑定；动态账号池请使用“动态目标分组”。'
       },
       modelRouting: {
         title: '模型路由配置',

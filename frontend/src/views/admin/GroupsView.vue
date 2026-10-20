@@ -3928,6 +3928,51 @@
       width="wide"
       @close="closeCompositeRoutesModal"
     >
+      <section class="mb-5 rounded-lg border border-cyan-200 bg-cyan-50/50 p-4 dark:border-cyan-900/50 dark:bg-cyan-950/20">
+        <div class="mb-3 flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t("admin.groups.compositeTargets.title") }}
+            </h3>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t("admin.groups.compositeTargets.hint") }}
+            </p>
+          </div>
+          <Toggle
+            v-if="compositeRoutesGroup"
+            :model-value="!!compositeRoutesGroup.dynamic_rate_billing_enabled"
+            :disabled="compositeRateSaving"
+            @update:model-value="toggleCompositeRateBilling"
+          />
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="min-w-56 flex-1">
+            <label class="input-label">{{ t("admin.groups.compositeTargets.targetGroup") }}</label>
+            <select v-model.number="compositeTargetGroupID" class="input">
+              <option :value="null">{{ t("admin.groups.compositeTargets.selectTarget") }}</option>
+              <option v-for="option in compositeTargetGroupOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+          <div class="w-24">
+            <label class="input-label">{{ t("admin.groups.compositeTargets.priority") }}</label>
+            <input v-model.number="compositeTargetPriority" type="number" min="1" class="input" />
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="compositeTargetSaving || !compositeTargetGroupID" @click="addCompositeTarget">
+            {{ t("admin.groups.compositeTargets.add") }}
+          </button>
+        </div>
+        <div v-if="compositeTargets.length" class="mt-3 space-y-2">
+          <div v-for="target in compositeTargets" :key="target.id" class="flex items-center justify-between rounded border border-gray-200 bg-white px-3 py-2 text-sm dark:border-dark-600 dark:bg-dark-900">
+            <span>{{ target.target_group?.name || `#${target.target_group_id}` }} ({{ target.target_group?.platform || "?" }}/{{ target.target_group?.status || "?" }}) · {{ t("admin.groups.compositeTargets.priority") }} {{ target.priority }}</span>
+            <div class="flex items-center gap-2">
+              <Toggle :model-value="target.enabled" @update:model-value="(value) => toggleCompositeTarget(target, value)" />
+              <button type="button" class="text-red-600 hover:text-red-700" @click="removeCompositeTarget(target)"><Icon name="trash" size="sm" /></button>
+            </div>
+          </div>
+        </div>
+      </section>
       <div class="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
         <section class="min-w-0">
           <div class="mb-3 flex items-center justify-between gap-3">
@@ -4124,6 +4169,15 @@
                   class="input"
                 />
               </div>
+              <div class="lg:col-span-2">
+                <label class="input-label">{{ t("admin.groups.compositeRoutes.targetGroup") }}</label>
+                <select v-model.number="compositeRouteForm.target_group_id" class="input">
+                  <option :value="undefined">{{ t("admin.groups.compositeRoutes.targetGroupAuto") }}</option>
+                  <option v-for="option in compositeTargetGroupOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
             </div>
 
             <div>
@@ -4303,6 +4357,7 @@ import type {
   AdminGroup,
   CodexModelsManifestConfig,
   CompositeModelRoute,
+  CompositeGroupTarget,
   CompositeModelRouteInput,
   CompositeRouteDecision,
   CompositeRouteEndpoint,
@@ -4825,6 +4880,13 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
   }));
 });
 
+const compositeTargetGroupOptions = computed(() => {
+  const currentId = compositeRoutesGroup.value?.id;
+  return sortableGroups.value
+    .filter((g) => g.id !== currentId && g.platform !== "composite" && g.status === "active")
+    .map((g) => ({ value: g.id, label: `${g.name} (${platformLabel(g.platform)})` }));
+});
+
 const groups = ref<AdminGroup[]>([]);
 const loading = ref(false);
 type GroupUsageSummary = {
@@ -4895,6 +4957,7 @@ type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
   target_platform: ConcreteGroupPlatform;
+  target_group_id?: number;
   upstream_model: string;
   endpoint: CompositeRouteEndpoint;
   priority: number;
@@ -4905,6 +4968,12 @@ type CompositeRouteFormState = {
 const showCompositeRoutesModal = ref(false);
 const compositeRoutesGroup = ref<AdminGroup | null>(null);
 const compositeRoutes = ref<CompositeModelRoute[]>([]);
+const compositeTargets = ref<CompositeGroupTarget[]>([]);
+const compositeTargetLoading = ref(false);
+const compositeTargetSaving = ref(false);
+const compositeTargetGroupID = ref<number | null>(null);
+const compositeTargetPriority = ref(100);
+const compositeRateSaving = ref(false);
 const compositeRoutesLoading = ref(false);
 const compositeRouteSaving = ref(false);
 const compositeRouteEditingId = ref<number | null>(null);
@@ -4916,6 +4985,7 @@ const compositeRouteForm = reactive<CompositeRouteFormState>({
   public_model: "",
   match_type: "exact",
   target_platform: "openai",
+  target_group_id: undefined,
   upstream_model: "",
   endpoint: "any",
   priority: 100,
@@ -6530,6 +6600,7 @@ const resetCompositeRouteForm = () => {
   compositeRouteForm.public_model = "";
   compositeRouteForm.match_type = "exact";
   compositeRouteForm.target_platform = "openai";
+  compositeRouteForm.target_group_id = undefined;
   compositeRouteForm.upstream_model = "";
   compositeRouteForm.endpoint = "any";
   compositeRouteForm.priority = 100;
@@ -6541,6 +6612,7 @@ const toCompositeRouteInput = (): CompositeModelRouteInput => ({
   public_model: compositeRouteForm.public_model.trim(),
   match_type: compositeRouteForm.match_type,
   target_platform: compositeRouteForm.target_platform,
+  target_group_id: compositeRouteForm.target_group_id,
   upstream_model: compositeRouteForm.upstream_model.trim(),
   endpoint: compositeRouteForm.endpoint,
   priority: Number(compositeRouteForm.priority) || 100,
@@ -6571,6 +6643,56 @@ const loadCompositeRoutes = async () => {
   }
 };
 
+const loadCompositeTargets = async () => {
+  if (!compositeRoutesGroup.value) return;
+  compositeTargetLoading.value = true;
+  try {
+    compositeTargets.value = await adminAPI.groups.listCompositeTargets(compositeRoutesGroup.value.id);
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t("admin.groups.compositeTargets.failedToLoad"));
+  } finally {
+    compositeTargetLoading.value = false;
+  }
+};
+
+const addCompositeTarget = async () => {
+  if (!compositeRoutesGroup.value || !compositeTargetGroupID.value) return;
+  compositeTargetSaving.value = true;
+  try {
+    await adminAPI.groups.createCompositeTarget(compositeRoutesGroup.value.id, {
+      target_group_id: compositeTargetGroupID.value,
+      priority: compositeTargetPriority.value,
+      enabled: true,
+    });
+    compositeTargetGroupID.value = null;
+    await loadCompositeTargets();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t("admin.groups.compositeTargets.failedToSave"));
+  } finally {
+    compositeTargetSaving.value = false;
+  }
+};
+
+const toggleCompositeTarget = async (target: CompositeGroupTarget, enabled: boolean) => {
+  if (!compositeRoutesGroup.value) return;
+  try {
+    await adminAPI.groups.updateCompositeTarget(compositeRoutesGroup.value.id, target.id, { priority: target.priority, enabled });
+    await loadCompositeTargets();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t("admin.groups.compositeTargets.failedToSave"));
+  }
+};
+
+const removeCompositeTarget = async (target: CompositeGroupTarget) => {
+  if (!compositeRoutesGroup.value || !window.confirm(t("admin.groups.compositeTargets.deleteConfirm"))) return;
+  try {
+    await adminAPI.groups.deleteCompositeTarget(compositeRoutesGroup.value.id, target.id);
+    await loadCompositeTargets();
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t("admin.groups.compositeTargets.failedToDelete"));
+  }
+};
+
 const handleCompositeRoutes = async (group: AdminGroup) => {
   compositeRoutesGroup.value = group;
   compositePreviewModel.value = "";
@@ -6579,12 +6701,28 @@ const handleCompositeRoutes = async (group: AdminGroup) => {
   resetCompositeRouteForm();
   showCompositeRoutesModal.value = true;
   await loadCompositeRoutes();
+  await loadCompositeTargets();
+};
+
+const toggleCompositeRateBilling = async (enabled: boolean) => {
+  if (!compositeRoutesGroup.value) return;
+  compositeRateSaving.value = true;
+  try {
+    await adminAPI.groups.update(compositeRoutesGroup.value.id, { dynamic_rate_billing_enabled: enabled });
+    compositeRoutesGroup.value.dynamic_rate_billing_enabled = enabled;
+    appStore.showSuccess(t("admin.groups.compositeTargets.billingUpdated"));
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t("admin.groups.compositeTargets.failedToSave"));
+  } finally {
+    compositeRateSaving.value = false;
+  }
 };
 
 const closeCompositeRoutesModal = () => {
   showCompositeRoutesModal.value = false;
   compositeRoutesGroup.value = null;
   compositeRoutes.value = [];
+  compositeTargets.value = [];
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
 };
@@ -6594,6 +6732,7 @@ const editCompositeRoute = (route: CompositeModelRoute) => {
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;
   compositeRouteForm.target_platform = route.target_platform;
+  compositeRouteForm.target_group_id = route.target_group_id;
   compositeRouteForm.upstream_model = route.upstream_model;
   compositeRouteForm.endpoint = route.endpoint;
   compositeRouteForm.priority = route.priority || 100;

@@ -11,6 +11,7 @@ import type {
   CompositeModelRouteInput,
   CompositeRoutePreviewRequest,
   CompositeRouteDecision,
+  CompositeGroupTarget,
   CreateGroupRequest,
   UpdateGroupRequest,
   PaginatedResponse
@@ -327,6 +328,33 @@ export async function previewCompositeRoute(
   return data
 }
 
+export async function listCompositeTargets(id: number): Promise<CompositeGroupTarget[]> {
+  const { data } = await apiClient.get<CompositeGroupTarget[]>(`/admin/groups/${id}/composite-targets`)
+  return data
+}
+
+export async function createCompositeTarget(
+  id: number,
+  target: Pick<CompositeGroupTarget, 'target_group_id' | 'priority' | 'enabled'>
+): Promise<CompositeGroupTarget> {
+  const { data } = await apiClient.post<CompositeGroupTarget>(`/admin/groups/${id}/composite-targets`, target)
+  return data
+}
+
+export async function updateCompositeTarget(
+  id: number,
+  targetId: number,
+  target: Pick<CompositeGroupTarget, 'priority' | 'enabled'>
+): Promise<CompositeGroupTarget> {
+  const { data } = await apiClient.put<CompositeGroupTarget>(`/admin/groups/${id}/composite-targets/${targetId}`, target)
+  return data
+}
+
+export async function deleteCompositeTarget(id: number, targetId: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/groups/${id}/composite-targets/${targetId}`)
+  return data
+}
+
 /**
  * Rate multiplier entry for a user in a group
  */
@@ -490,6 +518,10 @@ export const groupsAPI = {
   updateCompositeRoute,
   deleteCompositeRoute,
   previewCompositeRoute,
+  listCompositeTargets,
+  createCompositeTarget,
+  updateCompositeTarget,
+  deleteCompositeTarget,
   getGroupRateMultipliers,
   clearGroupRateMultipliers,
   batchSetGroupRateMultipliers,

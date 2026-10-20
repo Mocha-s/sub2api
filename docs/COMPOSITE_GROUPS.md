@@ -92,6 +92,12 @@ guessing a provider.
 - Admins can create a group with platform `composite`.
 - Admins can add, edit, delete, and preview composite model routes.
 - Composite groups can copy accounts from concrete provider groups.
+- Composite groups can reference concrete target groups dynamically. Target
+  accounts added or removed in those groups become available through the
+  scheduler snapshot update path without editing the Composite group.
+- Composite admin configuration includes a dynamic billing switch. Disabled
+  uses the Composite group's multiplier; enabled preserves the production
+  managed-account `account_rate_multiplier × pricing_markup_factor` behavior.
 - Concrete provider accounts can be assigned directly to composite groups from
   account create/edit and bulk account workflows.
 - Subscription payment plans can bind to a composite group when that group's
