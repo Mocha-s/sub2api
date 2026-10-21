@@ -88,6 +88,24 @@ func TestCompositeRouteResolverDetectorSelectsLowestPriorityConcreteTarget(t *te
 	require.Equal(t, &expectedID, decision.TargetGroupID)
 }
 
+func TestCompositeRouteResolverPrefersTargetOwningExplicitModelMapping(t *testing.T) {
+	priorityTargetID := int64(2)
+	modelOwnerTargetID := int64(16)
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 1, CompositeGroupID: 7, TargetGroupID: priorityTargetID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: priorityTargetID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 2, CompositeGroupID: 7, TargetGroupID: modelOwnerTargetID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: modelOwnerTargetID, Platform: PlatformOpenAI, Status: StatusActive}},
+	}})
+	resolver.SetModelOwnershipResolver(func(context.Context, int64, string) (CompositeModelOwnership, error) {
+		return CompositeModelOwnership{TargetPlatform: PlatformOpenAI, TargetGroupID: &modelOwnerTargetID, Matched: true}, nil
+	})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-image-2.5-sunburst-4k", CompositeRouteEndpointImages)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, &modelOwnerTargetID, decision.TargetGroupID)
+}
+
 func TestCompositeRouteResolverConfiguredButUnusableTargetsFailClosed(t *testing.T) {
 	deletedAt := time.Now()
 	for _, scenario := range []struct {

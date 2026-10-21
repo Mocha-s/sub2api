@@ -190,9 +190,13 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 				Endpoint:       endpoint,
 			}
 			decision.DynamicTargetsConfigured = len(targets) > 0
-			if len(targets) > 0 && !applyDetectedCompositeTarget(&decision, targets, platform) {
+			selected := false
+			if ownership.TargetGroupID != nil {
+				selected = applyCompositeTarget(&decision, targets, *ownership.TargetGroupID)
+			}
+			if len(targets) > 0 && !selected && (ownership.TargetGroupID != nil || !applyDetectedCompositeTarget(&decision, targets, platform)) {
 				decision.Matched = false
-				decision.Reason = "no enabled target group matches account model platform"
+				decision.Reason = "no enabled target group matches account model ownership"
 			}
 			return decision, nil
 		}

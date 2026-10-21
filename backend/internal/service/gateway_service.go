@@ -1565,6 +1565,7 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 	// 归属取决于配置而非运行时健康：限流/临时不可调度不应让同一模型在
 	// 「唯一归属」与「歧义」之间来回翻转，否则配置错误只会间歇暴露。
 	accounts := make([]Account, 0)
+	modelTargetIDs := make(map[int64]struct{})
 	if dynamicTargets {
 		for _, target := range targets {
 			if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) {
@@ -1580,6 +1581,11 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 			}
 			if candidateErr != nil {
 				return CompositeModelOwnership{}, candidateErr
+			}
+			for _, account := range candidateAccounts {
+				if explicitModelMappingClaims(account, model) {
+					modelTargetIDs[target.TargetGroupID] = struct{}{}
+				}
 			}
 			accounts = append(accounts, candidateAccounts...)
 		}
@@ -1604,6 +1610,15 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 	if len(platforms) == 1 {
 		for platform := range platforms {
 			ownership.TargetPlatform = platform
+		}
+		if dynamicTargets {
+			for _, target := range targets {
+				if _, ownsModel := modelTargetIDs[target.TargetGroupID]; ownsModel && target.Enabled && target.DeletedAt == nil && target.TargetGroup != nil && target.TargetGroup.IsActive() && target.TargetGroup.Platform == ownership.TargetPlatform {
+					targetID := target.TargetGroupID
+					ownership.TargetGroupID = &targetID
+					break
+				}
+			}
 		}
 		ownership.Matched = true
 	} else if len(platforms) > 1 {

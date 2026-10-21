@@ -13,6 +13,18 @@ type compositeOwnershipAccountRepo struct {
 	accounts []Account
 }
 
+type compositeOwnershipByGroupRepo struct {
+	AccountRepository
+	accounts map[int64][]Account
+}
+
+func (r *compositeOwnershipByGroupRepo) ListModelAvailabilityCandidates(_ context.Context, groupID *int64, _ []string, _ bool) ([]Account, error) {
+	if groupID == nil {
+		return nil, nil
+	}
+	return r.accounts[*groupID], nil
+}
+
 func (r *compositeOwnershipAccountRepo) ListModelAvailabilityCandidates(context.Context, *int64, []string, bool) ([]Account, error) {
 	return r.accounts, nil
 }
@@ -47,6 +59,32 @@ func TestResolveCompositeModelOwnershipKeepsProviderAccountsIsolated(t *testing.
 	openAIOwnership, err := svc.resolveCompositeModelOwnership(context.Background(), groupID, "gpt-public")
 	require.NoError(t, err)
 	require.Equal(t, CompositeModelOwnership{TargetPlatform: PlatformOpenAI, Matched: true}, openAIOwnership)
+}
+
+func TestResolveCompositeModelOwnershipCarriesOwningTargetGroup(t *testing.T) {
+	const sourceID, priorityID, ownerID = int64(7), int64(2), int64(16)
+	targetRepo := compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 1, CompositeGroupID: sourceID, TargetGroupID: priorityID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: priorityID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 2, CompositeGroupID: sourceID, TargetGroupID: ownerID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: ownerID, Platform: PlatformOpenAI, Status: StatusActive}},
+	}}
+	accountRepo := &compositeOwnershipByGroupRepo{accounts: map[int64][]Account{
+		priorityID: {{ID: 20, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-chat-alias": "gpt-5"}}}},
+		ownerID:    {{ID: 21, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-image-alias": "gpt-image-2.5-sunburst-4k"}}}},
+	}}
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(targetRepo)
+	svc := &GatewayService{accountRepo: accountRepo, compositeResolver: resolver}
+	ownership, err := svc.resolveCompositeModelOwnership(context.Background(), sourceID, "gpt-image-alias")
+	require.NoError(t, err)
+	require.NotNil(t, ownership.TargetGroupID)
+	require.Equal(t, ownerID, *ownership.TargetGroupID)
+	resolver.SetModelOwnershipResolver(svc.resolveCompositeModelOwnership)
+
+	decision, err := resolver.Resolve(context.Background(), sourceID, "gpt-image-alias", CompositeRouteEndpointImages)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.NotNil(t, decision.TargetGroupID)
+	require.Equal(t, ownerID, *decision.TargetGroupID)
 }
 
 // Scenario: 通配符和空映射不声明所有权

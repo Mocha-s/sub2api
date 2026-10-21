@@ -31,6 +31,7 @@ const (
 // public model through an account-level exact mapping.
 type CompositeModelOwnership struct {
 	TargetPlatform string
+	TargetGroupID  *int64
 	Matched        bool
 	Ambiguous      bool
 	// OpenAIGatewayOAuthClaimed 表示声明方中含 OpenAI 网关族平台的 OAuth /
