@@ -23,6 +23,8 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldTargetGroupID holds the string denoting the target_group_id field in the database.
+	FieldTargetGroupID = "target_group_id"
 	// FieldPublicModel holds the string denoting the public_model field in the database.
 	FieldPublicModel = "public_model"
 	// FieldMatchType holds the string denoting the match_type field in the database.
@@ -41,6 +43,8 @@ const (
 	FieldNotes = "notes"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeTargetGroup holds the string denoting the target_group edge name in mutations.
+	EdgeTargetGroup = "target_group"
 	// Table holds the table name of the compositemodelroute in the database.
 	Table = "composite_model_routes"
 	// GroupTable is the table that holds the group relation/edge.
@@ -50,6 +54,13 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_id"
+	// TargetGroupTable is the table that holds the target_group relation/edge.
+	TargetGroupTable = "composite_model_routes"
+	// TargetGroupInverseTable is the table name for the Group entity.
+	// It exists in this package in order to avoid circular dependency with the "group" package.
+	TargetGroupInverseTable = "groups"
+	// TargetGroupColumn is the table column denoting the target_group relation/edge.
+	TargetGroupColumn = "target_group_id"
 )
 
 // Columns holds all SQL columns for compositemodelroute fields.
@@ -59,6 +70,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldGroupID,
+	FieldTargetGroupID,
 	FieldPublicModel,
 	FieldMatchType,
 	FieldTargetPlatform,
@@ -145,6 +157,11 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
 }
 
+// ByTargetGroupID orders the results by the target_group_id field.
+func ByTargetGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTargetGroupID, opts...).ToFunc()
+}
+
 // ByPublicModel orders the results by the public_model field.
 func ByPublicModel(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPublicModel, opts...).ToFunc()
@@ -191,10 +208,24 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newGroupStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByTargetGroupField orders the results by target_group field.
+func ByTargetGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTargetGroupStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newGroupStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, false, GroupTable, GroupColumn),
+	)
+}
+func newTargetGroupStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TargetGroupInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, TargetGroupTable, TargetGroupColumn),
 	)
 }

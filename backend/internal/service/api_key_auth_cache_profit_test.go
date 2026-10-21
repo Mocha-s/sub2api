@@ -79,6 +79,22 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	require.InDelta(t, 0.06*(1-0.25), gate.threshold, 1e-12)
 }
 
+func TestAPIKeyAuthSnapshotDynamicBillingRoundtrip(t *testing.T) {
+	svc := &APIKeyService{}
+	apiKey := profitAuthTestAPIKey()
+	apiKey.Group.DynamicRateBillingEnabled = true
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.True(t, snapshot.Group.DynamicRateBillingEnabled)
+	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: snapshot})
+	require.NoError(t, err)
+	var restored APIKeyAuthCacheEntry
+	require.NoError(t, json.Unmarshal(payload, &restored))
+	materialized, used, err := svc.applyAuthCacheEntry(apiKey.Key, &restored)
+	require.NoError(t, err)
+	require.True(t, used)
+	require.True(t, materialized.Group.DynamicRateBillingEnabled)
+}
+
 // 旧版本快照（v16 及更早，无利润字段保真保证）必须被淘汰回源，不得复用。
 func TestAPIKeyAuthSnapshotOldVersionEvicted(t *testing.T) {
 	svc := &APIKeyService{}

@@ -26,6 +26,8 @@ type CompositeModelRoute struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID int64 `json:"group_id,omitempty"`
+	// TargetGroupID holds the value of the "target_group_id" field.
+	TargetGroupID *int64 `json:"target_group_id,omitempty"`
 	// Client-facing model identifier or prefix.
 	PublicModel string `json:"public_model,omitempty"`
 	// exact or prefix.
@@ -52,9 +54,11 @@ type CompositeModelRoute struct {
 type CompositeModelRouteEdges struct {
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// TargetGroup holds the value of the target_group edge.
+	TargetGroup *Group `json:"target_group,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // GroupOrErr returns the Group value or an error if the edge
@@ -68,6 +72,17 @@ func (e CompositeModelRouteEdges) GroupOrErr() (*Group, error) {
 	return nil, &NotLoadedError{edge: "group"}
 }
 
+// TargetGroupOrErr returns the TargetGroup value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e CompositeModelRouteEdges) TargetGroupOrErr() (*Group, error) {
+	if e.TargetGroup != nil {
+		return e.TargetGroup, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: group.Label}
+	}
+	return nil, &NotLoadedError{edge: "target_group"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*CompositeModelRoute) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -75,7 +90,7 @@ func (*CompositeModelRoute) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case compositemodelroute.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldPriority:
+		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldTargetGroupID, compositemodelroute.FieldPriority:
 			values[i] = new(sql.NullInt64)
 		case compositemodelroute.FieldPublicModel, compositemodelroute.FieldMatchType, compositemodelroute.FieldTargetPlatform, compositemodelroute.FieldUpstreamModel, compositemodelroute.FieldEndpoint, compositemodelroute.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -126,6 +141,13 @@ func (_m *CompositeModelRoute) assignValues(columns []string, values []any) erro
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
 			} else if value.Valid {
 				_m.GroupID = value.Int64
+			}
+		case compositemodelroute.FieldTargetGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field target_group_id", values[i])
+			} else if value.Valid {
+				_m.TargetGroupID = new(int64)
+				*_m.TargetGroupID = value.Int64
 			}
 		case compositemodelroute.FieldPublicModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -194,6 +216,11 @@ func (_m *CompositeModelRoute) QueryGroup() *GroupQuery {
 	return NewCompositeModelRouteClient(_m.config).QueryGroup(_m)
 }
 
+// QueryTargetGroup queries the "target_group" edge of the CompositeModelRoute entity.
+func (_m *CompositeModelRoute) QueryTargetGroup() *GroupQuery {
+	return NewCompositeModelRouteClient(_m.config).QueryTargetGroup(_m)
+}
+
 // Update returns a builder for updating this CompositeModelRoute.
 // Note that you need to call CompositeModelRoute.Unwrap() before calling this method if this CompositeModelRoute
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -230,6 +257,11 @@ func (_m *CompositeModelRoute) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.GroupID))
+	builder.WriteString(", ")
+	if v := _m.TargetGroupID; v != nil {
+		builder.WriteString("target_group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("public_model=")
 	builder.WriteString(_m.PublicModel)

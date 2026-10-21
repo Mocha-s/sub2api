@@ -569,6 +569,26 @@ func TestGetAvailableModels_UsesShortCacheAndSupportsInvalidation(t *testing.T) 
 	require.Equal(t, int64(2), store)
 }
 
+func TestGetAvailableModels_CompositeTargetsAggregateAndDeduplicate(t *testing.T) {
+	compositeID := int64(700)
+	targetOneID, targetTwoID := int64(701), int64(702)
+	accountRepo := &modelsListAccountRepoStub{byGroup: map[int64][]Account{
+		targetOneID: {{ID: 1, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"Shared-Model": "gpt-5", "only-one": "gpt-5"}}}},
+		targetTwoID: {{ID: 2, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"shared-model": "gpt-5.1", "only-two": "gpt-5.1"}}}},
+	}}
+	targetOne := &Group{ID: targetOneID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
+	targetTwo := &Group{ID: targetTwoID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{CompositeGroupID: compositeID, TargetGroupID: targetTwoID, Priority: 20, Enabled: true, TargetGroup: targetTwo},
+		{CompositeGroupID: compositeID, TargetGroupID: targetOneID, Priority: 10, Enabled: true, TargetGroup: targetOne},
+	}})
+	svc := &GatewayService{accountRepo: accountRepo, compositeResolver: resolver}
+
+	models := svc.GetAvailableModels(context.Background(), &compositeID, PlatformOpenAI)
+	require.Equal(t, []string{"only-one", "only-two", "shared-model"}, models)
+}
+
 // Scenario: 账号模型变更会失效所属平台缓存
 func TestResolveCompositeModelOwnershipUsesModelsCacheInvalidation(t *testing.T) {
 	groupID := int64(9)

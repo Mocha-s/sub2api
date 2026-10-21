@@ -148,3 +148,11 @@ func TestCloneGroupForDuplicate_DropsNameTranslations(t *testing.T) {
 
 	require.Equal(t, GroupI18n{"en": {Description: "Pro + Max pool"}}, clone.I18n)
 }
+
+func TestCloneGroupForDuplicate_PreservesDynamicBillingFlag(t *testing.T) {
+	clone := cloneGroupForDuplicate(&Group{
+		Name: "Composite", Platform: PlatformComposite, DynamicRateBillingEnabled: true,
+	}, "op-2")
+
+	require.True(t, clone.DynamicRateBillingEnabled)
+}

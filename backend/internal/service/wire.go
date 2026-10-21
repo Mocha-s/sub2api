@@ -18,6 +18,12 @@ import (
 	"go.uber.org/zap"
 )
 
+func ProvideCompositeRouteResolver(routeRepo CompositeModelRouteRepository, targetRepo CompositeGroupTargetRepository) *CompositeRouteResolver {
+	resolver := NewCompositeRouteResolver(routeRepo)
+	resolver.SetTargetRepository(targetRepo)
+	return resolver
+}
+
 func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, cfg *config.Config, redisClient *redis.Client) *GrokOAuthService {
 	svc := NewGrokOAuthService(proxyRepo, oauthClient, cfg)
 	// wire.go is depguard-exempt for redis; construct the Redis session store here.
@@ -876,7 +882,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
-	NewCompositeRouteResolver,
+	ProvideCompositeRouteResolver,
 	NewAccountService,
 	NewProxyService,
 	NewRedeemService,

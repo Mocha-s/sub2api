@@ -68,6 +68,16 @@ func TestImageTaskServiceLifecycleAndOwnership(t *testing.T) {
 	require.NotNil(t, completed.CompletedAt)
 }
 
+func TestImageTaskServicePersistsAndRestoresPricingAt(t *testing.T) {
+	store := &imageTaskMemoryStore{}
+	svc := NewImageTaskServiceWithOptions(store, time.Hour, time.Minute)
+	frozen := time.Date(2026, 10, 21, 5, 30, 0, 0, time.UTC)
+	created, err := svc.Create(context.Background(), ImageTaskOwner{UserID: 7, APIKeyID: 9, PricingAt: frozen})
+	require.NoError(t, err)
+	require.Equal(t, frozen, store.task.PricingAt)
+	require.Equal(t, frozen, OpenAIPricingAtFromContext(svc.WithPricingContext(context.Background(), created.ID)))
+}
+
 func TestImageTaskServiceInvalidResultBecomesFailed(t *testing.T) {
 	store := &imageTaskMemoryStore{}
 	svc := NewImageTaskServiceWithOptions(store, time.Hour, time.Minute)

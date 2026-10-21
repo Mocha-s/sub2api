@@ -46,7 +46,85 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 	if source := strings.TrimSpace(decision.Source); source != "" {
 		ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, source)
 	}
+	if decision.TargetGroupID != nil && *decision.TargetGroupID > 0 {
+		ctx = context.WithValue(ctx, ctxkey.CompositeTargetGroupID, *decision.TargetGroupID)
+	}
 	return ctx
+}
+
+func CompositeTargetGroupIDFromContext(ctx context.Context) (int64, bool) {
+	if ctx == nil {
+		return 0, false
+	}
+	id, ok := ctx.Value(ctxkey.CompositeTargetGroupID).(int64)
+	return id, ok && id > 0
+}
+
+func WithCompositeBillingGroup(ctx context.Context, group *Group) context.Context {
+	if ctx == nil || !IsGroupContextValid(group) {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.CompositeBillingGroup, group)
+}
+
+func CompositeBillingGroupFromContext(ctx context.Context) (*Group, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	group, ok := ctx.Value(ctxkey.CompositeBillingGroup).(*Group)
+	return group, ok && IsGroupContextValid(group)
+}
+
+func WithEffectiveCompositeGroup(ctx context.Context, group *Group) context.Context {
+	if ctx == nil || !IsGroupContextValid(group) {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxkey.Group, group)
+}
+
+func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (*APIKey, bool) {
+	if apiKey == nil || decision.TargetGroup == nil || decision.TargetGroupID == nil {
+		return apiKey, false
+	}
+	copy := *apiKey
+	targetID := *decision.TargetGroupID
+	copy.GroupID = &targetID
+	copy.Group = decision.TargetGroup
+	if apiKey.User != nil {
+		user := *apiKey.User
+		user.UserGroupRPMOverride = nil
+		copy.User = &user
+	}
+	return &copy, true
+}
+
+// customerBillingGroup returns the group whose user-facing rate/peak policy
+// applies to this request. Target groups still own provider/account policy.
+func customerBillingGroup(ctx context.Context, apiKey *APIKey) (*Group, *int64, bool) {
+	if group, ok := CompositeBillingGroupFromContext(ctx); ok {
+		id := group.ID
+		return group, &id, group.DynamicRateBillingEnabled
+	}
+	if apiKey == nil || apiKey.Group == nil {
+		return nil, nil, true
+	}
+	if apiKey.GroupID == nil {
+		return apiKey.Group, nil, apiKey.Group.Platform != PlatformComposite || apiKey.Group.DynamicRateBillingEnabled
+	}
+	if apiKey.Group.Platform == PlatformComposite {
+		return apiKey.Group, apiKey.GroupID, apiKey.Group.DynamicRateBillingEnabled
+	}
+	return apiKey.Group, apiKey.GroupID, true
+}
+
+func apiKeyWithBillingGroup(apiKey *APIKey, group *Group, groupID *int64) *APIKey {
+	if apiKey == nil || group == nil || groupID == nil {
+		return apiKey
+	}
+	copy := *apiKey
+	copy.Group = group
+	copy.GroupID = groupID
+	return &copy
 }
 
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {

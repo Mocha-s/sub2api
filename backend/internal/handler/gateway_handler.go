@@ -1169,15 +1169,23 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID, "", true)
+		dynamicTargetsConfigured := false
+		if groupID != nil {
+			var targetErr error
+			_, dynamicTargetsConfigured, targetErr = h.gatewayService.GetCompositeTargetModels(c.Request.Context(), *groupID, "")
+			if targetErr != nil {
+				dynamicTargetsConfigured = true
+			}
+		}
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
 			source := availableModels
-			if len(source) == 0 {
+			if len(source) == 0 && !dynamicTargetsConfigured {
 				source = defaultModelIDsForPlatform(service.PlatformComposite)
 			}
 			writeAllowlistedModelsList(c, service.PlatformComposite, apiKey.Group.ModelAllowlist.FilterForListing(source))
 			return
 		}
-		if len(availableModels) > 0 {
+		if len(availableModels) > 0 || dynamicTargetsConfigured {
 			writeModelsList(c, service.PlatformComposite, availableModels)
 			return
 		}
@@ -1268,9 +1276,13 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 	}
 	if platform == service.PlatformComposite {
 		availableModels := h.compositeAvailableModels(ctx, groupID, service.CompositeRouteEndpointResponses, false)
+		_, dynamicTargetsConfigured, targetErr := h.gatewayService.GetCompositeTargetModels(ctx, group.ID, "")
+		if targetErr != nil {
+			dynamicTargetsConfigured = true
+		}
 		fallbackModels := defaultCodexModelIDsForPlatform(service.PlatformComposite)
 		models := availableModels
-		if len(models) == 0 {
+		if len(models) == 0 && !dynamicTargetsConfigured {
 			models = fallbackModels
 		}
 		if group.ModelAllowlistEnabled() {
@@ -1299,6 +1311,29 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64, endpoint string, includeSystemOne bool) []string {
 	if h == nil || h.gatewayService == nil {
 		return nil
+	}
+	if groupID != nil {
+		if targetModels, configured, err := h.gatewayService.GetCompositeTargetModels(ctx, *groupID, ""); err != nil {
+			return []string{}
+		} else if configured {
+			seen := make(map[string]struct{}, len(targetModels))
+			for _, model := range targetModels {
+				seen[strings.ToLower(model)] = struct{}{}
+			}
+			if routeModels, routeErr := h.gatewayService.GetCompositeRouteModels(ctx, groupID, endpoint, includeSystemOne); routeErr == nil {
+				for _, model := range routeModels {
+					if !h.gatewayService.CompositeModelHasUsableTarget(ctx, *groupID, model, endpoint) {
+						continue
+					}
+					if _, exists := seen[strings.ToLower(model)]; exists {
+						continue
+					}
+					seen[strings.ToLower(model)] = struct{}{}
+					targetModels = append(targetModels, model)
+				}
+			}
+			return targetModels
+		}
 	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0)

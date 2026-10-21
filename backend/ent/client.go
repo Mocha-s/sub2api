@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/compositegrouptarget"
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
@@ -92,6 +93,8 @@ type Client struct {
 	ChannelMonitorHistory *ChannelMonitorHistoryClient
 	// ChannelMonitorRequestTemplate is the client for interacting with the ChannelMonitorRequestTemplate builders.
 	ChannelMonitorRequestTemplate *ChannelMonitorRequestTemplateClient
+	// CompositeGroupTarget is the client for interacting with the CompositeGroupTarget builders.
+	CompositeGroupTarget *CompositeGroupTargetClient
 	// CompositeModelRoute is the client for interacting with the CompositeModelRoute builders.
 	CompositeModelRoute *CompositeModelRouteClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
@@ -169,6 +172,7 @@ func (c *Client) init() {
 	c.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(c.config)
 	c.ChannelMonitorHistory = NewChannelMonitorHistoryClient(c.config)
 	c.ChannelMonitorRequestTemplate = NewChannelMonitorRequestTemplateClient(c.config)
+	c.CompositeGroupTarget = NewCompositeGroupTargetClient(c.config)
 	c.CompositeModelRoute = NewCompositeModelRouteClient(c.config)
 	c.ErrorPassthroughRule = NewErrorPassthroughRuleClient(c.config)
 	c.Group = NewGroupClient(c.config)
@@ -301,6 +305,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
+		CompositeGroupTarget:          NewCompositeGroupTargetClient(cfg),
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
@@ -360,6 +365,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ChannelMonitorDailyRollup:     NewChannelMonitorDailyRollupClient(cfg),
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
+		CompositeGroupTarget:          NewCompositeGroupTargetClient(cfg),
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
@@ -419,12 +425,12 @@ func (c *Client) Use(hooks ...Hook) {
 		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.CompositeGroupTarget, c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription, c.VideoTask,
 	} {
 		n.Use(hooks...)
@@ -439,12 +445,12 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent, c.BatchImageItem,
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
-		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.CompositeGroupTarget, c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
+		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription, c.VideoTask,
 	} {
 		n.Intercept(interceptors...)
@@ -482,6 +488,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ChannelMonitorHistory.mutate(ctx, m)
 	case *ChannelMonitorRequestTemplateMutation:
 		return c.ChannelMonitorRequestTemplate.mutate(ctx, m)
+	case *CompositeGroupTargetMutation:
+		return c.CompositeGroupTarget.mutate(ctx, m)
 	case *CompositeModelRouteMutation:
 		return c.CompositeModelRoute.mutate(ctx, m)
 	case *ErrorPassthroughRuleMutation:
@@ -2740,6 +2748,173 @@ func (c *ChannelMonitorRequestTemplateClient) mutate(ctx context.Context, m *Cha
 	}
 }
 
+// CompositeGroupTargetClient is a client for the CompositeGroupTarget schema.
+type CompositeGroupTargetClient struct {
+	config
+}
+
+// NewCompositeGroupTargetClient returns a client for the CompositeGroupTarget from the given config.
+func NewCompositeGroupTargetClient(c config) *CompositeGroupTargetClient {
+	return &CompositeGroupTargetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `compositegrouptarget.Hooks(f(g(h())))`.
+func (c *CompositeGroupTargetClient) Use(hooks ...Hook) {
+	c.hooks.CompositeGroupTarget = append(c.hooks.CompositeGroupTarget, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `compositegrouptarget.Intercept(f(g(h())))`.
+func (c *CompositeGroupTargetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CompositeGroupTarget = append(c.inters.CompositeGroupTarget, interceptors...)
+}
+
+// Create returns a builder for creating a CompositeGroupTarget entity.
+func (c *CompositeGroupTargetClient) Create() *CompositeGroupTargetCreate {
+	mutation := newCompositeGroupTargetMutation(c.config, OpCreate)
+	return &CompositeGroupTargetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CompositeGroupTarget entities.
+func (c *CompositeGroupTargetClient) CreateBulk(builders ...*CompositeGroupTargetCreate) *CompositeGroupTargetCreateBulk {
+	return &CompositeGroupTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CompositeGroupTargetClient) MapCreateBulk(slice any, setFunc func(*CompositeGroupTargetCreate, int)) *CompositeGroupTargetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CompositeGroupTargetCreateBulk{err: fmt.Errorf("calling to CompositeGroupTargetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CompositeGroupTargetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CompositeGroupTargetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CompositeGroupTarget.
+func (c *CompositeGroupTargetClient) Update() *CompositeGroupTargetUpdate {
+	mutation := newCompositeGroupTargetMutation(c.config, OpUpdate)
+	return &CompositeGroupTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CompositeGroupTargetClient) UpdateOne(_m *CompositeGroupTarget) *CompositeGroupTargetUpdateOne {
+	mutation := newCompositeGroupTargetMutation(c.config, OpUpdateOne, withCompositeGroupTarget(_m))
+	return &CompositeGroupTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CompositeGroupTargetClient) UpdateOneID(id int64) *CompositeGroupTargetUpdateOne {
+	mutation := newCompositeGroupTargetMutation(c.config, OpUpdateOne, withCompositeGroupTargetID(id))
+	return &CompositeGroupTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CompositeGroupTarget.
+func (c *CompositeGroupTargetClient) Delete() *CompositeGroupTargetDelete {
+	mutation := newCompositeGroupTargetMutation(c.config, OpDelete)
+	return &CompositeGroupTargetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CompositeGroupTargetClient) DeleteOne(_m *CompositeGroupTarget) *CompositeGroupTargetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CompositeGroupTargetClient) DeleteOneID(id int64) *CompositeGroupTargetDeleteOne {
+	builder := c.Delete().Where(compositegrouptarget.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CompositeGroupTargetDeleteOne{builder}
+}
+
+// Query returns a query builder for CompositeGroupTarget.
+func (c *CompositeGroupTargetClient) Query() *CompositeGroupTargetQuery {
+	return &CompositeGroupTargetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCompositeGroupTarget},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CompositeGroupTarget entity by its id.
+func (c *CompositeGroupTargetClient) Get(ctx context.Context, id int64) (*CompositeGroupTarget, error) {
+	return c.Query().Where(compositegrouptarget.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CompositeGroupTargetClient) GetX(ctx context.Context, id int64) *CompositeGroupTarget {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCompositeGroup queries the composite_group edge of a CompositeGroupTarget.
+func (c *CompositeGroupTargetClient) QueryCompositeGroup(_m *CompositeGroupTarget) *GroupQuery {
+	query := (&GroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(compositegrouptarget.Table, compositegrouptarget.FieldID, id),
+			sqlgraph.To(group.Table, group.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, compositegrouptarget.CompositeGroupTable, compositegrouptarget.CompositeGroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTargetGroup queries the target_group edge of a CompositeGroupTarget.
+func (c *CompositeGroupTargetClient) QueryTargetGroup(_m *CompositeGroupTarget) *GroupQuery {
+	query := (&GroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(compositegrouptarget.Table, compositegrouptarget.FieldID, id),
+			sqlgraph.To(group.Table, group.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, compositegrouptarget.TargetGroupTable, compositegrouptarget.TargetGroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CompositeGroupTargetClient) Hooks() []Hook {
+	hooks := c.hooks.CompositeGroupTarget
+	return append(hooks[:len(hooks):len(hooks)], compositegrouptarget.Hooks[:]...)
+}
+
+// Interceptors returns the client interceptors.
+func (c *CompositeGroupTargetClient) Interceptors() []Interceptor {
+	inters := c.inters.CompositeGroupTarget
+	return append(inters[:len(inters):len(inters)], compositegrouptarget.Interceptors[:]...)
+}
+
+func (c *CompositeGroupTargetClient) mutate(ctx context.Context, m *CompositeGroupTargetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CompositeGroupTargetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CompositeGroupTargetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CompositeGroupTargetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CompositeGroupTargetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CompositeGroupTarget mutation op: %q", m.Op())
+	}
+}
+
 // CompositeModelRouteClient is a client for the CompositeModelRoute schema.
 type CompositeModelRouteClient struct {
 	config
@@ -2857,6 +3032,22 @@ func (c *CompositeModelRouteClient) QueryGroup(_m *CompositeModelRoute) *GroupQu
 			sqlgraph.From(compositemodelroute.Table, compositemodelroute.FieldID, id),
 			sqlgraph.To(group.Table, group.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, false, compositemodelroute.GroupTable, compositemodelroute.GroupColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryTargetGroup queries the target_group edge of a CompositeModelRoute.
+func (c *CompositeModelRouteClient) QueryTargetGroup(_m *CompositeModelRoute) *GroupQuery {
+	query := (&GroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(compositemodelroute.Table, compositemodelroute.FieldID, id),
+			sqlgraph.To(group.Table, group.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, compositemodelroute.TargetGroupTable, compositemodelroute.TargetGroupColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -6985,25 +7176,25 @@ type (
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription, VideoTask []ent.Hook
+		ChannelMonitorRequestTemplate, CompositeGroupTarget, CompositeModelRoute,
+		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription, VideoTask []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
-		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription, VideoTask []ent.Interceptor
+		ChannelMonitorRequestTemplate, CompositeGroupTarget, CompositeModelRoute,
+		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PendingAuthSession,
+		PromoCode, PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription, VideoTask []ent.Interceptor
 	}
 )
 

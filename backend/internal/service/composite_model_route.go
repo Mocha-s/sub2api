@@ -31,6 +31,7 @@ const (
 // public model through an account-level exact mapping.
 type CompositeModelOwnership struct {
 	TargetPlatform string
+	TargetGroupID  *int64
 	Matched        bool
 	Ambiguous      bool
 	// OpenAIGatewayOAuthClaimed 表示声明方中含 OpenAI 网关族平台的 OAuth /
@@ -43,8 +44,10 @@ type CompositeModelOwnership struct {
 type CompositeModelOwnershipResolver func(context.Context, int64, string) (CompositeModelOwnership, error)
 
 var (
-	ErrCompositeRouteNotFound = infraerrors.NotFound("COMPOSITE_ROUTE_NOT_FOUND", "composite route not found")
-	ErrCompositeRouteExists   = infraerrors.Conflict("COMPOSITE_ROUTE_EXISTS", "composite route already exists")
+	ErrCompositeRouteNotFound  = infraerrors.NotFound("COMPOSITE_ROUTE_NOT_FOUND", "composite route not found")
+	ErrCompositeRouteExists    = infraerrors.Conflict("COMPOSITE_ROUTE_EXISTS", "composite route already exists")
+	ErrCompositeTargetNotFound = infraerrors.NotFound("COMPOSITE_TARGET_NOT_FOUND", "composite target not found")
+	ErrCompositeTargetExists   = infraerrors.Conflict("COMPOSITE_TARGET_EXISTS", "composite target already exists")
 )
 
 // CompositeModelRoute maps one public model identifier in a composite group to
@@ -52,6 +55,7 @@ var (
 type CompositeModelRoute struct {
 	ID             int64     `json:"id"`
 	GroupID        int64     `json:"group_id"`
+	TargetGroupID  *int64    `json:"target_group_id,omitempty"`
 	PublicModel    string    `json:"public_model"`
 	MatchType      string    `json:"match_type"`
 	TargetPlatform string    `json:"target_platform"`
@@ -70,21 +74,25 @@ type CompositeRoutePreviewRequest struct {
 }
 
 type CompositeRouteDecision struct {
-	Matched        bool                 `json:"matched"`
-	Source         string               `json:"source"`
-	GroupID        int64                `json:"group_id"`
-	PublicModel    string               `json:"public_model"`
-	TargetPlatform string               `json:"target_platform"`
-	UpstreamModel  string               `json:"upstream_model"`
-	Endpoint       string               `json:"endpoint"`
-	Route          *CompositeModelRoute `json:"route,omitempty"`
-	Reason         string               `json:"reason,omitempty"`
+	Matched                  bool                 `json:"matched"`
+	Source                   string               `json:"source"`
+	GroupID                  int64                `json:"group_id"`
+	PublicModel              string               `json:"public_model"`
+	TargetPlatform           string               `json:"target_platform"`
+	TargetGroupID            *int64               `json:"target_group_id,omitempty"`
+	TargetGroup              *Group               `json:"-"`
+	DynamicTargetsConfigured bool                 `json:"dynamic_targets_configured,omitempty"`
+	UpstreamModel            string               `json:"upstream_model"`
+	Endpoint                 string               `json:"endpoint"`
+	Route                    *CompositeModelRoute `json:"route,omitempty"`
+	Reason                   string               `json:"reason,omitempty"`
 }
 
 type CompositeRouteInput struct {
 	PublicModel    string
 	MatchType      string
 	TargetPlatform string
+	TargetGroupID  *int64
 	UpstreamModel  string
 	Endpoint       string
 	Priority       int

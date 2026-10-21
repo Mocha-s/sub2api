@@ -71,6 +71,20 @@ func (_c *CompositeModelRouteCreate) SetGroupID(v int64) *CompositeModelRouteCre
 	return _c
 }
 
+// SetTargetGroupID sets the "target_group_id" field.
+func (_c *CompositeModelRouteCreate) SetTargetGroupID(v int64) *CompositeModelRouteCreate {
+	_c.mutation.SetTargetGroupID(v)
+	return _c
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_c *CompositeModelRouteCreate) SetNillableTargetGroupID(v *int64) *CompositeModelRouteCreate {
+	if v != nil {
+		_c.SetTargetGroupID(*v)
+	}
+	return _c
+}
+
 // SetPublicModel sets the "public_model" field.
 func (_c *CompositeModelRouteCreate) SetPublicModel(v string) *CompositeModelRouteCreate {
 	_c.mutation.SetPublicModel(v)
@@ -178,6 +192,11 @@ func (_c *CompositeModelRouteCreate) SetNillableNotes(v *string) *CompositeModel
 // SetGroup sets the "group" edge to the Group entity.
 func (_c *CompositeModelRouteCreate) SetGroup(v *Group) *CompositeModelRouteCreate {
 	return _c.SetGroupID(v.ID)
+}
+
+// SetTargetGroup sets the "target_group" edge to the Group entity.
+func (_c *CompositeModelRouteCreate) SetTargetGroup(v *Group) *CompositeModelRouteCreate {
+	return _c.SetTargetGroupID(v.ID)
 }
 
 // Mutation returns the CompositeModelRouteMutation object of the builder.
@@ -406,6 +425,23 @@ func (_c *CompositeModelRouteCreate) createSpec() (*CompositeModelRoute, *sqlgra
 		_node.GroupID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.TargetGroupIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   compositemodelroute.TargetGroupTable,
+			Columns: []string{compositemodelroute.TargetGroupColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.TargetGroupID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec
 }
 
@@ -497,6 +533,24 @@ func (u *CompositeModelRouteUpsert) SetGroupID(v int64) *CompositeModelRouteUpse
 // UpdateGroupID sets the "group_id" field to the value that was provided on create.
 func (u *CompositeModelRouteUpsert) UpdateGroupID() *CompositeModelRouteUpsert {
 	u.SetExcluded(compositemodelroute.FieldGroupID)
+	return u
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsert) SetTargetGroupID(v int64) *CompositeModelRouteUpsert {
+	u.Set(compositemodelroute.FieldTargetGroupID, v)
+	return u
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsert) UpdateTargetGroupID() *CompositeModelRouteUpsert {
+	u.SetExcluded(compositemodelroute.FieldTargetGroupID)
+	return u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsert) ClearTargetGroupID() *CompositeModelRouteUpsert {
+	u.SetNull(compositemodelroute.FieldTargetGroupID)
 	return u
 }
 
@@ -699,6 +753,27 @@ func (u *CompositeModelRouteUpsertOne) SetGroupID(v int64) *CompositeModelRouteU
 func (u *CompositeModelRouteUpsertOne) UpdateGroupID() *CompositeModelRouteUpsertOne {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsertOne) SetTargetGroupID(v int64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetTargetGroupID(v)
+	})
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertOne) UpdateTargetGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateTargetGroupID()
+	})
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsertOne) ClearTargetGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearTargetGroupID()
 	})
 }
 
@@ -1085,6 +1160,27 @@ func (u *CompositeModelRouteUpsertBulk) SetGroupID(v int64) *CompositeModelRoute
 func (u *CompositeModelRouteUpsertBulk) UpdateGroupID() *CompositeModelRouteUpsertBulk {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) SetTargetGroupID(v int64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetTargetGroupID(v)
+	})
+}
+
+// UpdateTargetGroupID sets the "target_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertBulk) UpdateTargetGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateTargetGroupID()
+	})
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) ClearTargetGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearTargetGroupID()
 	})
 }
 

@@ -1397,6 +1397,9 @@ func mixedListingModelAllowed(groupPlatform, model string) bool {
 }
 
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
+	if models, handled := s.compositeTargetModels(ctx, groupID, platform); handled {
+		return models
+	}
 	cacheKey := modelsListCacheKey(groupID, platform)
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
@@ -1407,12 +1410,15 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		}
 	}
 	modelsListCacheMissTotal.Add(1)
-
 	var accounts []Account
 	var err error
 
 	if groupID != nil {
-		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+		if s.schedulerSnapshot != nil {
+			accounts, _, err = s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, platform, false)
+		} else {
+			accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+		}
 	} else {
 		accounts, err = s.accountRepo.ListSchedulable(ctx)
 	}
@@ -1500,14 +1506,55 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	return cloneStringSlice(models)
 }
 
+func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int64, platform string) ([]string, bool) {
+	if groupID == nil || s == nil || s.compositeResolver == nil {
+		return nil, false
+	}
+	targets, err := s.compositeResolver.ListCompositeTargets(ctx, *groupID)
+	if err != nil || len(targets) == 0 {
+		return nil, false
+	}
+	seen := make(map[string]struct{})
+	models := make([]string, 0)
+	for _, target := range targets {
+		if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || (platform != "" && target.TargetGroup.Platform != platform) {
+			continue
+		}
+		targetID := target.TargetGroupID
+		for _, model := range s.GetAvailableModels(ctx, &targetID, platform) {
+			key := strings.ToLower(strings.TrimSpace(model))
+			if key == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			models = append(models, model)
+		}
+	}
+	sort.Strings(models)
+	return models, true
+}
+
 func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, groupID int64, model string) (CompositeModelOwnership, error) {
 	model = strings.TrimSpace(model)
 	if s == nil || s.accountRepo == nil || groupID <= 0 || model == "" {
 		return CompositeModelOwnership{}, nil
 	}
 
+	var targets []CompositeGroupTarget
+	dynamicTargets := false
+	if s.compositeResolver != nil {
+		var err error
+		targets, err = s.compositeResolver.ListCompositeTargets(ctx, groupID)
+		if err != nil {
+			return CompositeModelOwnership{}, err
+		}
+		dynamicTargets = len(targets) > 0
+	}
 	cacheKey := compositeModelOwnershipCacheKey(groupID, model)
-	if s.modelsListCache != nil {
+	if !dynamicTargets && s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
 			if ownership, ok := cached.(CompositeModelOwnership); ok {
 				return ownership, nil
@@ -1517,9 +1564,37 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 
 	// 归属取决于配置而非运行时健康：限流/临时不可调度不应让同一模型在
 	// 「唯一归属」与「歧义」之间来回翻转，否则配置错误只会间歇暴露。
-	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
-	if err != nil {
-		return CompositeModelOwnership{}, err
+	accounts := make([]Account, 0)
+	modelTargetIDs := make(map[int64]struct{})
+	if dynamicTargets {
+		for _, target := range targets {
+			if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || !isConcreteRequestPlatform(target.TargetGroup.Platform) {
+				continue
+			}
+			targetID := target.TargetGroupID
+			var candidateAccounts []Account
+			var candidateErr error
+			if s.schedulerSnapshot != nil {
+				candidateAccounts, _, candidateErr = s.schedulerSnapshot.ListSchedulableAccounts(ctx, &targetID, target.TargetGroup.Platform, false)
+			} else {
+				candidateAccounts, candidateErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &targetID, []string{target.TargetGroup.Platform}, false)
+			}
+			if candidateErr != nil {
+				return CompositeModelOwnership{}, candidateErr
+			}
+			for _, account := range candidateAccounts {
+				if explicitModelMappingClaims(account, model) {
+					modelTargetIDs[target.TargetGroupID] = struct{}{}
+				}
+			}
+			accounts = append(accounts, candidateAccounts...)
+		}
+	} else {
+		var listErr error
+		accounts, listErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, domain.ConcretePlatformIDs(), false)
+		if listErr != nil {
+			return CompositeModelOwnership{}, listErr
+		}
 	}
 
 	platforms := make(map[string]struct{})
@@ -1536,12 +1611,21 @@ func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, gro
 		for platform := range platforms {
 			ownership.TargetPlatform = platform
 		}
+		if dynamicTargets {
+			for _, target := range targets {
+				if _, ownsModel := modelTargetIDs[target.TargetGroupID]; ownsModel && target.Enabled && target.DeletedAt == nil && target.TargetGroup != nil && target.TargetGroup.IsActive() && target.TargetGroup.Platform == ownership.TargetPlatform {
+					targetID := target.TargetGroupID
+					ownership.TargetGroupID = &targetID
+					break
+				}
+			}
+		}
 		ownership.Matched = true
 	} else if len(platforms) > 1 {
 		ownership.Ambiguous = true
 	}
 
-	if s.modelsListCache != nil {
+	if !dynamicTargets && s.modelsListCache != nil {
 		s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
 	}
 	return ownership, nil
@@ -1561,6 +1645,26 @@ func (s *GatewayService) GetCompositeRouteModels(ctx context.Context, groupID *i
 		return nil, nil
 	}
 	return s.compositeResolver.ListExactPublicModels(ctx, *groupID, endpoint, includeSystemOne)
+}
+
+func (s *GatewayService) GetCompositeTargetModels(ctx context.Context, groupID int64, platform string) ([]string, bool, error) {
+	if s == nil || s.compositeResolver == nil {
+		return nil, false, nil
+	}
+	targets, err := s.compositeResolver.ListCompositeTargets(ctx, groupID)
+	if err != nil || len(targets) == 0 {
+		return nil, false, err
+	}
+	models, _ := s.compositeTargetModels(ctx, &groupID, platform)
+	return models, true, nil
+}
+
+func (s *GatewayService) CompositeModelHasUsableTarget(ctx context.Context, groupID int64, model, endpoint string) bool {
+	if s == nil || s.compositeResolver == nil {
+		return false
+	}
+	decision, err := s.compositeResolver.Resolve(ctx, groupID, model, endpoint)
+	return err == nil && decision.Matched && decision.TargetGroupID != nil
 }
 
 func (s *GatewayService) FilterCompositeCodexModels(ctx context.Context, groupID int64, models []string) ([]string, error) {

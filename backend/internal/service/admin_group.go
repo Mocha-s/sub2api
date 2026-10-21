@@ -161,6 +161,9 @@ func (s *adminServiceImpl) CreateCompositeRoute(ctx context.Context, groupID int
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateCompositeRouteTarget(ctx, groupID, route); err != nil {
+		return nil, err
+	}
 	if err := s.compositeRouteRepo.Create(ctx, route); err != nil {
 		return nil, err
 	}
@@ -184,6 +187,9 @@ func (s *adminServiceImpl) UpdateCompositeRoute(ctx context.Context, groupID, ro
 	}
 	route, err := compositeRouteFromInput(groupID, input)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateCompositeRouteTarget(ctx, groupID, route); err != nil {
 		return nil, err
 	}
 	route.ID = routeID
@@ -222,6 +228,7 @@ func (s *adminServiceImpl) PreviewCompositeRoute(ctx context.Context, groupID in
 	if resolver == nil {
 		resolver = NewCompositeRouteResolver(s.compositeRouteRepo)
 	}
+	resolver.SetTargetRepository(s.compositeTargetRepo)
 	decision, err := resolver.Resolve(ctx, groupID, input.Model, input.Endpoint)
 	if err != nil {
 		return nil, err
@@ -238,6 +245,158 @@ func (s *adminServiceImpl) requireCompositeGroup(ctx context.Context, groupID in
 		return fmt.Errorf("group %d is not a composite group", groupID)
 	}
 	return nil
+}
+
+func (s *adminServiceImpl) validateCompositeRouteTarget(ctx context.Context, groupID int64, route *CompositeModelRoute) error {
+	if route == nil || route.TargetGroupID == nil {
+		return nil
+	}
+	if s.compositeTargetRepo == nil {
+		return fmt.Errorf("composite target repository is not configured")
+	}
+	targets, err := s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target.TargetGroupID != *route.TargetGroupID || target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform == PlatformComposite || target.TargetGroup.Platform != route.TargetPlatform {
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("target_group_id %d is not an enabled target for composite group %d", *route.TargetGroupID, groupID)
+}
+
+func (s *adminServiceImpl) ListCompositeTargets(ctx context.Context, groupID int64) ([]CompositeGroupTarget, error) {
+	if err := s.ValidateSimpleModeGroupOperation(AdminGroupOperationCompositeRoute); err != nil {
+		return nil, err
+	}
+	if err := s.requireCompositeGroup(ctx, groupID); err != nil {
+		return nil, err
+	}
+	if s.compositeTargetRepo == nil {
+		return nil, fmt.Errorf("composite target repository is not configured")
+	}
+	targets, err := s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	if err != nil {
+		return nil, err
+	}
+	if targets == nil {
+		return []CompositeGroupTarget{}, nil
+	}
+	active := targets[:0]
+	for _, target := range targets {
+		if target.DeletedAt == nil {
+			active = append(active, target)
+		}
+	}
+	return active, nil
+}
+
+func (s *adminServiceImpl) CreateCompositeTarget(ctx context.Context, groupID int64, input CompositeGroupTargetInput) (*CompositeGroupTarget, error) {
+	if err := s.ValidateSimpleModeGroupOperation(AdminGroupOperationCompositeRoute); err != nil {
+		return nil, err
+	}
+	if err := s.requireCompositeGroup(ctx, groupID); err != nil {
+		return nil, err
+	}
+	if s.compositeTargetRepo == nil {
+		return nil, fmt.Errorf("composite target repository is not configured")
+	}
+	if input.TargetGroupID <= 0 || input.TargetGroupID == groupID {
+		return nil, fmt.Errorf("target_group_id must reference a concrete group")
+	}
+	targetGroup, err := s.groupRepo.GetByIDLite(ctx, input.TargetGroupID)
+	if err != nil {
+		return nil, err
+	}
+	if targetGroup.Platform == PlatformComposite || !isConcreteRequestPlatform(targetGroup.Platform) {
+		return nil, fmt.Errorf("target group %d must have a concrete platform", input.TargetGroupID)
+	}
+	if !targetGroup.IsActive() {
+		return nil, fmt.Errorf("target group %d is inactive", input.TargetGroupID)
+	}
+	priority := input.Priority
+	if priority == 0 {
+		priority = 100
+	}
+	target := &CompositeGroupTarget{
+		CompositeGroupID: groupID,
+		TargetGroupID:    input.TargetGroupID,
+		Priority:         priority,
+		Enabled:          input.Enabled,
+		TargetGroup:      targetGroup,
+	}
+	if err := s.compositeTargetRepo.Create(ctx, target); err != nil {
+		return nil, err
+	}
+	s.invalidateCompositeTargetCaches(ctx, groupID)
+	return target, nil
+}
+
+func (s *adminServiceImpl) UpdateCompositeTarget(ctx context.Context, groupID, targetID int64, input CompositeGroupTargetInput) (*CompositeGroupTarget, error) {
+	if err := s.ValidateSimpleModeGroupOperation(AdminGroupOperationCompositeRoute); err != nil {
+		return nil, err
+	}
+	if err := s.requireCompositeGroup(ctx, groupID); err != nil {
+		return nil, err
+	}
+	if s.compositeTargetRepo == nil {
+		return nil, fmt.Errorf("composite target repository is not configured")
+	}
+	target, err := s.findCompositeTarget(ctx, groupID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	if input.TargetGroupID != 0 && input.TargetGroupID != target.TargetGroupID {
+		return nil, fmt.Errorf("target_group_id cannot be changed; delete and recreate the target")
+	}
+	target.Priority = input.Priority
+	target.Enabled = input.Enabled
+	if err := s.compositeTargetRepo.Update(ctx, &target); err != nil {
+		return nil, err
+	}
+	s.invalidateCompositeTargetCaches(ctx, groupID)
+	return &target, nil
+}
+
+func (s *adminServiceImpl) DeleteCompositeTarget(ctx context.Context, groupID, targetID int64) error {
+	if err := s.ValidateSimpleModeGroupOperation(AdminGroupOperationCompositeRoute); err != nil {
+		return err
+	}
+	if err := s.requireCompositeGroup(ctx, groupID); err != nil {
+		return err
+	}
+	if s.compositeTargetRepo == nil {
+		return fmt.Errorf("composite target repository is not configured")
+	}
+	if _, err := s.findCompositeTarget(ctx, groupID, targetID); err != nil {
+		return err
+	}
+	if err := s.compositeTargetRepo.Delete(ctx, groupID, targetID); err != nil {
+		return err
+	}
+	s.invalidateCompositeTargetCaches(ctx, groupID)
+	return nil
+}
+
+func (s *adminServiceImpl) findCompositeTarget(ctx context.Context, groupID, targetID int64) (CompositeGroupTarget, error) {
+	targets, err := s.compositeTargetRepo.ListByCompositeGroup(ctx, groupID, true)
+	if err != nil {
+		return CompositeGroupTarget{}, err
+	}
+	for _, target := range targets {
+		if target.ID == targetID && target.DeletedAt == nil {
+			return target, nil
+		}
+	}
+	return CompositeGroupTarget{}, ErrCompositeTargetNotFound
+}
+
+func (s *adminServiceImpl) invalidateCompositeTargetCaches(ctx context.Context, groupID int64) {
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
 }
 
 func (s *adminServiceImpl) compositeRouteBelongsToGroup(ctx context.Context, groupID, routeID int64) (bool, error) {
@@ -266,6 +425,7 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	}
 	return &CompositeModelRoute{
 		GroupID:        groupID,
+		TargetGroupID:  input.TargetGroupID,
 		PublicModel:    input.PublicModel,
 		MatchType:      input.MatchType,
 		TargetPlatform: input.TargetPlatform,
@@ -577,6 +737,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		I18n:                            i18n,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
+		DynamicRateBillingEnabled:       input.DynamicRateBillingEnabled,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
@@ -802,6 +963,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			return nil, errors.New("rate_multiplier must be > 0")
 		}
 		group.RateMultiplier = *input.RateMultiplier
+	}
+	if input.DynamicRateBillingEnabled != nil {
+		group.DynamicRateBillingEnabled = *input.DynamicRateBillingEnabled
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive

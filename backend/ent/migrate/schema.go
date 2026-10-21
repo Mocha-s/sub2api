@@ -801,6 +801,59 @@ var (
 			},
 		},
 	}
+	// CompositeGroupTargetsColumns holds the columns for the "composite_group_targets" table.
+	CompositeGroupTargetsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "priority", Type: field.TypeInt, Default: 100},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "composite_group_id", Type: field.TypeInt64},
+		{Name: "target_group_id", Type: field.TypeInt64},
+	}
+	// CompositeGroupTargetsTable holds the schema information for the "composite_group_targets" table.
+	CompositeGroupTargetsTable = &schema.Table{
+		Name:       "composite_group_targets",
+		Columns:    CompositeGroupTargetsColumns,
+		PrimaryKey: []*schema.Column{CompositeGroupTargetsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "composite_group_targets_groups_composite_group",
+				Columns:    []*schema.Column{CompositeGroupTargetsColumns[6]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "composite_group_targets_groups_target_group",
+				Columns:    []*schema.Column{CompositeGroupTargetsColumns[7]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "compositegrouptarget_composite_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{CompositeGroupTargetsColumns[6]},
+			},
+			{
+				Name:    "compositegrouptarget_composite_group_id_enabled_priority",
+				Unique:  false,
+				Columns: []*schema.Column{CompositeGroupTargetsColumns[6], CompositeGroupTargetsColumns[5], CompositeGroupTargetsColumns[4]},
+			},
+			{
+				Name:    "compositegrouptarget_target_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{CompositeGroupTargetsColumns[7]},
+			},
+			{
+				Name:    "compositegrouptarget_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{CompositeGroupTargetsColumns[3]},
+			},
+		},
+	}
 	// CompositeModelRoutesColumns holds the columns for the "composite_model_routes" table.
 	CompositeModelRoutesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -816,6 +869,7 @@ var (
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "target_group_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// CompositeModelRoutesTable holds the schema information for the "composite_model_routes" table.
 	CompositeModelRoutesTable = &schema.Table{
@@ -828,6 +882,12 @@ var (
 				Columns:    []*schema.Column{CompositeModelRoutesColumns[12]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "composite_model_routes_groups_target_group",
+				Columns:    []*schema.Column{CompositeModelRoutesColumns[13]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Cascade,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -850,6 +910,11 @@ var (
 				Name:    "compositemodelroute_group_id_target_platform",
 				Unique:  false,
 				Columns: []*schema.Column{CompositeModelRoutesColumns[12], CompositeModelRoutesColumns[6]},
+			},
+			{
+				Name:    "compositemodelroute_target_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{CompositeModelRoutesColumns[13]},
 			},
 			{
 				Name:    "compositemodelroute_deleted_at",
@@ -910,6 +975,7 @@ var (
 		{Name: "description", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "i18n", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "dynamic_rate_billing_enabled", Type: field.TypeBool, Default: false},
 		{Name: "peak_rate_enabled", Type: field.TypeBool, Default: false},
 		{Name: "peak_start", Type: field.TypeString, Size: 5, Default: ""},
 		{Name: "peak_end", Type: field.TypeString, Size: 5, Default: ""},
@@ -981,22 +1047,22 @@ var (
 			{
 				Name:    "group_status",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[13]},
+				Columns: []*schema.Column{GroupsColumns[14]},
 			},
 			{
 				Name:    "group_platform",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[15]},
+				Columns: []*schema.Column{GroupsColumns[16]},
 			},
 			{
 				Name:    "group_subscription_type",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[16]},
+				Columns: []*schema.Column{GroupsColumns[17]},
 			},
 			{
 				Name:    "group_is_exclusive",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[12]},
+				Columns: []*schema.Column{GroupsColumns[13]},
 			},
 			{
 				Name:    "group_deleted_at",
@@ -1006,12 +1072,12 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[51]},
+				Columns: []*schema.Column{GroupsColumns[52]},
 			},
 			{
 				Name:    "idx_groups_duplicate_operation_id_active",
 				Unique:  true,
-				Columns: []*schema.Column{GroupsColumns[14]},
+				Columns: []*schema.Column{GroupsColumns[15]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "duplicate_operation_id IS NOT NULL AND deleted_at IS NULL",
 				},
@@ -2210,6 +2276,7 @@ var (
 		ChannelMonitorDailyRollupsTable,
 		ChannelMonitorHistoriesTable,
 		ChannelMonitorRequestTemplatesTable,
+		CompositeGroupTargetsTable,
 		CompositeModelRoutesTable,
 		ErrorPassthroughRulesTable,
 		GroupsTable,
@@ -2295,7 +2362,13 @@ func init() {
 	ChannelMonitorRequestTemplatesTable.Annotation = &entsql.Annotation{
 		Table: "channel_monitor_request_templates",
 	}
+	CompositeGroupTargetsTable.ForeignKeys[0].RefTable = GroupsTable
+	CompositeGroupTargetsTable.ForeignKeys[1].RefTable = GroupsTable
+	CompositeGroupTargetsTable.Annotation = &entsql.Annotation{
+		Table: "composite_group_targets",
+	}
 	CompositeModelRoutesTable.ForeignKeys[0].RefTable = GroupsTable
+	CompositeModelRoutesTable.ForeignKeys[1].RefTable = GroupsTable
 	CompositeModelRoutesTable.Annotation = &entsql.Annotation{
 		Table: "composite_model_routes",
 	}

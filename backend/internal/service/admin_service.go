@@ -55,6 +55,10 @@ type AdminService interface {
 	UpdateCompositeRoute(ctx context.Context, groupID, routeID int64, input CompositeRouteInput) (*CompositeModelRoute, error)
 	DeleteCompositeRoute(ctx context.Context, groupID, routeID int64) error
 	PreviewCompositeRoute(ctx context.Context, groupID int64, input CompositeRoutePreviewRequest) (*CompositeRouteDecision, error)
+	ListCompositeTargets(ctx context.Context, groupID int64) ([]CompositeGroupTarget, error)
+	CreateCompositeTarget(ctx context.Context, groupID int64, input CompositeGroupTargetInput) (*CompositeGroupTarget, error)
+	UpdateCompositeTarget(ctx context.Context, groupID, targetID int64, input CompositeGroupTargetInput) (*CompositeGroupTarget, error)
+	DeleteCompositeTarget(ctx context.Context, groupID, targetID int64) error
 	GetGroupAPIKeys(ctx context.Context, groupID int64, page, pageSize int) ([]APIKey, int64, error)
 	GetGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ClearGroupRateMultipliers(ctx context.Context, groupID int64) error
@@ -238,6 +242,7 @@ type CreateGroupInput struct {
 	I18n                      GroupI18n // 名称与描述的界面语言译文
 	Platform                  string
 	RateMultiplier            float64
+	DynamicRateBillingEnabled bool
 	IsExclusive               bool
 	SubscriptionType          string   // standard/subscription
 	DailyLimitUSD             *float64 // 日限额 (USD)
@@ -320,6 +325,7 @@ type UpdateGroupInput struct {
 	I18n                      *GroupI18n // nil 表示不修改；非 nil 整体替换
 	Platform                  string
 	RateMultiplier            *float64 // 使用指针以支持设置为0
+	DynamicRateBillingEnabled *bool
 	IsExclusive               *bool
 	Status                    string
 	SubscriptionType          string   // standard/subscription
@@ -713,6 +719,7 @@ type adminServiceImpl struct {
 	affiliateService     adminRechargeAffiliateAccruer
 	compositeRouteRepo   CompositeModelRouteRepository
 	compositeResolver    *CompositeRouteResolver
+	compositeTargetRepo  CompositeGroupTargetRepository
 	// 分组平台变更后用来失效渠道缓存；可为 nil（缓存会在 TTL 到期后自然重建）
 	channelCacheInvalidator ChannelCacheInvalidator
 }
@@ -755,6 +762,7 @@ func NewAdminService(
 	affiliateService *AffiliateService,
 	compositeRouteRepo CompositeModelRouteRepository,
 	compositeResolver *CompositeRouteResolver,
+	compositeTargetRepo CompositeGroupTargetRepository,
 	channelCacheInvalidator ChannelCacheInvalidator,
 ) AdminService {
 	return &adminServiceImpl{
@@ -784,6 +792,7 @@ func NewAdminService(
 		affiliateService:     affiliateService,
 		compositeRouteRepo:   compositeRouteRepo,
 		compositeResolver:    compositeResolver,
+		compositeTargetRepo:  compositeTargetRepo,
 
 		channelCacheInvalidator: channelCacheInvalidator,
 	}

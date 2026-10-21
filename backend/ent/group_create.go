@@ -112,6 +112,20 @@ func (_c *GroupCreate) SetNillableRateMultiplier(v *float64) *GroupCreate {
 	return _c
 }
 
+// SetDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field.
+func (_c *GroupCreate) SetDynamicRateBillingEnabled(v bool) *GroupCreate {
+	_c.mutation.SetDynamicRateBillingEnabled(v)
+	return _c
+}
+
+// SetNillableDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableDynamicRateBillingEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetDynamicRateBillingEnabled(*v)
+	}
+	return _c
+}
+
 // SetPeakRateEnabled sets the "peak_rate_enabled" field.
 func (_c *GroupCreate) SetPeakRateEnabled(v bool) *GroupCreate {
 	_c.mutation.SetPeakRateEnabled(v)
@@ -1075,6 +1089,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
 	}
+	if _, ok := _c.mutation.DynamicRateBillingEnabled(); !ok {
+		v := group.DefaultDynamicRateBillingEnabled
+		_c.mutation.SetDynamicRateBillingEnabled(v)
+	}
 	if _, ok := _c.mutation.PeakRateEnabled(); !ok {
 		v := group.DefaultPeakRateEnabled
 		_c.mutation.SetPeakRateEnabled(v)
@@ -1263,6 +1281,9 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "Group.rate_multiplier"`)}
+	}
+	if _, ok := _c.mutation.DynamicRateBillingEnabled(); !ok {
+		return &ValidationError{Name: "dynamic_rate_billing_enabled", err: errors.New(`ent: missing required field "Group.dynamic_rate_billing_enabled"`)}
 	}
 	if _, ok := _c.mutation.PeakRateEnabled(); !ok {
 		return &ValidationError{Name: "peak_rate_enabled", err: errors.New(`ent: missing required field "Group.peak_rate_enabled"`)}
@@ -1506,6 +1527,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RateMultiplier(); ok {
 		_spec.SetField(group.FieldRateMultiplier, field.TypeFloat64, value)
 		_node.RateMultiplier = value
+	}
+	if value, ok := _c.mutation.DynamicRateBillingEnabled(); ok {
+		_spec.SetField(group.FieldDynamicRateBillingEnabled, field.TypeBool, value)
+		_node.DynamicRateBillingEnabled = value
 	}
 	if value, ok := _c.mutation.PeakRateEnabled(); ok {
 		_spec.SetField(group.FieldPeakRateEnabled, field.TypeBool, value)
@@ -1994,6 +2019,18 @@ func (u *GroupUpsert) UpdateRateMultiplier() *GroupUpsert {
 // AddRateMultiplier adds v to the "rate_multiplier" field.
 func (u *GroupUpsert) AddRateMultiplier(v float64) *GroupUpsert {
 	u.Add(group.FieldRateMultiplier, v)
+	return u
+}
+
+// SetDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field.
+func (u *GroupUpsert) SetDynamicRateBillingEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldDynamicRateBillingEnabled, v)
+	return u
+}
+
+// UpdateDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateDynamicRateBillingEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldDynamicRateBillingEnabled)
 	return u
 }
 
@@ -3137,6 +3174,20 @@ func (u *GroupUpsertOne) AddRateMultiplier(v float64) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateRateMultiplier() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field.
+func (u *GroupUpsertOne) SetDynamicRateBillingEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDynamicRateBillingEnabled(v)
+	})
+}
+
+// UpdateDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateDynamicRateBillingEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDynamicRateBillingEnabled()
 	})
 }
 
@@ -4611,6 +4662,20 @@ func (u *GroupUpsertBulk) AddRateMultiplier(v float64) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateRateMultiplier() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateRateMultiplier()
+	})
+}
+
+// SetDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field.
+func (u *GroupUpsertBulk) SetDynamicRateBillingEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetDynamicRateBillingEnabled(v)
+	})
+}
+
+// UpdateDynamicRateBillingEnabled sets the "dynamic_rate_billing_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateDynamicRateBillingEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateDynamicRateBillingEnabled()
 	})
 }
 

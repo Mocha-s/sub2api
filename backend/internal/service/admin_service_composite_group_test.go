@@ -242,6 +242,126 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 	require.Contains(t, candidates, "gemini-2.5-flash")
 }
 
+type compositeGroupTargetRepoStub struct {
+	targets []CompositeGroupTarget
+	nilList bool
+	created *CompositeGroupTarget
+	updated *CompositeGroupTarget
+	deleted []int64
+}
+
+func (r *compositeGroupTargetRepoStub) ListByCompositeGroup(_ context.Context, groupID int64, includeDisabled bool) ([]CompositeGroupTarget, error) {
+	if r.nilList {
+		return nil, nil
+	}
+	out := make([]CompositeGroupTarget, 0, len(r.targets))
+	for _, target := range r.targets {
+		if target.CompositeGroupID == groupID && (includeDisabled || target.Enabled) {
+			out = append(out, target)
+		}
+	}
+	return out, nil
+}
+
+func (r *compositeGroupTargetRepoStub) Create(_ context.Context, target *CompositeGroupTarget) error {
+	r.created = target
+	target.ID = 123
+	return nil
+}
+
+func (r *compositeGroupTargetRepoStub) Update(_ context.Context, target *CompositeGroupTarget) error {
+	r.updated = target
+	return nil
+}
+
+func (r *compositeGroupTargetRepoStub) Delete(_ context.Context, groupID, targetID int64) error {
+	r.deleted = append(r.deleted, targetID)
+	return nil
+}
+
+type compositeTargetInvalidator struct{ groupIDs []int64 }
+
+func (*compositeTargetInvalidator) InvalidateAuthCacheByKey(context.Context, string)   {}
+func (*compositeTargetInvalidator) InvalidateAuthCacheByUserID(context.Context, int64) {}
+func (i *compositeTargetInvalidator) InvalidateAuthCacheByGroupID(_ context.Context, id int64) {
+	i.groupIDs = append(i.groupIDs, id)
+}
+
+func TestAdminService_CreateCompositeTargetValidatesAndInvalidatesSource(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7:  {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+		20: {ID: 20, Platform: PlatformOpenAI, Status: StatusActive},
+	}}
+	targetRepo := &compositeGroupTargetRepoStub{}
+	invalidator := &compositeTargetInvalidator{}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeTargetRepo: targetRepo, authCacheInvalidator: invalidator}
+
+	target, err := svc.CreateCompositeTarget(context.Background(), 7, CompositeGroupTargetInput{
+		TargetGroupID: 20,
+		Priority:      10,
+		Enabled:       true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(123), target.ID)
+	require.Equal(t, int64(7), target.CompositeGroupID)
+	require.Equal(t, int64(20), target.TargetGroupID)
+	require.Equal(t, 10, target.Priority)
+	require.Equal(t, target, targetRepo.created)
+	require.Equal(t, []int64{7}, invalidator.groupIDs)
+}
+
+func TestAdminService_ListCompositeTargetsReturnsEmptyArrayWhenUnconfigured(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+	}}
+	targetRepo := &compositeGroupTargetRepoStub{nilList: true}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeTargetRepo: targetRepo}
+
+	targets, err := svc.ListCompositeTargets(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, targets)
+	require.Empty(t, targets)
+}
+
+func TestAdminService_CreateCompositeTargetRejectsNestedAndInactiveTargets(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7:  {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+		20: {ID: 20, Platform: PlatformComposite, Status: StatusActive},
+		30: {ID: 30, Platform: PlatformOpenAI, Status: StatusDisabled},
+	}}
+	targetRepo := &compositeGroupTargetRepoStub{}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeTargetRepo: targetRepo}
+
+	_, err := svc.CreateCompositeTarget(context.Background(), 7, CompositeGroupTargetInput{TargetGroupID: 20, Enabled: true})
+	require.Error(t, err)
+	_, err = svc.CreateCompositeTarget(context.Background(), 7, CompositeGroupTargetInput{TargetGroupID: 30, Enabled: true})
+	require.Error(t, err)
+	require.Nil(t, targetRepo.created)
+}
+
+func TestAdminService_UpdateAndDeleteCompositeTargetRequireOwnership(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+	}}
+	targetRepo := &compositeGroupTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 11, CompositeGroupID: 7, TargetGroupID: 20, Priority: 100, Enabled: true},
+		{ID: 12, CompositeGroupID: 8, TargetGroupID: 30, Priority: 100, Enabled: true},
+	}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeTargetRepo: targetRepo}
+
+	updated, err := svc.UpdateCompositeTarget(context.Background(), 7, 11, CompositeGroupTargetInput{Priority: 2, Enabled: false})
+	require.NoError(t, err)
+	require.Equal(t, int64(20), updated.TargetGroupID)
+	require.Equal(t, 2, updated.Priority)
+	require.False(t, updated.Enabled)
+
+	_, err = svc.UpdateCompositeTarget(context.Background(), 7, 12, CompositeGroupTargetInput{Priority: 2, Enabled: true})
+	require.ErrorIs(t, err, ErrCompositeTargetNotFound)
+	require.ErrorIs(t, svc.DeleteCompositeTarget(context.Background(), 7, 12), ErrCompositeTargetNotFound)
+	require.NoError(t, svc.DeleteCompositeTarget(context.Background(), 7, 11))
+	require.Equal(t, []int64{11}, targetRepo.deleted)
+}
+
 // 独立 CN 分组的模型列表候选沿用 default 分支的 Claude 默认列表；
 // composite 支持不得改变独立分组的候选语义。
 func TestAdminService_CNProviderModelsListCandidatesKeepClaudeDefaults(t *testing.T) {

@@ -101,7 +101,18 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	}
 
 	taskCtx, recorder, cancel := newAsyncImageContext(c, body, h.tasks.ExecutionTimeout())
-	task, err := h.tasks.Create(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID})
+	pricingAt := service.OpenAIPricingAtFromContext(c.Request.Context())
+	if pricingAt.IsZero() {
+		pricingAt = time.Now().UTC()
+	}
+	owner := service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID, PricingAt: pricingAt}
+	if apiKey.GroupID != nil {
+		owner.GroupID = *apiKey.GroupID
+	}
+	if sourceGroup, ok := service.CompositeBillingGroupFromContext(c.Request.Context()); ok {
+		owner.SourceGroupID = sourceGroup.ID
+	}
+	task, err := h.tasks.Create(c.Request.Context(), owner)
 	if err != nil {
 		cancel()
 		imageTaskError(c, err)
@@ -229,6 +240,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 	}()
 
+	taskCtx.Request = taskCtx.Request.WithContext(h.tasks.WithPricingContext(taskCtx.Request.Context(), taskID))
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
 	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {

@@ -177,6 +177,18 @@ func (f ChannelMonitorRequestTemplateFunc) Mutate(ctx context.Context, m ent.Mut
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelMonitorRequestTemplateMutation", m)
 }
 
+// The CompositeGroupTargetFunc type is an adapter to allow the use of ordinary
+// function as CompositeGroupTarget mutator.
+type CompositeGroupTargetFunc func(context.Context, *ent.CompositeGroupTargetMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CompositeGroupTargetFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CompositeGroupTargetMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CompositeGroupTargetMutation", m)
+}
+
 // The CompositeModelRouteFunc type is an adapter to allow the use of ordinary
 // function as CompositeModelRoute mutator.
 type CompositeModelRouteFunc func(context.Context, *ent.CompositeModelRouteMutation) (ent.Value, error)

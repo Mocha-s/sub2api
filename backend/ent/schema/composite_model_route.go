@@ -36,6 +36,9 @@ func (CompositeModelRoute) Mixin() []ent.Mixin {
 func (CompositeModelRoute) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("group_id"),
+		field.Int64("target_group_id").
+			Optional().
+			Nillable(),
 		field.String("public_model").
 			MaxLen(200).
 			NotEmpty().
@@ -81,6 +84,10 @@ func (CompositeModelRoute) Edges() []ent.Edge {
 			Unique().
 			Required().
 			Field("group_id"),
+		edge.To("target_group", Group.Type).
+			Unique().
+			Field("target_group_id").
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 
@@ -90,6 +97,7 @@ func (CompositeModelRoute) Indexes() []ent.Index {
 		index.Fields("group_id", "enabled"),
 		index.Fields("group_id", "endpoint"),
 		index.Fields("group_id", "target_platform"),
+		index.Fields("target_group_id"),
 		index.Fields("deleted_at"),
 		index.Fields("priority"),
 	}

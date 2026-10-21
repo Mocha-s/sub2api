@@ -43,6 +43,7 @@ func (r *compositeModelRouteRepository) Create(ctx context.Context, route *servi
 	}
 	created, err := clientFromContext(ctx, r.client).CompositeModelRoute.Create().
 		SetGroupID(route.GroupID).
+		SetNillableTargetGroupID(route.TargetGroupID).
 		SetPublicModel(route.PublicModel).
 		SetMatchType(route.MatchType).
 		SetTargetPlatform(route.TargetPlatform).
@@ -64,6 +65,7 @@ func (r *compositeModelRouteRepository) Update(ctx context.Context, route *servi
 		return service.ErrCompositeRouteNotFound
 	}
 	updated, err := clientFromContext(ctx, r.client).CompositeModelRoute.UpdateOneID(route.ID).
+		SetNillableTargetGroupID(route.TargetGroupID).
 		SetPublicModel(route.PublicModel).
 		SetMatchType(route.MatchType).
 		SetTargetPlatform(route.TargetPlatform).
@@ -99,6 +101,7 @@ func compositeModelRouteEntityToService(row *dbent.CompositeModelRoute) *service
 	return &service.CompositeModelRoute{
 		ID:             row.ID,
 		GroupID:        row.GroupID,
+		TargetGroupID:  row.TargetGroupID,
 		PublicModel:    row.PublicModel,
 		MatchType:      row.MatchType,
 		TargetPlatform: row.TargetPlatform,

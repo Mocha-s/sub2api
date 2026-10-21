@@ -75,6 +75,11 @@ func GroupID(v int64) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldGroupID, v))
 }
 
+// TargetGroupID applies equality check predicate on the "target_group_id" field. It's identical to TargetGroupIDEQ.
+func TargetGroupID(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldTargetGroupID, v))
+}
+
 // PublicModel applies equality check predicate on the "public_model" field. It's identical to PublicModelEQ.
 func PublicModel(v string) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldPublicModel, v))
@@ -263,6 +268,36 @@ func GroupIDIn(vs ...int64) predicate.CompositeModelRoute {
 // GroupIDNotIn applies the NotIn predicate on the "group_id" field.
 func GroupIDNotIn(vs ...int64) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldGroupID, vs...))
+}
+
+// TargetGroupIDEQ applies the EQ predicate on the "target_group_id" field.
+func TargetGroupIDEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDNEQ applies the NEQ predicate on the "target_group_id" field.
+func TargetGroupIDNEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNEQ(FieldTargetGroupID, v))
+}
+
+// TargetGroupIDIn applies the In predicate on the "target_group_id" field.
+func TargetGroupIDIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIn(FieldTargetGroupID, vs...))
+}
+
+// TargetGroupIDNotIn applies the NotIn predicate on the "target_group_id" field.
+func TargetGroupIDNotIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldTargetGroupID, vs...))
+}
+
+// TargetGroupIDIsNil applies the IsNil predicate on the "target_group_id" field.
+func TargetGroupIDIsNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIsNull(FieldTargetGroupID))
+}
+
+// TargetGroupIDNotNil applies the NotNil predicate on the "target_group_id" field.
+func TargetGroupIDNotNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotNull(FieldTargetGroupID))
 }
 
 // PublicModelEQ applies the EQ predicate on the "public_model" field.
@@ -730,6 +765,29 @@ func HasGroup() predicate.CompositeModelRoute {
 func HasGroupWith(preds ...predicate.Group) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(func(s *sql.Selector) {
 		step := newGroupStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTargetGroup applies the HasEdge predicate on the "target_group" edge.
+func HasTargetGroup() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, TargetGroupTable, TargetGroupColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTargetGroupWith applies the HasEdge predicate on the "target_group" edge with a given conditions (other predicates).
+func HasTargetGroupWith(preds ...predicate.Group) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(func(s *sql.Selector) {
+		step := newTargetGroupStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

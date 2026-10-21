@@ -2046,6 +2046,29 @@ func TestAdminService_CreateCompositeRoute_NormalizesAndPersists(t *testing.T) {
 	require.Equal(t, route, routeRepo.created)
 }
 
+func TestAdminService_CreateCompositeRoute_ValidatesTargetGroupReference(t *testing.T) {
+	targetID := int64(20)
+	groupRepo := &groupRepoStubForAdmin{getByID: &Group{ID: 7, Platform: PlatformComposite}}
+	targetRepo := &compositeGroupTargetRepoStub{targets: []CompositeGroupTarget{{
+		ID: 1, CompositeGroupID: 7, TargetGroupID: targetID, Enabled: true,
+		TargetGroup: &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive},
+	}}}
+	routeRepo := &compositeRouteRepoStubForAdmin{nextID: 99}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo, compositeTargetRepo: targetRepo}
+
+	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "dynamic-gpt", TargetPlatform: PlatformOpenAI, TargetGroupID: &targetID, Enabled: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, &targetID, route.TargetGroupID)
+
+	missing := int64(21)
+	_, err = svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "missing-target", TargetPlatform: PlatformOpenAI, TargetGroupID: &missing, Enabled: true,
+	})
+	require.Error(t, err)
+}
+
 // TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicModel 锁定
 // 保守行为：exact 路由留空 upstream_model 仍回填 public_model（持久化/展示契约不变）。
 func TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicModel(t *testing.T) {

@@ -392,6 +392,9 @@ type inflightEstimateDeps struct {
 	resolver       *ModelPricingResolver
 	resolveMapping func(ctx context.Context, groupID int64, model string) ChannelMappingResult
 	userGroupRate  func(ctx context.Context, userID, groupID int64, groupDefault float64) float64
+	// managedAccountRate returns the highest configured managed-account rate in
+	// the target pool; it keeps balance reservations conservative before account selection.
+	managedAccountRate func(ctx context.Context, apiKey *APIKey) float64
 	// accountMappedModels 返回调度器可选账号对 model 的账号级映射结果（去重，不含 model 本身）。
 	// 准入时账号尚未选定，计费侧 billableModelWithFallback 会回退到实际转发模型（UpstreamModel，
 	// 即账号映射后的模型），因此这里取所有候选映射模型的最高估算。
@@ -493,13 +496,19 @@ func (d inflightEstimateDeps) rates(ctx context.Context, apiKey *APIKey) (text, 
 	if d.cfg != nil && d.cfg.Default.RateMultiplier > 0 {
 		rate = d.cfg.Default.RateMultiplier
 	}
-	if apiKey != nil && apiKey.GroupID != nil && apiKey.Group != nil {
-		rate = apiKey.Group.RateMultiplier
+	billingGroup, billingGroupID, dynamicManagedRate := customerBillingGroup(ctx, apiKey)
+	if billingGroup != nil && billingGroupID != nil {
+		rate = billingGroup.RateMultiplier
 		if d.userGroupRate != nil && apiKey.User != nil {
-			rate = d.userGroupRate(ctx, apiKey.User.ID, *apiKey.GroupID, rate)
+			rate = d.userGroupRate(ctx, apiKey.User.ID, *billingGroupID, rate)
 		}
 	}
-	return computePeakAwareMultipliers(apiKey, rate, timezone.Now())
+	if dynamicManagedRate && d.managedAccountRate != nil {
+		if managedRate := d.managedAccountRate(ctx, apiKey); managedRate > rate {
+			rate = managedRate
+		}
+	}
+	return computePeakAwareMultipliers(apiKeyWithBillingGroup(apiKey, billingGroup, billingGroupID), rate, timezone.Now())
 }
 
 func tokenCounts(cfg config.InflightReservationConfig, bodyBytes, maxTokens int) (int, int) {
@@ -719,6 +728,23 @@ func (s *GatewayService) inflightEstimateDeps() inflightEstimateDeps {
 	d.userGroupRate = s.getUserGroupRateMultiplier
 	if s.schedulerSnapshot != nil {
 		snap := s.schedulerSnapshot
+		d.managedAccountRate = func(ctx context.Context, apiKey *APIKey) float64 {
+			billingGroup, _, dynamic := customerBillingGroup(ctx, apiKey)
+			if !dynamic || billingGroup == nil || apiKey == nil || apiKey.GroupID == nil || apiKey.Group == nil {
+				return 0
+			}
+			accounts, _, err := snap.ListSchedulableAccounts(ctx, apiKey.GroupID, apiKey.Group.Platform, false)
+			if err != nil {
+				return 0
+			}
+			maxRate := 0.0
+			for i := range accounts {
+				if rate := effectiveRequestRateMultiplier(&accounts[i], billingGroup.RateMultiplier); rate > maxRate {
+					maxRate = rate
+				}
+			}
+			return maxRate
+		}
 		d.accountMappedModels = inflightAccountMappedModelsFromSnapshot(
 			func(ctx context.Context, groupID *int64, platform string, forced bool) ([]Account, error) {
 				accounts, _, err := snap.ListSchedulableAccounts(ctx, groupID, platform, forced)
@@ -750,6 +776,23 @@ func (s *OpenAIGatewayService) inflightEstimateDeps() inflightEstimateDeps {
 	d.userGroupRate = s.ResolveUserGroupRateMultiplier
 	if s.schedulerSnapshot != nil {
 		snap := s.schedulerSnapshot
+		d.managedAccountRate = func(ctx context.Context, apiKey *APIKey) float64 {
+			billingGroup, _, dynamic := customerBillingGroup(ctx, apiKey)
+			if !dynamic || billingGroup == nil || apiKey == nil || apiKey.GroupID == nil || apiKey.Group == nil {
+				return 0
+			}
+			accounts, _, err := snap.ListSchedulableAccounts(ctx, apiKey.GroupID, apiKey.Group.Platform, false)
+			if err != nil {
+				return 0
+			}
+			maxRate := 0.0
+			for i := range accounts {
+				if rate := effectiveRequestRateMultiplier(&accounts[i], billingGroup.RateMultiplier); rate > maxRate {
+					maxRate = rate
+				}
+			}
+			return maxRate
+		}
 		d.accountMappedModels = inflightAccountMappedModelsFromSnapshot(
 			func(ctx context.Context, groupID *int64, platform string, forced bool) ([]Account, error) {
 				accounts, _, err := snap.ListSchedulableAccounts(ctx, groupID, platform, forced)

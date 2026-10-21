@@ -47,6 +47,18 @@ func TestEstimateInflightReservationCost(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestInflightRatesReserveForHighestManagedTargetAccount(t *testing.T) {
+	groupID, targetID := int64(101), int64(202)
+	group := &Group{ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: 0.1, DynamicRateBillingEnabled: true}
+	apiKey := &APIKey{GroupID: &targetID, Group: &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}}
+	ctx := WithCompositeBillingGroup(context.Background(), group)
+	deps := inflightEstimateDeps{managedAccountRate: func(context.Context, *APIKey) float64 { return 1.45 }}
+
+	text, image := deps.rates(ctx, apiKey)
+	require.InDelta(t, 1.45, text, 1e-12)
+	require.InDelta(t, 1.45, image, 1e-12)
+}
+
 func TestReserveInflightBalance_NoReservationCacheFailsOpen(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Billing.InflightReservation.Enabled = true

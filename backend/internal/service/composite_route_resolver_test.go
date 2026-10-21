@@ -4,12 +4,139 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 type compositeRouteRepoStub struct {
 	routes []CompositeModelRoute
+}
+
+type compositeTargetRepoStub struct {
+	targets []CompositeGroupTarget
+	err     error
+}
+
+func (r compositeTargetRepoStub) ListByCompositeGroup(_ context.Context, groupID int64, includeDisabled bool) ([]CompositeGroupTarget, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	out := make([]CompositeGroupTarget, 0, len(r.targets))
+	for _, target := range r.targets {
+		if target.CompositeGroupID == groupID && (includeDisabled || target.Enabled) {
+			out = append(out, target)
+		}
+	}
+	return out, nil
+}
+
+func (compositeTargetRepoStub) Create(context.Context, *CompositeGroupTarget) error { return nil }
+func (compositeTargetRepoStub) Update(context.Context, *CompositeGroupTarget) error { return nil }
+func (compositeTargetRepoStub) Delete(context.Context, int64, int64) error          { return nil }
+
+func TestCompositeRouteResolverExplicitRouteSelectsConfiguredTargetGroup(t *testing.T) {
+	targetID := int64(20)
+	targetRepo := compositeTargetRepoStub{targets: []CompositeGroupTarget{{
+		ID: 1, CompositeGroupID: 7, TargetGroupID: targetID, Priority: 1, Enabled: true,
+		TargetGroup: &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive},
+	}}}
+	routeRepo := compositeRouteRepoStub{routes: []CompositeModelRoute{{
+		ID: 9, GroupID: 7, PublicModel: "public-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, TargetGroupID: &targetID, Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+	}}}
+	resolver := NewCompositeRouteResolver(routeRepo)
+	resolver.SetTargetRepository(targetRepo)
+
+	decision, err := resolver.Resolve(context.Background(), 7, "public-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, &targetID, decision.TargetGroupID)
+	require.Equal(t, targetID, decision.TargetGroup.ID)
+}
+
+func TestCompositeRouteResolverExplicitTargetMustBeEnabledAndPlatformMatched(t *testing.T) {
+	requestedTargetID := int64(20)
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+		ID: 9, GroupID: 7, PublicModel: "public-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, TargetGroupID: &requestedTargetID, Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+	}}})
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{{
+		ID: 1, CompositeGroupID: 7, TargetGroupID: requestedTargetID, Priority: 1, Enabled: false,
+		TargetGroup: &Group{ID: requestedTargetID, Platform: PlatformOpenAI, Status: StatusActive},
+	}}})
+	decision, err := resolver.Resolve(context.Background(), 7, "public-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.False(t, decision.Matched)
+	require.NotNil(t, decision.Route)
+	require.Equal(t, "explicit route target group is unavailable or mismatched", decision.Reason)
+}
+
+func TestCompositeRouteResolverDetectorSelectsLowestPriorityConcreteTarget(t *testing.T) {
+	firstID, expectedID := int64(22), int64(21)
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 1, CompositeGroupID: 7, TargetGroupID: firstID, Priority: 5, Enabled: true, TargetGroup: &Group{ID: firstID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 2, CompositeGroupID: 7, TargetGroupID: expectedID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: expectedID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 3, CompositeGroupID: 7, TargetGroupID: 23, Priority: 1, Enabled: true, TargetGroup: &Group{ID: 23, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 4, CompositeGroupID: 7, TargetGroupID: 24, Priority: 0, Enabled: true, TargetGroup: &Group{ID: 24, Platform: PlatformGemini, Status: StatusActive}},
+	}})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, &expectedID, decision.TargetGroupID)
+}
+
+func TestCompositeRouteResolverPrefersTargetOwningExplicitModelMapping(t *testing.T) {
+	priorityTargetID := int64(2)
+	modelOwnerTargetID := int64(16)
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 1, CompositeGroupID: 7, TargetGroupID: priorityTargetID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: priorityTargetID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 2, CompositeGroupID: 7, TargetGroupID: modelOwnerTargetID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: modelOwnerTargetID, Platform: PlatformOpenAI, Status: StatusActive}},
+	}})
+	resolver.SetModelOwnershipResolver(func(context.Context, int64, string) (CompositeModelOwnership, error) {
+		return CompositeModelOwnership{TargetPlatform: PlatformOpenAI, TargetGroupID: &modelOwnerTargetID, Matched: true}, nil
+	})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-image-2.5-sunburst-4k", CompositeRouteEndpointImages)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, &modelOwnerTargetID, decision.TargetGroupID)
+}
+
+func TestCompositeRouteResolverConfiguredButUnusableTargetsFailClosed(t *testing.T) {
+	deletedAt := time.Now()
+	for _, scenario := range []struct {
+		name   string
+		target CompositeGroupTarget
+	}{
+		{name: "disabled reference", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: false, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive}}},
+		{name: "soft deleted reference", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, DeletedAt: &deletedAt, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive}}},
+		{name: "inactive target group", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, TargetGroup: &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusDisabled}}},
+		{name: "nested composite", target: CompositeGroupTarget{CompositeGroupID: 7, TargetGroupID: 20, Priority: 1, Enabled: true, TargetGroup: &Group{ID: 20, Platform: PlatformComposite, Status: StatusActive}}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			resolver := NewCompositeRouteResolver(nil)
+			resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{scenario.target}})
+			decision, err := resolver.Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointResponses)
+			require.NoError(t, err)
+			require.False(t, decision.Matched)
+		})
+	}
+}
+
+func TestCompositeRouteResolverNoTargetReferencesKeepsLegacyPlatformRoute(t *testing.T) {
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+		ID: 1, GroupID: 7, PublicModel: "public-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+	}}})
+	resolver.SetTargetRepository(compositeTargetRepoStub{})
+	decision, err := resolver.Resolve(context.Background(), 7, "public-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Nil(t, decision.TargetGroupID)
 }
 
 func TestCompositeRouteResolverCodexFilteringMatchesProductionPriority(t *testing.T) {

@@ -589,6 +589,13 @@ func NewOpenAIGatewayService(
 	return svc
 }
 
+func (s *OpenAIGatewayService) GetActiveSubscription(ctx context.Context, userID, groupID int64) (*UserSubscription, error) {
+	if s == nil || s.userSubRepo == nil {
+		return nil, nil
+	}
+	return s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
+}
+
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）
 func (s *OpenAIGatewayService) ResolveChannelMapping(ctx context.Context, groupID int64, model string) ChannelMappingResult {
 	if s.channelService == nil {

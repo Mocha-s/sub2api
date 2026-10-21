@@ -69,6 +69,26 @@ func (_u *CompositeModelRouteUpdate) SetNillableGroupID(v *int64) *CompositeMode
 	return _u
 }
 
+// SetTargetGroupID sets the "target_group_id" field.
+func (_u *CompositeModelRouteUpdate) SetTargetGroupID(v int64) *CompositeModelRouteUpdate {
+	_u.mutation.SetTargetGroupID(v)
+	return _u
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdate) SetNillableTargetGroupID(v *int64) *CompositeModelRouteUpdate {
+	if v != nil {
+		_u.SetTargetGroupID(*v)
+	}
+	return _u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (_u *CompositeModelRouteUpdate) ClearTargetGroupID() *CompositeModelRouteUpdate {
+	_u.mutation.ClearTargetGroupID()
+	return _u
+}
+
 // SetPublicModel sets the "public_model" field.
 func (_u *CompositeModelRouteUpdate) SetPublicModel(v string) *CompositeModelRouteUpdate {
 	_u.mutation.SetPublicModel(v)
@@ -199,6 +219,11 @@ func (_u *CompositeModelRouteUpdate) SetGroup(v *Group) *CompositeModelRouteUpda
 	return _u.SetGroupID(v.ID)
 }
 
+// SetTargetGroup sets the "target_group" edge to the Group entity.
+func (_u *CompositeModelRouteUpdate) SetTargetGroup(v *Group) *CompositeModelRouteUpdate {
+	return _u.SetTargetGroupID(v.ID)
+}
+
 // Mutation returns the CompositeModelRouteMutation object of the builder.
 func (_u *CompositeModelRouteUpdate) Mutation() *CompositeModelRouteMutation {
 	return _u.mutation
@@ -207,6 +232,12 @@ func (_u *CompositeModelRouteUpdate) Mutation() *CompositeModelRouteMutation {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *CompositeModelRouteUpdate) ClearGroup() *CompositeModelRouteUpdate {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearTargetGroup clears the "target_group" edge to the Group entity.
+func (_u *CompositeModelRouteUpdate) ClearTargetGroup() *CompositeModelRouteUpdate {
+	_u.mutation.ClearTargetGroup()
 	return _u
 }
 
@@ -365,6 +396,35 @@ func (_u *CompositeModelRouteUpdate) sqlSave(ctx context.Context) (_node int, er
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.TargetGroupCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   compositemodelroute.TargetGroupTable,
+			Columns: []string{compositemodelroute.TargetGroupColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TargetGroupIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   compositemodelroute.TargetGroupTable,
+			Columns: []string{compositemodelroute.TargetGroupColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{compositemodelroute.Label}
@@ -422,6 +482,26 @@ func (_u *CompositeModelRouteUpdateOne) SetNillableGroupID(v *int64) *CompositeM
 	if v != nil {
 		_u.SetGroupID(*v)
 	}
+	return _u
+}
+
+// SetTargetGroupID sets the "target_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) SetTargetGroupID(v int64) *CompositeModelRouteUpdateOne {
+	_u.mutation.SetTargetGroupID(v)
+	return _u
+}
+
+// SetNillableTargetGroupID sets the "target_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdateOne) SetNillableTargetGroupID(v *int64) *CompositeModelRouteUpdateOne {
+	if v != nil {
+		_u.SetTargetGroupID(*v)
+	}
+	return _u
+}
+
+// ClearTargetGroupID clears the value of the "target_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) ClearTargetGroupID() *CompositeModelRouteUpdateOne {
+	_u.mutation.ClearTargetGroupID()
 	return _u
 }
 
@@ -555,6 +635,11 @@ func (_u *CompositeModelRouteUpdateOne) SetGroup(v *Group) *CompositeModelRouteU
 	return _u.SetGroupID(v.ID)
 }
 
+// SetTargetGroup sets the "target_group" edge to the Group entity.
+func (_u *CompositeModelRouteUpdateOne) SetTargetGroup(v *Group) *CompositeModelRouteUpdateOne {
+	return _u.SetTargetGroupID(v.ID)
+}
+
 // Mutation returns the CompositeModelRouteMutation object of the builder.
 func (_u *CompositeModelRouteUpdateOne) Mutation() *CompositeModelRouteMutation {
 	return _u.mutation
@@ -563,6 +648,12 @@ func (_u *CompositeModelRouteUpdateOne) Mutation() *CompositeModelRouteMutation 
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *CompositeModelRouteUpdateOne) ClearGroup() *CompositeModelRouteUpdateOne {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearTargetGroup clears the "target_group" edge to the Group entity.
+func (_u *CompositeModelRouteUpdateOne) ClearTargetGroup() *CompositeModelRouteUpdateOne {
+	_u.mutation.ClearTargetGroup()
 	return _u
 }
 
@@ -741,6 +832,35 @@ func (_u *CompositeModelRouteUpdateOne) sqlSave(ctx context.Context) (_node *Com
 			Inverse: false,
 			Table:   compositemodelroute.GroupTable,
 			Columns: []string{compositemodelroute.GroupColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TargetGroupCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   compositemodelroute.TargetGroupTable,
+			Columns: []string{compositemodelroute.TargetGroupColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TargetGroupIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   compositemodelroute.TargetGroupTable,
+			Columns: []string{compositemodelroute.TargetGroupColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
