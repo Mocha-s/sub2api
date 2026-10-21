@@ -187,6 +187,15 @@ func OpenAIPricingAtFromContext(ctx context.Context) time.Time {
 	return pricingAt
 }
 
+// WithOpenAIPricingAt restores a previously frozen request pricing instant,
+// including for delayed async work that executes outside the submit request.
+func WithOpenAIPricingAt(ctx context.Context, pricingAt time.Time) context.Context {
+	if pricingAt.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, openAIPricingAtCtxKey{}, pricingAt)
+}
+
 // withOpenAIProfitControlGate 解析分组利润控制配置；启用时把预计算好的准入门
 // 装进 ctx。抑制标记、未启用/非 openai 分组/无法取到分组配置时原样返回 ctx
 // （门不存在，全部否决点自动放行，既有行为零变化）。ctx 已有同分组门时直接

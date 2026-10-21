@@ -37,6 +37,7 @@ type ImageTaskRecord struct {
 	APIKeyID      int64           `json:"api_key_id"`
 	GroupID       int64           `json:"group_id,omitempty"`
 	SourceGroupID int64           `json:"source_group_id,omitempty"`
+	PricingAt     time.Time       `json:"pricing_at,omitempty"`
 	Status        string          `json:"status"`
 	HTTPStatus    int             `json:"http_status,omitempty"`
 	Result        json.RawMessage `json:"result,omitempty"`
@@ -66,6 +67,7 @@ type ImageTaskOwner struct {
 	APIKeyID      int64
 	GroupID       int64
 	SourceGroupID int64
+	PricingAt     time.Time
 }
 
 type ImageTaskStore interface {
@@ -165,6 +167,7 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 		APIKeyID:      owner.APIKeyID,
 		GroupID:       owner.GroupID,
 		SourceGroupID: owner.SourceGroupID,
+		PricingAt:     owner.PricingAt,
 		Status:        ImageTaskStatusProcessing,
 		CreatedAt:     now.Unix(),
 		ExpiresAt:     now.Add(s.ttl).Unix(),
@@ -173,6 +176,17 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
 	return imageTaskToPublic(task), nil
+}
+
+func (s *ImageTaskService) WithPricingContext(ctx context.Context, id string) context.Context {
+	if s == nil || s.store == nil {
+		return ctx
+	}
+	task, err := s.store.Get(ctx, strings.TrimSpace(id))
+	if err != nil || task == nil {
+		return ctx
+	}
+	return WithOpenAIPricingAt(ctx, task.PricingAt)
 }
 
 func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id string) (*ImageTask, error) {
