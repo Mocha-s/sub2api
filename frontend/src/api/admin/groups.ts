@@ -330,7 +330,7 @@ export async function previewCompositeRoute(
 
 export async function listCompositeTargets(id: number): Promise<CompositeGroupTarget[]> {
   const { data } = await apiClient.get<CompositeGroupTarget[]>(`/admin/groups/${id}/composite-targets`)
-  return data
+  return data ?? []
 }
 
 export async function createCompositeTarget(

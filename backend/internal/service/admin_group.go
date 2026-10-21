@@ -281,6 +281,9 @@ func (s *adminServiceImpl) ListCompositeTargets(ctx context.Context, groupID int
 	if err != nil {
 		return nil, err
 	}
+	if targets == nil {
+		return []CompositeGroupTarget{}, nil
+	}
 	active := targets[:0]
 	for _, target := range targets {
 		if target.DeletedAt == nil {

@@ -1233,6 +1233,7 @@ export default {
       compositeTargets: {
         title: '动态目标分组',
         hint: '账号池会动态读取这些分组；静态复制账号仅作为旧配置兜底。',
+        dynamicBilling: '启用动态账号计费',
         targetGroup: '具体分组',
         selectTarget: '选择目标分组',
         priority: '优先级',

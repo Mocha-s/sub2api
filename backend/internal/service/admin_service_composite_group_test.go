@@ -244,12 +244,16 @@ func TestAdminService_CompositeModelsListCandidatesIncludeConcreteAccountMapping
 
 type compositeGroupTargetRepoStub struct {
 	targets []CompositeGroupTarget
+	nilList bool
 	created *CompositeGroupTarget
 	updated *CompositeGroupTarget
 	deleted []int64
 }
 
 func (r *compositeGroupTargetRepoStub) ListByCompositeGroup(_ context.Context, groupID int64, includeDisabled bool) ([]CompositeGroupTarget, error) {
+	if r.nilList {
+		return nil, nil
+	}
 	out := make([]CompositeGroupTarget, 0, len(r.targets))
 	for _, target := range r.targets {
 		if target.CompositeGroupID == groupID && (includeDisabled || target.Enabled) {
@@ -304,6 +308,19 @@ func TestAdminService_CreateCompositeTargetValidatesAndInvalidatesSource(t *test
 	require.Equal(t, 10, target.Priority)
 	require.Equal(t, target, targetRepo.created)
 	require.Equal(t, []int64{7}, invalidator.groupIDs)
+}
+
+func TestAdminService_ListCompositeTargetsReturnsEmptyArrayWhenUnconfigured(t *testing.T) {
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive},
+	}}
+	targetRepo := &compositeGroupTargetRepoStub{nilList: true}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeTargetRepo: targetRepo}
+
+	targets, err := svc.ListCompositeTargets(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, targets)
+	require.Empty(t, targets)
 }
 
 func TestAdminService_CreateCompositeTargetRejectsNestedAndInactiveTargets(t *testing.T) {

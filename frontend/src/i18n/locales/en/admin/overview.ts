@@ -1236,6 +1236,7 @@ export default {
       compositeTargets: {
         title: 'Dynamic Target Groups',
         hint: 'Accounts are read from these groups dynamically. Static account copying remains a legacy fallback.',
+        dynamicBilling: 'Use dynamic account billing',
         targetGroup: 'Concrete group',
         selectTarget: 'Select a target group',
         priority: 'Priority',

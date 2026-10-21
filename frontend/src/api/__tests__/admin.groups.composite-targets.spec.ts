@@ -27,6 +27,11 @@ describe('admin composite target API', () => {
     expect(get).toHaveBeenCalledWith('/admin/groups/7/composite-targets')
   })
 
+  it('normalizes an empty response to an empty array', async () => {
+    get.mockResolvedValue({ data: null })
+    await expect(listCompositeTargets(7)).resolves.toEqual([])
+  })
+
   it('writes target references and preserves the target payload', async () => {
     post.mockResolvedValue({ data: { id: 1, target_group_id: 20, priority: 10, enabled: true } })
     put.mockResolvedValue({ data: { id: 1, target_group_id: 20, priority: 2, enabled: false } })
