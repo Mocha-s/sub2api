@@ -76,6 +76,7 @@ func TestGeminiBananaBridgeModel(t *testing.T) {
 	require.True(t, IsGeminiBananaBridgeModel("nano-banana2-2k"))
 	require.True(t, IsGeminiBananaBridgeModel("banana2-2k"))
 	require.True(t, IsGeminiBananaBridgeModel("nano-banana-pro-4k"))
+	require.True(t, IsGeminiBananaBridgeModel("gemini-nano-banana-2.1"))
 }
 
 func TestBuildOpenAIImagesBodyFromGeminiBanana(t *testing.T) {

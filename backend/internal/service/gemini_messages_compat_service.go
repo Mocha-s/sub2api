@@ -1067,6 +1067,10 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	imageInputSize := s.extractImageInputSize(body)
 	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
 	imageCount := resolveGeminiImageCount(c, originalModel, mappedModel)
+	if (imageInputSize != "" || isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel)) && observedGeminiImageOutputResponseWithoutImage(c) {
+		// Do not record a successful image use when the client received no inline image data.
+		return nil, nil
+	}
 
 	return &ForwardResult{
 		RequestID:                     requestID,
@@ -1602,6 +1606,10 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	imageInputSize := s.extractImageInputSize(body)
 	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
 	imageCount := resolveGeminiImageCount(c, originalModel, mappedModel)
+	if (imageInputSize != "" || isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel)) && observedGeminiImageOutputResponseWithoutImage(c) {
+		// Do not record a successful image use when the client received no inline image data.
+		return nil, nil
+	}
 
 	return &ForwardResult{
 		RequestID:                     requestID,

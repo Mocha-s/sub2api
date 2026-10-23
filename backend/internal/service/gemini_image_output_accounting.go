@@ -21,7 +21,8 @@ const geminiImageOutputCounterKey = "gemini_image_output_counter"
 //   - 增量式流且多图分散在不同 chunk：会低估到 1，与改动前的模型名启发式同值，
 //     不构成回退。
 type geminiImageOutputCounter struct {
-	count int
+	count    int
+	observed bool
 }
 
 // beginGeminiImageOutputObservation 在每次 Forward 开头重置计数器。
@@ -55,6 +56,7 @@ func observeGeminiImageOutputs(c *gin.Context, payload []byte) {
 	if counter == nil {
 		return
 	}
+	counter.observed = true
 	if count := countGeminiInlineImageOutputs(payload); count > counter.count {
 		counter.count = count
 	}
@@ -68,6 +70,11 @@ func observedGeminiImageOutputs(c *gin.Context) int {
 	return counter.count
 }
 
+func observedGeminiImageOutputResponseWithoutImage(c *gin.Context) bool {
+	counter := geminiImageOutputCounterFromContext(c)
+	return counter != nil && counter.observed && counter.count == 0
+}
+
 // resolveGeminiImageCount 决定本次请求按几张图计费。
 //
 // 优先用上游真正返回的内联图片数：走 GeminiMessagesCompatService 的账号多是
@@ -76,13 +83,11 @@ func observedGeminiImageOutputs(c *gin.Context) int {
 // 于是 ImageCount=0，calculateRecordUsageCost 整条按次计费分支不触发，
 // 生图请求全部记 $0。
 //
-// 只有响应里数不出图时（例如上游用 fileData 引用而非 inlineData 回图，或聚合
-// 函数丢掉了图片 part）才退回既有的模型名启发式，保证老行为不回退；这里额外
-// 也认映射后的上游模型名，与 shouldSkipCodexPlanGatedImageModelCooldown 对
-// requestedModel / modelKey 双取的口径一致。
+// 只有尚未开始观测响应时才退回模型名启发式；一旦观测到响应却没有 inlineData，
+// 必须按 0 张图处理，避免上游空响应或文本响应被误扣一张图。
 func resolveGeminiImageCount(c *gin.Context, originalModel, mappedModel string) int {
-	if observed := observedGeminiImageOutputs(c); observed > 0 {
-		return observed
+	if counter := geminiImageOutputCounterFromContext(c); counter != nil && counter.observed {
+		return counter.count
 	}
 	if isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel) {
 		return 1
