@@ -50,7 +50,7 @@ func TestBuildOpenAIImagesRequestFromGeminiBananaUsesMultipartForInlineReference
 	t.Cleanup(func() { _ = form.RemoveAll() })
 	require.Equal(t, []string{"nano-banana-pro-2k"}, form.Value["model"])
 	require.Equal(t, []string{"preserve face"}, form.Value["prompt"])
-	require.Equal(t, []string{"2K"}, form.Value["size"])
+	require.Equal(t, []string{"2048x2048"}, form.Value["size"])
 	require.Equal(t, []string{"3:4"}, form.Value["aspect_ratio"])
 	require.Len(t, form.File["image"], 1)
 	require.Equal(t, "image/png", form.File["image"][0].Header.Get("Content-Type"))
@@ -84,9 +84,28 @@ func TestBuildOpenAIImagesBodyFromGeminiBanana(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "nano-banana-pro-4k", gjson.GetBytes(converted, "model").String())
 	require.Equal(t, "draw a cat", gjson.GetBytes(converted, "prompt").String())
-	require.Equal(t, "4K", gjson.GetBytes(converted, "size").String())
+	require.Equal(t, "4096x4096", gjson.GetBytes(converted, "size").String())
 	require.Equal(t, "9:16", gjson.GetBytes(converted, "aspect_ratio").String())
 	require.Equal(t, "data:image/png;base64,QUJD", gjson.GetBytes(converted, "images.0.image_url").String())
+}
+
+func TestBuildOpenAIImagesBodyFromGeminiBananaConvertsSizeTierForCompatibleUpstream(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "one k", body: `{"contents":[{"parts":[{"text":"draw"}]}],"generationConfig":{"imageConfig":{"imageSize":"1K","aspectRatio":"9:16"}}}`, want: "1024x1024"},
+		{name: "two k", body: `{"contents":[{"parts":[{"text":"draw"}]}],"generationConfig":{"imageConfig":{"imageSize":"2K","aspectRatio":"1:1"}}}`, want: "2048x2048"},
+		{name: "four k", body: `{"contents":[{"parts":[{"text":"draw"}]}],"generationConfig":{"imageConfig":{"imageSize":"4K","aspectRatio":"16:9"}}}`, want: "4096x4096"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			converted, err := BuildOpenAIImagesBodyFromGeminiBanana("nano-banana2-1k", []byte(tt.body))
+			require.NoError(t, err)
+			require.Equal(t, tt.want, gjson.GetBytes(converted, "size").String())
+			require.NotEmpty(t, gjson.GetBytes(converted, "aspect_ratio").String())
+		})
+	}
 }
 
 func TestBuildOpenAIImagesBodyFromGeminiBananaAcceptsSnakeCaseImageParts(t *testing.T) {
