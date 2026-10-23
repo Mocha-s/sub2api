@@ -497,9 +497,12 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 	if quote != nil {
 		captureCtx, cancelCapture := videoTaskPersistenceContext(ctx)
 		var captureErr error
-		if providerResult.Status == VideoTaskStatusFailed {
+		switch providerResult.Status {
+		case VideoTaskStatusFailed:
 			captureErr = s.settlement.FailAndRelease(captureCtx, publicTaskID, errors.New("video task provider returned failed status"))
-		} else {
+		case VideoTaskStatusCancelled, VideoTaskStatusExpired:
+			captureErr = s.settlement.ReconcilePersistedTask(captureCtx, publicTaskID)
+		default:
 			_, captureErr = s.settlement.Capture(captureCtx, publicTaskID)
 		}
 		cancelCapture()
@@ -526,7 +529,10 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		task.ResponseBody = append([]byte(nil), providerResult.RawBody...)
 		task.SubmittedAt = &submittedAt
 	}
-	if quote == nil && s.usageRecorder != nil {
+	if quote == nil && s.usageRecorder != nil &&
+		providerResult.Status != VideoTaskStatusFailed &&
+		providerResult.Status != VideoTaskStatusCancelled &&
+		providerResult.Status != VideoTaskStatusExpired {
 		usageCtx, cancelUsage := videoTaskPersistenceContext(ctx)
 		s.usageRecorder.RecordVideoTaskSubmission(usageCtx, params, account, task, providerResult, upstreamModel)
 		cancelUsage()

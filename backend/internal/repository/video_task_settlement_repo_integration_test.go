@@ -1600,6 +1600,40 @@ func TestVideoTaskSettlementRepository_BalanceReleaseRestoresOnlyReservation(t *
 	require.Zero(t, refunded)
 }
 
+func TestVideoTaskSettlementRepository_ReleaseRemovesProvisionalUsage(t *testing.T) {
+	ctx := context.Background()
+	f := newVideoSettlementFixture(t, false, false)
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	mode := string(service.BillingModeVideo)
+	upstreamModel := "video-test"
+	inboundEndpoint, upstreamEndpoint := "/v1/videos", "/v1/videos"
+	rateMultiplier, accountRateMultiplier, accountStatsCost := 1.0, 1.0, 1.0
+	groupID := f.groupID
+	usage := &service.UsageLog{
+		UserID: f.userID, APIKeyID: f.apiKeyID, AccountID: f.accountID,
+		RequestID: service.VideoTaskChargeRequestID(f.publicID), Model: "video-test", RequestedModel: "video-test",
+		UpstreamModel: &upstreamModel, GroupID: &groupID, BillingMode: &mode, BillingType: service.BillingTypeBalance,
+		RequestType: service.RequestTypeSync, InboundEndpoint: &inboundEndpoint, UpstreamEndpoint: &upstreamEndpoint,
+		TotalCost: 3, RateMultiplier: rateMultiplier, AccountRateMultiplier: &accountRateMultiplier,
+		AccountStatsCost: &accountStatsCost, CreatedAt: time.Now(),
+	}
+	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{
+		PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, ActualCostUSD: 3,
+		Effects:   service.VideoTaskBillingEffects{BalanceCost: 3, AccountStatsCost: 1},
+		Admission: &service.VideoTaskSettlementAdmission{UsageLog: usage},
+	})
+	require.NoError(t, err)
+
+	_, err = repo.Release(ctx, &service.VideoTaskSettlementReleaseCommand{PublicTaskID: f.publicID})
+	require.NoError(t, err)
+	var usageCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_logs WHERE request_id=$1`, usage.RequestID).Scan(&usageCount))
+	require.Zero(t, usageCount)
+	var usageLogID *int64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT usage_log_id FROM video_tasks WHERE public_task_id=$1`, f.publicID).Scan(&usageLogID))
+	require.Nil(t, usageLogID)
+}
+
 func TestVideoTaskSettlementRepository_SubscriptionReserveAndRelease(t *testing.T) {
 	ctx := context.Background()
 	f := newVideoSettlementFixture(t, true, false)

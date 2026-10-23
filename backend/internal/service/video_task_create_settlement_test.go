@@ -48,6 +48,71 @@ func TestVideoTaskCreateImmediateProviderFailurePersistsThenReleasesWithoutCaptu
 	require.Equal(t, VideoTaskStatusFailed, stored.Status)
 }
 
+func TestVideoTaskCreateImmediateCancelledOrExpiredReleasesReservedSettlement(t *testing.T) {
+	for _, status := range []VideoTaskStatus{VideoTaskStatusCancelled, VideoTaskStatusExpired} {
+		t.Run(string(status), func(t *testing.T) {
+			events := &videoTaskServiceTestEvents{}
+			svc, tasks, provider, _ := pricedVideoTaskServiceFixture(events)
+			provider.createResult = &VideoProviderCreateResult{
+				ProviderTaskID: "upstream_terminal",
+				Status:         status,
+				ProviderStatus: string(status),
+				RawBody:        []byte(`{"id":"upstream_terminal","status":"` + string(status) + `"}`),
+			}
+			settlements := &videoTaskSettlementRepoStub{
+				reserveResult: &VideoTaskSettlementResult{Applied: true, Settlement: &VideoTaskSettlementSnapshot{State: VideoTaskSettlementReserved}},
+				snapshot:      &VideoTaskSettlementSnapshot{State: VideoTaskSettlementReserved},
+			}
+			svc.settlement = &VideoTaskSettlementService{repo: settlements, tasks: tasks}
+
+			result, err := svc.Create(context.Background(), VideoTaskCreateParams{
+				APIKey: videoTaskTestAPIKey(), User: &User{ID: 7},
+				Body: []byte(`{"model":"video-test","prompt":"test","seconds":5}`),
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, status, result.Task.Status)
+			require.Equal(t, 1, settlements.releaseCalls)
+			require.Zero(t, settlements.captureCalls)
+		})
+	}
+}
+
+func TestVideoTaskCreateLegacyUsageSkipsUnsuccessfulTerminalStatuses(t *testing.T) {
+	for _, tt := range []struct {
+		status       VideoTaskStatus
+		wantUsageLog int
+	}{
+		{status: VideoTaskStatusQueued, wantUsageLog: 1},
+		{status: VideoTaskStatusCompleted, wantUsageLog: 1},
+		{status: VideoTaskStatusFailed},
+		{status: VideoTaskStatusCancelled},
+		{status: VideoTaskStatusExpired},
+	} {
+		t.Run(string(tt.status), func(t *testing.T) {
+			events := &videoTaskServiceTestEvents{}
+			repo := newFakeVideoTaskRepository(events)
+			usage := &fakeVideoTaskUsageRecorder{events: events}
+			provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{
+				ProviderTaskID: "upstream_unpriced",
+				Status:         tt.status,
+				ProviderStatus: string(tt.status),
+				RawBody:        []byte(`{"id":"upstream_unpriced","status":"` + string(tt.status) + `"}`),
+			}}
+			selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+			svc := newVideoTaskServiceForTest(repo, nil, selector, provider, usage)
+
+			_, err := svc.Create(context.Background(), VideoTaskCreateParams{
+				APIKey: videoTaskTestAPIKey(), User: &User{ID: 7},
+				Body: []byte(`{"model":"video-test","prompt":"test"}`),
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantUsageLog, usage.calls)
+		})
+	}
+}
+
 func TestVideoTaskServiceCreateVideoPricingSettlesInStrictOrder(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	svc, _, provider, settlement := pricedVideoTaskServiceFixture(events)

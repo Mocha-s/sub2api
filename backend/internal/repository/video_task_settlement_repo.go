@@ -343,6 +343,9 @@ func (r *videoTaskSettlementRepository) release(ctx context.Context, cmd *servic
 		if err := reverseReservation(ctx, tx, task, row, holdAmount, effects); err != nil {
 			return nil, err
 		}
+		if err := deleteReleasedVideoTaskUsage(ctx, tx, task, row); err != nil {
+			return nil, err
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE video_task_settlements SET state='released',released_at=NOW(),updated_at=NOW() WHERE id=$1 AND state='reserved'`, row.id)
 		if err != nil {
 			return nil, err
@@ -394,28 +397,15 @@ func (r *videoTaskSettlementRepository) FailSubmission(ctx context.Context, cmd 
 		if err != nil {
 			return nil, err
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE video_tasks SET status=$1,provider_status=$1,error_message=$2,result_metadata=COALESCE(result_metadata,'{}'::jsonb)||$3::jsonb,usage_log_id=NULL,completed_at=NOW(),next_poll_at=NULL,updated_at=NOW() WHERE id=$4`, string(service.VideoTaskStatusFailed), strings.TrimSpace(cmd.ErrorMessage), metadata, task.id)
+		res, err := tx.ExecContext(ctx, `UPDATE video_tasks SET status=$1,provider_status=$1,error_message=$2,result_metadata=COALESCE(result_metadata,'{}'::jsonb)||$3::jsonb,completed_at=NOW(),next_poll_at=NULL,updated_at=NOW() WHERE id=$4`, string(service.VideoTaskStatusFailed), strings.TrimSpace(cmd.ErrorMessage), metadata, task.id)
 		if err != nil {
 			return nil, err
 		}
 		if err := requireOneRow(res, "fail video task submission"); err != nil {
 			return nil, err
 		}
-		if row.usageLogID.Valid {
-			if _, err := tx.ExecContext(ctx, `WITH target AS (
-				SELECT ul.id FROM usage_logs ul
-				WHERE ul.id=$1 AND NOT EXISTS (
-					SELECT 1 FROM video_task_refund_reporting_jobs j
-					WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
-				) FOR UPDATE OF ul
-			), deleted_jobs AS (
-				DELETE FROM video_task_refund_reporting_jobs j USING target
-				WHERE j.usage_log_id=target.id AND j.completed_at IS NOT NULL
-			)
-			DELETE FROM usage_logs ul USING target WHERE ul.id=target.id`, row.usageLogID.Int64); err != nil {
-				return nil, err
-			}
-			task.usageLogID = sql.NullInt64{}
+		if err := deleteReleasedVideoTaskUsage(ctx, tx, task, row); err != nil {
+			return nil, err
 		}
 		res, err = tx.ExecContext(ctx, `UPDATE video_task_settlements SET state='released',released_at=NOW(),updated_at=NOW() WHERE id=$1 AND state='reserved'`, row.id)
 		if err != nil {
@@ -1399,6 +1389,39 @@ func reverseReservation(ctx context.Context, tx *sql.Tx, task *settlementTaskRow
 		return requireOneRow(res, "release balance reservation")
 	}
 	return decrementSubscription(ctx, tx, task.subscriptionID.Int64, amount, effects.WindowSnapshot)
+}
+
+func deleteReleasedVideoTaskUsage(ctx context.Context, tx *sql.Tx, task *settlementTaskRow, row *settlementRow) error {
+	if !row.usageLogID.Valid {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, `WITH target AS (
+		SELECT ul.id FROM usage_logs ul
+		WHERE ul.id=$1 AND NOT EXISTS (
+			SELECT 1 FROM video_task_refund_reporting_jobs j
+			WHERE j.usage_log_id=ul.id AND j.completed_at IS NULL
+		) FOR UPDATE OF ul
+	), deleted_jobs AS (
+		DELETE FROM video_task_refund_reporting_jobs j USING target
+		WHERE j.usage_log_id=target.id AND j.completed_at IS NOT NULL
+	)
+	DELETE FROM usage_logs ul USING target WHERE ul.id=target.id`, row.usageLogID.Int64)
+	if err != nil {
+		return err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil || deleted == 0 {
+		return err
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE video_tasks SET usage_log_id=NULL,updated_at=NOW() WHERE id=$1 AND usage_log_id=$2`, task.id, row.usageLogID.Int64)
+	if err != nil {
+		return err
+	}
+	if err := requireOneRow(result, "clear released video task usage link"); err != nil {
+		return err
+	}
+	task.usageLogID = sql.NullInt64{}
+	return nil
 }
 
 func reverseCapturedEffects(ctx context.Context, tx *sql.Tx, task *settlementTaskRow, row *settlementRow, effects service.VideoTaskBillingEffects, applied *authoritativeCaptureSnapshot, reason string) error {

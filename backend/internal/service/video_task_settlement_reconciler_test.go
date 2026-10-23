@@ -27,8 +27,8 @@ func TestVideoTaskSettlementServiceReconcilePersistedTaskUsesPersistedState(t *t
 		{name: "completed charged repairs usage", taskStatus: VideoTaskStatusCompleted, settlement: VideoTaskSettlementCharged, wantRepair: 1},
 		{name: "cancelled charged repairs usage", taskStatus: VideoTaskStatusCancelled, settlement: VideoTaskSettlementCharged, wantRepair: 1},
 		{name: "expired charged repairs usage", taskStatus: VideoTaskStatusExpired, settlement: VideoTaskSettlementCharged, wantRepair: 1},
-		{name: "cancelled reserved remains reserved", taskStatus: VideoTaskStatusCancelled, settlement: VideoTaskSettlementReserved},
-		{name: "expired reserved remains reserved", taskStatus: VideoTaskStatusExpired, settlement: VideoTaskSettlementReserved},
+		{name: "cancelled reserved releases hold", taskStatus: VideoTaskStatusCancelled, settlement: VideoTaskSettlementReserved, wantRelease: 1},
+		{name: "expired reserved releases hold", taskStatus: VideoTaskStatusExpired, settlement: VideoTaskSettlementReserved, wantRelease: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tasks := newFakeVideoTaskRepository(nil)

@@ -406,15 +406,23 @@ func (s *VideoTaskSettlementService) ReconcilePersistedTask(ctx context.Context,
 		return nil
 	}
 
+	if task.Status == VideoTaskStatusCancelled || task.Status == VideoTaskStatusExpired {
+		if settlement.State == VideoTaskSettlementReserved {
+			result, err := s.repo.Release(ctx, &VideoTaskSettlementReleaseCommand{PublicTaskID: publicTaskID})
+			if err != nil {
+				return err
+			}
+			s.afterCommit(ctx, result)
+			return nil
+		}
+	}
+
 	if settlement.State == VideoTaskSettlementCharged {
 		result, err := s.repo.RepairChargedUsage(ctx, publicTaskID)
 		if err != nil {
 			return err
 		}
 		s.afterCommit(ctx, result)
-	}
-	if task.Status == VideoTaskStatusCancelled || task.Status == VideoTaskStatusExpired {
-		return nil
 	}
 	if settlement.State == VideoTaskSettlementReserved {
 		_, err := s.Reconcile(ctx, task)
