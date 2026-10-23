@@ -35,7 +35,7 @@ func buildGeminiAIStudioModelActionURL(baseURL, model, action string, stream boo
 	if trimmedModel == "" {
 		return "", errors.New("gemini model is required")
 	}
-	if err := validateUpstreamPathSegment("gemini model", trimmedModel); err != nil {
+	if err := validateGeminiModelPathSegment(trimmedModel); err != nil {
 		return "", err
 	}
 	trimmedAction := strings.TrimSpace(action)
@@ -53,5 +53,35 @@ func buildGeminiAIStudioModelActionURL(baseURL, model, action string, stream boo
 // IsSafeGeminiModelPathSegment 供 handler 层在解析出 URL 里的模型名后立刻校验，
 // 让客户端拿到明确的 400，而不是等到构造上游请求时才报错。
 func IsSafeGeminiModelPathSegment(model string) bool {
-	return isSafeUpstreamPathSegment(strings.TrimSpace(model))
+	return isSafeGeminiModelPathSegment(strings.TrimSpace(model))
+}
+
+func validateGeminiModelPathSegment(model string) error {
+	if !isSafeGeminiModelPathSegment(strings.TrimSpace(model)) {
+		return errors.New("invalid gemini model for upstream url path")
+	}
+	return nil
+}
+
+// isSafeGeminiModelPathSegment permits a provider-specific route tag such as
+// [yu] before an otherwise safe model ID. The tag is intentionally narrow so
+// brackets cannot introduce path, query, or fragment syntax.
+func isSafeGeminiModelPathSegment(model string) bool {
+	if isSafeUpstreamPathSegment(model) {
+		return true
+	}
+	if len(model) > maxUpstreamPathSegmentLen || !strings.HasPrefix(model, "[") {
+		return false
+	}
+	close := strings.IndexByte(model, ']')
+	if close <= 1 || close >= len(model)-1 {
+		return false
+	}
+	for i := 1; i < close; i++ {
+		b := model[i]
+		if !(b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_' || b == '-') {
+			return false
+		}
+	}
+	return isSafeUpstreamPathSegment(model[close+1:])
 }

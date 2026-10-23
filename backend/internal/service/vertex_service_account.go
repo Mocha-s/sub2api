@@ -343,7 +343,7 @@ func buildVertexGeminiExpressURL(model, action string, stream bool) (string, err
 	if model == "" {
 		return "", errors.New("vertex model is required")
 	}
-	if err := validateUpstreamPathSegment("gemini model", model); err != nil {
+	if err := validateGeminiModelPathSegment(model); err != nil {
 		return "", err
 	}
 	if err := validateVertexGeminiAction(action); err != nil {
@@ -404,7 +404,7 @@ func buildVertexGeminiURL(projectID, location, model, action string, stream bool
 	if model == "" {
 		return "", errors.New("vertex model is required")
 	}
-	if err := validateUpstreamPathSegment("gemini model", model); err != nil {
+	if err := validateGeminiModelPathSegment(model); err != nil {
 		return "", err
 	}
 	if err := validateVertexGeminiAction(action); err != nil {
