@@ -45,6 +45,10 @@ func TestBuildGeminiAIStudioModelActionURL(t *testing.T) {
 	got, err = buildGeminiAIStudioModelActionURL(base, "models/gemini-3.1-flash-image", "generateContent", false)
 	require.NoError(t, err)
 	require.Equal(t, base+"/v1beta/models/gemini-3.1-flash-image:generateContent", got)
+
+	got, err = buildGeminiAIStudioModelActionURL(base, "[yu]gemini-3.1-flash-image-preview", "generateContent", false)
+	require.NoError(t, err)
+	require.Equal(t, base+"/v1beta/models/[yu]gemini-3.1-flash-image-preview:generateContent", got)
 }
 
 // TestBuildGeminiAIStudioModelActionURLRejectsNonConformingModel 锁定不变式：
@@ -84,4 +88,22 @@ func TestBuildGeminiAIStudioModelActionURLRejectsNonConformingModel(t *testing.T
 
 	_, err = buildGeminiAIStudioModelActionURL("", "gemini-2.5-pro", "generateContent", false)
 	require.Error(t, err)
+}
+
+func TestGeminiModelRouteTagsAreStrictlyValidated(t *testing.T) {
+	for _, model := range []string{
+		"[yu]gemini-3.1-flash-image-preview",
+		"[vendor_1]gemini-3.1-flash-image-preview",
+	} {
+		require.True(t, IsSafeGeminiModelPathSegment(model), model)
+	}
+	for _, model := range []string{
+		"[]gemini-3.1-flash-image-preview",
+		"[../]gemini-3.1-flash-image-preview",
+		"[yu/vendor]gemini-3.1-flash-image-preview",
+		"[yu]gemini-3.1-flash-image-preview/../x",
+		"[yu]gemini-3.1-flash-image-preview?x=1",
+	} {
+		require.False(t, IsSafeGeminiModelPathSegment(model), model)
+	}
 }
