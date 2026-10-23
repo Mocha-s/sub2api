@@ -2,14 +2,39 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"mime"
 	"mime/multipart"
+	"net/http"
+	"net/url"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+type geminiBananaSafeImageUpstream struct {
+	publicOnly       bool
+	redirectRejected bool
+	body             []byte
+}
+
+func (u *geminiBananaSafeImageUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	u.publicOnly = HTTPUpstreamPublicHostsOnly(req.Context())
+	redirectTarget, _ := url.Parse("https://user:pass@image.example/redirect.png")
+	u.redirectRejected = ValidateHTTPRedirect(req.Context(), redirectTarget) != nil
+	body := u.body
+	if len(body) == 0 {
+		body = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
+}
+
+func (u *geminiBananaSafeImageUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, concurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, concurrency)
+}
 
 func TestBuildOpenAIImagesRequestFromGeminiBananaUsesMultipartForInlineReference(t *testing.T) {
 	body := []byte(`{"contents":[{"parts":[{"text":"preserve face"},{"inlineData":{"mimeType":"image/png","data":"QUJD"}}]}],"generationConfig":{"imageConfig":{"imageSize":"2K","aspectRatio":"3:4"}}}`)
@@ -49,6 +74,7 @@ func TestBuildOpenAIImagesRequestFromGeminiBananaKeepsTextGenerationJSON(t *test
 func TestGeminiBananaBridgeModel(t *testing.T) {
 	require.False(t, IsGeminiBananaBridgeModel("gemini-3.1-flash-image"))
 	require.True(t, IsGeminiBananaBridgeModel("nano-banana2-2k"))
+	require.True(t, IsGeminiBananaBridgeModel("banana2-2k"))
 	require.True(t, IsGeminiBananaBridgeModel("nano-banana-pro-4k"))
 }
 
@@ -89,4 +115,32 @@ func TestBuildGeminiBananaResponseFromOpenAIImagesDownloadsURL(t *testing.T) {
 	require.Equal(t, 1, count)
 	require.Equal(t, "image/jpeg", gjson.GetBytes(geminiBody, "candidates.0.content.parts.0.inlineData.mimeType").String())
 	require.Equal(t, "SlBFRw==", gjson.GetBytes(geminiBody, "candidates.0.content.parts.0.inlineData.data").String())
+}
+
+func TestOpenAIGatewayServiceBuildGeminiBananaResponseUsesSafeUpstream(t *testing.T) {
+	upstream := &geminiBananaSafeImageUpstream{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	response, _, count, err := svc.BuildGeminiBananaResponseFromOpenAIImages(
+		context.Background(),
+		&Account{ID: 7},
+		"nano-banana-pro-2k",
+		[]byte(`{"data":[{"url":"https://image.example/out.png"}]}`),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.True(t, upstream.publicOnly)
+	require.True(t, upstream.redirectRejected)
+	require.Equal(t, "iVBORw0KGgo=", gjson.GetBytes(response, "candidates.0.content.parts.0.inlineData.data").String())
+}
+
+func TestBuildGeminiBananaResponseRejectsUnsafeImageURLs(t *testing.T) {
+	svc := &OpenAIGatewayService{httpUpstream: &geminiBananaSafeImageUpstream{}}
+	for _, imageURL := range []string{"file:///etc/passwd", "https://user:pass@image.example/a.png", "http://127.0.0.1/a.png"} {
+		t.Run(imageURL, func(t *testing.T) {
+			_, _, _, err := svc.BuildGeminiBananaResponseFromOpenAIImages(context.Background(), nil, "nano-banana-pro-2k", []byte(`{"data":[{"url":"`+imageURL+`"}]}`))
+			require.Error(t, err)
+		})
+	}
 }

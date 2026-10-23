@@ -46,6 +46,18 @@ func TestCompatibleImagesGeminiModels(t *testing.T) {
 	}
 }
 
+func TestNanoBananaImagesRequireOpenAIAPIKeyCapability(t *testing.T) {
+	model := "nano-banana-pro-4k"
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, strings.NewReader(fmt.Sprintf(`{"model":%q,"prompt":"draw"}`, model)))
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw"}`, model)))
+	require.NoError(t, err)
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapability)
+	require.True(t, (&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}).SupportsOpenAIImageCapability(parsed.RequiredCapability))
+	require.False(t, (&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}).SupportsOpenAIImageCapability(parsed.RequiredCapability))
+	require.True(t, (&Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}).SupportsOpenAIImageCapability(parsed.RequiredCapability))
+}
+
 func TestCompatibleImagesForwardGemini(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, kind := range []string{"generation", "json_edit", "multipart_edit", "composite_multipart_alias", "channel_mapping", "account_mapping"} {

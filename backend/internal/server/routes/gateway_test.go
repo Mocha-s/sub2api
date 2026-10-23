@@ -128,6 +128,17 @@ func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 	}
 }
 
+func TestGatewayRoutesGeminiNanoBananaUsesImagesHandler(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformGemini)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"nano-banana-pro-4k","prompt":"draw a cat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.NotEqual(t, http.StatusNotFound, w.Code)
+}
+
 func TestGatewayRoutesOpenAIVideoTaskPathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
 

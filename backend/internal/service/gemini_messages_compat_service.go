@@ -548,7 +548,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	originalModel := req.Model
 	mappedModel := req.Model
 	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
-		mappedModel = account.GetMappedModel(req.Model)
+		mappedModel = NormalizeGeminiModelID(account.GetMappedModel(req.Model))
 	}
 
 	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
@@ -1139,7 +1139,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 
 	mappedModel := originalModel
 	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
-		mappedModel = account.GetMappedModel(originalModel)
+		mappedModel = NormalizeGeminiModelID(account.GetMappedModel(originalModel))
 	}
 
 	proxyURL := ""

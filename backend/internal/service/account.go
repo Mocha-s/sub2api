@@ -2081,12 +2081,15 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	if capability == "" {
 		return true
 	}
+	if capability == OpenAIImagesCapabilityAPIKey && a.Platform == PlatformGemini && a.Type == AccountTypeAPIKey {
+		return true
+	}
 	if !a.IsOpenAI() {
 		return false
 	}
 	switch capability {
 	case OpenAIImagesCapabilityAPIKey:
-		return a.Type == AccountTypeAPIKey
+		return a.Type == AccountTypeAPIKey && (a.IsOpenAICompatible() || a.Platform == PlatformGemini)
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken || a.Type == AccountTypeAPIKey
 	default:

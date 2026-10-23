@@ -24,6 +24,12 @@ func TestBuildVertexGeminiURL(t *testing.T) {
 	require.Equal(t, "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-3-pro:streamGenerateContent?alt=sse", got)
 }
 
+func TestBuildVertexGeminiURLNormalizesModelsCatalogPrefix(t *testing.T) {
+	got, err := buildVertexGeminiURL("my-project", "us-central1", "models/gemini-3.1-flash-image", "generateContent", false)
+	require.NoError(t, err)
+	require.Equal(t, "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-3.1-flash-image:generateContent", got)
+}
+
 func TestBuildVertexGeminiURLUsesGlobalEndpointHost(t *testing.T) {
 	got, err := buildVertexGeminiURL("my-project", "global", "gemini-3-flash-preview", "streamGenerateContent", true)
 	require.NoError(t, err)

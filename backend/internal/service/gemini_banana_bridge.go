@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -95,7 +96,7 @@ func decodeGeminiBananaImageData(data string) ([]byte, error) {
 
 func IsGeminiBananaBridgeModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(model, "models/")))
-	return strings.HasPrefix(model, "nano-banana2-") || strings.HasPrefix(model, "nano-banana-pro-")
+	return strings.HasPrefix(model, "nano-banana2-") || strings.HasPrefix(model, "banana2-") || strings.HasPrefix(model, "nano-banana-pro-")
 }
 
 func BuildOpenAIImagesBodyFromGeminiBanana(model string, body []byte) ([]byte, error) {
@@ -136,6 +137,23 @@ func BuildGeminiBananaResponseFromOpenAIImages(model string, body []byte) ([]byt
 }
 
 func BuildGeminiBananaResponseFromOpenAIImagesContext(ctx context.Context, model string, body []byte) ([]byte, ClaudeUsage, int, error) {
+	return buildGeminiBananaResponseFromOpenAIImagesContext(ctx, model, body, nil)
+}
+
+// BuildGeminiBananaResponseFromOpenAIImages converts an OpenAI Images response
+// while fetching URL-only outputs through the shared, guarded upstream client.
+func (s *OpenAIGatewayService) BuildGeminiBananaResponseFromOpenAIImages(ctx context.Context, account *Account, model string, body []byte) ([]byte, ClaudeUsage, int, error) {
+	if s == nil || s.httpUpstream == nil {
+		return nil, ClaudeUsage{}, 0, fmt.Errorf("safe upstream client is not configured")
+	}
+	return buildGeminiBananaResponseFromOpenAIImagesContext(ctx, model, body, func(fetchCtx context.Context, imageURL string) ([]byte, string, error) {
+		return s.fetchGeminiBananaImage(fetchCtx, account, imageURL)
+	})
+}
+
+type geminiBananaImageFetcher func(context.Context, string) ([]byte, string, error)
+
+func buildGeminiBananaResponseFromOpenAIImagesContext(ctx context.Context, model string, body []byte, fetchImage geminiBananaImageFetcher) ([]byte, ClaudeUsage, int, error) {
 	data := gjson.GetBytes(body, "data")
 	if !data.IsArray() || len(data.Array()) == 0 {
 		return nil, ClaudeUsage{}, 0, fmt.Errorf("upstream did not return image output")
@@ -153,7 +171,10 @@ func BuildGeminiBananaResponseFromOpenAIImagesContext(ctx context.Context, model
 			if strings.HasPrefix(url, "data:") {
 				mimeType, b64 = splitImageDataURL(url)
 			} else if strings.HasPrefix(strings.ToLower(url), "https://") {
-				data, fetchedMIME, err := fetchGeminiBananaImage(ctx, url)
+				if fetchImage == nil {
+					return nil, ClaudeUsage{}, 0, fmt.Errorf("safe upstream client is required to download image URLs")
+				}
+				data, fetchedMIME, err := fetchImage(ctx, url)
 				if err != nil {
 					return nil, ClaudeUsage{}, 0, fmt.Errorf("download upstream image: %w", err)
 				}
@@ -195,26 +216,67 @@ func BuildGeminiBananaResponseFromOpenAIImagesContext(ctx context.Context, model
 	return out, usage, imageCount, nil
 }
 
-func fetchGeminiBananaImage(ctx context.Context, imageURL string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+func (s *OpenAIGatewayService) fetchGeminiBananaImage(ctx context.Context, account *Account, imageURL string) ([]byte, string, error) {
+	u, err := parseGeminiBananaImageURL(imageURL)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := rejectPrivateImageHost(u.String()); err != nil {
+		return nil, "", err
+	}
+	ctx, cancel := context.WithTimeout(WithHTTPUpstreamPublicHostsOnly(ctx), openAIImageURLDownloadTimeout)
+	defer cancel()
+	ctx = WithHTTPRedirectValidator(ctx, func(target *url.URL) error {
+		_, err := parseGeminiBananaImageURL(target.String())
+		return err
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err
 	}
 	req.Header.Set("Accept", "image/*")
-	resp, err := http.DefaultClient.Do(req)
+	proxyURL := ""
+	accountID := int64(0)
+	concurrency := 0
+	if account != nil {
+		accountID = account.ID
+		concurrency = account.Concurrency
+		if account.ProxyID != nil && account.Proxy != nil {
+			proxyURL = account.Proxy.URL()
+		}
+	}
+	resp, err := s.httpUpstream.Do(req, proxyURL, accountID, concurrency)
 	if err != nil {
 		return nil, "", err
+	}
+	return readGeminiBananaImageResponse(resp)
+}
+
+func parseGeminiBananaImageURL(raw string) (*url.URL, error) {
+	u, err := url.ParseRequestURI(strings.TrimSpace(raw))
+	if err != nil || u == nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return nil, fmt.Errorf("invalid image URL")
+	}
+	return u, nil
+}
+
+func readGeminiBananaImageResponse(resp *http.Response) ([]byte, string, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, "", fmt.Errorf("empty image response")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, "", fmt.Errorf("status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (20<<20)+1))
 	if err != nil {
 		return nil, "", err
 	}
-	if len(data) == 20<<20 {
+	if len(data) > 20<<20 {
 		return nil, "", fmt.Errorf("response exceeds 20 MiB")
+	}
+	if len(data) == 0 || !isBackfillImageContent(data) {
+		return nil, "", fmt.Errorf("downloaded response is not an allowed image format")
 	}
 	mimeType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if strings.Contains(mimeType, ";") {
