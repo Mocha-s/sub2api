@@ -58,6 +58,7 @@ type GatewayHandler struct {
 	userMsgQueueHelper         *UserMsgQueueHelper
 	maxAccountSwitches         int
 	maxAccountSwitchesGemini   int
+	imageLimiter               *imageConcurrencyLimiter
 	cfg                        *config.Config
 	settingService             *service.SettingService
 }
@@ -115,6 +116,7 @@ func NewGatewayHandler(
 		userMsgQueueHelper:        umqHelper,
 		maxAccountSwitches:        maxAccountSwitches,
 		maxAccountSwitchesGemini:  maxAccountSwitchesGemini,
+		imageLimiter:              &imageConcurrencyLimiter{},
 		cfg:                       cfg,
 		settingService:            settingService,
 	}
@@ -2628,6 +2630,23 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		}
 	}()
 	task(ctx)
+}
+
+func (h *GatewayHandler) acquireGeminiImageGenerationSlot(c *gin.Context) (func(), bool) {
+	if h == nil || h.cfg == nil || h.imageLimiter == nil {
+		return nil, true
+	}
+	settings := h.cfg.Gateway.ImageConcurrency
+	release, acquired := h.imageLimiter.Acquire(
+		c.Request.Context(), settings.Enabled, settings.MaxConcurrentRequests,
+		strings.TrimSpace(settings.OverflowMode) == config.ImageConcurrencyOverflowModeWait,
+		time.Duration(settings.WaitTimeoutSeconds)*time.Second, settings.MaxWaitingRequests,
+	)
+	if !acquired {
+		googleError(c, http.StatusTooManyRequests, "Image generation concurrency limit exceeded, please retry later")
+		return nil, false
+	}
+	return release, true
 }
 
 // submitMandatoryUsageRecordTask never silently drops billing work on pool overflow.

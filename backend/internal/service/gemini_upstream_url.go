@@ -14,6 +14,12 @@ var geminiAIStudioActions = map[string]struct{}{
 	"countTokens":           {},
 }
 
+// NormalizeGeminiModelID converts a Gemini models-list resource name to the
+// bare model ID used in /v1beta/models/{model}:{action} paths.
+func NormalizeGeminiModelID(model string) string {
+	return strings.TrimPrefix(strings.TrimSpace(model), "models/")
+}
+
 // buildGeminiAIStudioModelActionURL 组装 AI Studio 的
 // /v1beta/models/{model}:{action} 上游 URL。
 //
@@ -25,7 +31,7 @@ func buildGeminiAIStudioModelActionURL(baseURL, model, action string, stream boo
 	if trimmedBase == "" {
 		return "", errors.New("gemini base url is required")
 	}
-	trimmedModel := strings.TrimSpace(model)
+	trimmedModel := NormalizeGeminiModelID(model)
 	if trimmedModel == "" {
 		return "", errors.New("gemini model is required")
 	}

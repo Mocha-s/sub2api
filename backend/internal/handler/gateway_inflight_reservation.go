@@ -33,6 +33,10 @@ func tokenInflightEstimate(model string, body []byte) service.InflightEstimateRe
 	}
 }
 
+func imageInflightEstimate(model string, body []byte) service.InflightEstimateRequest {
+	return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: 1}
+}
+
 func inflightNoop() {}
 
 // reserveInflightBalance 在 CheckBillingEligibility 之后为余额模式请求登记在途预留。

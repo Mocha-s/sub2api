@@ -338,10 +338,13 @@ func buildVertexGeminiAccountURL(account *Account, model, action string, stream 
 
 // buildVertexGeminiExpressURL 构造不带项目与区域的全局端点地址，仅 API Key 认证可用。
 func buildVertexGeminiExpressURL(model, action string, stream bool) (string, error) {
-	model = strings.TrimSpace(model)
+	model = NormalizeGeminiModelID(model)
 	action = strings.TrimSpace(action)
 	if model == "" {
 		return "", errors.New("vertex model is required")
+	}
+	if err := validateUpstreamPathSegment("gemini model", model); err != nil {
+		return "", err
 	}
 	if err := validateVertexGeminiAction(action); err != nil {
 		return "", err
@@ -387,7 +390,7 @@ func setVertexGeminiAuth(ctx context.Context, req *http.Request, account *Accoun
 func buildVertexGeminiURL(projectID, location, model, action string, stream bool) (string, error) {
 	projectID = strings.TrimSpace(projectID)
 	location = strings.TrimSpace(location)
-	model = strings.TrimSpace(model)
+	model = NormalizeGeminiModelID(model)
 	action = strings.TrimSpace(action)
 	if projectID == "" {
 		return "", errors.New("vertex project_id is required")
@@ -400,6 +403,9 @@ func buildVertexGeminiURL(projectID, location, model, action string, stream bool
 	}
 	if model == "" {
 		return "", errors.New("vertex model is required")
+	}
+	if err := validateUpstreamPathSegment("gemini model", model); err != nil {
+		return "", err
 	}
 	if err := validateVertexGeminiAction(action); err != nil {
 		return "", err

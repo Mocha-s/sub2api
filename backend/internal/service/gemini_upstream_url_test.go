@@ -1,10 +1,31 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeGeminiModelID(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "catalog name", in: " models/gemini-3.1-flash-image ", want: "gemini-3.1-flash-image"},
+		{name: "bare name", in: "gemini-3.1-flash-image", want: "gemini-3.1-flash-image"},
+		{name: "unsafe provider prefix remains unsafe", in: "google/gemini-3.1-flash-image", want: "google/gemini-3.1-flash-image"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeGeminiModelID(tt.in)
+			require.Equal(t, tt.want, got)
+			if strings.Contains(got, "/") {
+				require.False(t, IsSafeGeminiModelPathSegment(got))
+			}
+		})
+	}
+}
 
 func TestBuildGeminiAIStudioModelActionURL(t *testing.T) {
 	const base = "https://generativelanguage.googleapis.com"
@@ -20,6 +41,10 @@ func TestBuildGeminiAIStudioModelActionURL(t *testing.T) {
 	got, err = buildGeminiAIStudioModelActionURL(base, "gemini-2.5-pro", "countTokens", false)
 	require.NoError(t, err)
 	require.Equal(t, base+"/v1beta/models/gemini-2.5-pro:countTokens", got)
+
+	got, err = buildGeminiAIStudioModelActionURL(base, "models/gemini-3.1-flash-image", "generateContent", false)
+	require.NoError(t, err)
+	require.Equal(t, base+"/v1beta/models/gemini-3.1-flash-image:generateContent", got)
 }
 
 // TestBuildGeminiAIStudioModelActionURLRejectsNonConformingModel 锁定不变式：
@@ -41,7 +66,7 @@ func TestBuildGeminiAIStudioModelActionURLRejectsNonConformingModel(t *testing.T
 		"gemini\x00pro",
 		"gemini-2.5-pro@001",
 		"gemini~pro",
-		"models/gemini-2.5-pro",
+		"models/models/gemini-2.5-pro",
 		"...",
 		"",
 		"   ",

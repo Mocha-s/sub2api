@@ -111,6 +111,15 @@ type OpenAIImagesRawResult struct {
 	ImageOutputSizes []string
 }
 
+func openAIImagesOutboundAccount(account *Account) *Account {
+	if account == nil || account.Platform != PlatformGemini || account.Type != AccountTypeAPIKey {
+		return account
+	}
+	adapted := *account
+	adapted.Platform = PlatformOpenAI
+	return &adapted
+}
+
 func (r *OpenAIImagesRequest) ModerationBody() []byte {
 	if r == nil {
 		return nil
@@ -516,10 +525,7 @@ func isGrokImageGenerationModel(model string) bool {
 }
 
 func isOpenAICompatibleBananaImageGenerationModel(model string) bool {
-	model = strings.ToLower(strings.TrimSpace(model))
-	return strings.HasPrefix(model, "nano-banana2-") ||
-		strings.HasPrefix(model, "banana2-") ||
-		strings.HasPrefix(model, "nano-banana-pro-")
+	return IsGeminiBananaBridgeModel(model)
 }
 
 func isMidjourneyImageGenerationModel(model string) bool {
@@ -547,7 +553,7 @@ func isGeminiCompatibleImageModel(model string) bool {
 }
 
 func validateCompatibleImagesModel(model string) error {
-	if isGeminiCompatibleImageModel(model) {
+	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) {
 		return nil
 	}
 	return validateOpenAIImagesModel(model)
@@ -556,7 +562,7 @@ func validateCompatibleImagesModel(model string) error {
 // RequiredCapabilityForModel also applies the API-key-only fence when channel
 // mapping introduces a compatible provider model after request parsing.
 func (req *OpenAIImagesRequest) RequiredCapabilityForModel(model string) OpenAIImagesCapability {
-	if isGeminiCompatibleImageModel(model) {
+	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
 	return req.RequiredCapability
@@ -578,7 +584,7 @@ func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapabi
 	if req == nil {
 		return OpenAIImagesCapabilityNative
 	}
-	if isGeminiCompatibleImageModel(req.Model) {
+	if isGeminiCompatibleImageModel(req.Model) || IsGeminiBananaBridgeModel(req.Model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
 	if req.ExplicitModel || req.ExplicitSize {
@@ -684,15 +690,22 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKeyRaw(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIImagesRawResult, error) {
+	account = openAIImagesOutboundAccount(account)
 	startTime := time.Now()
 	requestModel := strings.TrimSpace(parsed.Model)
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
+	if IsGeminiBananaBridgeModel(requestModel) {
+		requestModel = NormalizeGeminiModelID(requestModel)
+	}
 	if err := validateOpenAIImagesModel(requestModel); err != nil {
 		return nil, err
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
+	if IsGeminiBananaBridgeModel(requestModel) {
+		upstreamModel = NormalizeGeminiModelID(upstreamModel)
+	}
 	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}
@@ -705,7 +718,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKeyRaw(
 
 	token, _, err := s.GetAccessToken(upstreamCtx, account)
 	if err != nil {
-		return nil, err
+		if account.Platform == PlatformGemini && account.Type == AccountTypeAPIKey {
+			token = strings.TrimSpace(account.GetCredential("api_key"))
+			if token == "" {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 	upstreamReq, err := s.buildOpenAIImagesRequest(upstreamCtx, c, account, forwardBody, forwardContentType, token, parsed.Endpoint)
 	if err != nil {
@@ -780,15 +800,22 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	account = openAIImagesOutboundAccount(account)
 	startTime := time.Now()
 	requestModel := strings.TrimSpace(parsed.Model)
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
+	if IsGeminiBananaBridgeModel(requestModel) {
+		requestModel = NormalizeGeminiModelID(requestModel)
+	}
 	if err := validateCompatibleImagesModel(requestModel); err != nil {
 		return nil, err
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
+	if IsGeminiBananaBridgeModel(requestModel) {
+		upstreamModel = NormalizeGeminiModelID(upstreamModel)
+	}
 	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
 		return nil, err
 	}

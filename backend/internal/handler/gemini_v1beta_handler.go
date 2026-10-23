@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -246,7 +247,11 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		return
 	}
 	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok && strings.TrimSpace(resolvedModel) != "" {
-		modelName = strings.TrimSpace(resolvedModel)
+		modelName = service.NormalizeGeminiModelID(resolvedModel)
+		if !service.IsSafeGeminiModelPathSegment(modelName) {
+			googleError(c, http.StatusBadRequest, "Invalid Gemini upstream model mapping")
+			return
+		}
 	}
 	if !hasForcePlatform && servesCompositeAntigravityGemini(apiKey, effectivePlatform) && !isAntigravityGeminiModel(modelName) {
 		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
@@ -329,7 +334,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		return
 	}
 	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok && strings.TrimSpace(resolvedModel) != "" {
-		modelName = strings.TrimSpace(resolvedModel)
+		modelName = service.NormalizeGeminiModelID(resolvedModel)
+		if !service.IsSafeGeminiModelPathSegment(modelName) {
+			googleError(c, http.StatusBadRequest, "Invalid Gemini upstream model mapping")
+			return
+		}
 	}
 	if !middleware.HasForcePlatform(c) && servesCompositeAntigravityGemini(apiKey, effectivePlatform) && !isAntigravityGeminiModel(modelName) {
 		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
@@ -367,9 +376,23 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, modelName)
 	reqModel := modelName // 保存映射前的原始模型名
 	if channelMapping.Mapped {
-		modelName = channelMapping.MappedModel
+		modelName = service.NormalizeGeminiModelID(channelMapping.MappedModel)
+		if !service.IsSafeGeminiModelPathSegment(modelName) {
+			googleError(c, http.StatusBadRequest, "Invalid Gemini upstream model mapping")
+			return
+		}
 	}
-
+	bananaBridgeRequest := service.IsGeminiBananaBridgeModel(modelName)
+	if bananaBridgeRequest {
+		if action != "generateContent" {
+			googleError(c, http.StatusBadRequest, "Nano Banana supports generateContent only")
+			return
+		}
+		if !service.GroupAllowsImageGeneration(apiKey.Group) {
+			googleError(c, http.StatusForbidden, service.ImageGenerationPermissionMessage())
+			return
+		}
+	}
 	// 引用显式缓存的请求只能发往持有该缓存的账号，且不参与会话粘性与换号。
 	cachedContentBinding, body, ok := h.resolveGeminiCachedContentBinding(c, reqLog, apiKey, modelName, body)
 	if !ok {
@@ -411,7 +434,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
-	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(modelName, body))
+	estimate := tokenInflightEstimate(modelName, body)
+	if bananaBridgeRequest {
+		estimate = imageInflightEstimate(modelName, body)
+	}
+	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, estimate)
 	if err != nil {
 		reqLog.Info("gemini.inflight_reservation_rejected", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
@@ -545,6 +572,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 	}
 	fs := NewFailoverState(maxAccountSwitches, hasBoundSession)
+	unsupportedGeminiBananaAccounts := make(map[int64]struct{})
 
 	// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
 	// 避免单账号分组收到 503 (MODEL_CAPACITY_EXHAUSTED) 时设 29s 限流，导致后续请求连续快速失败。
@@ -555,8 +583,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	for {
 		excludedAccountIDs := fs.FailedAccountIDs
+		if len(unsupportedGeminiBananaAccounts) > 0 {
+			excludedAccountIDs = mergeAccountIDSets(excludedAccountIDs, unsupportedGeminiBananaAccounts)
+		}
 		if cachedContentExclusions != nil {
-			excludedAccountIDs = mergeAccountIDSets(cachedContentExclusions, fs.FailedAccountIDs)
+			excludedAccountIDs = mergeAccountIDSets(cachedContentExclusions, excludedAccountIDs)
 		}
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, excludedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
 		if err == nil && cachedContentBinding != nil && selection.Account.ID != cachedContentBinding.AccountID {
@@ -568,6 +599,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("gemini.account_select_aborted_client_disconnected", zap.Error(err))
+				return
+			}
+			if bananaBridgeRequest && len(unsupportedGeminiBananaAccounts) > 0 && len(fs.FailedAccountIDs) == 0 {
+				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+				googleError(c, http.StatusServiceUnavailable, "No available Gemini API key accounts for Nano Banana")
 				return
 			}
 			if cachedContentBinding != nil {
@@ -609,6 +645,13 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				h.handleGeminiFailoverExhausted(c, fs.LastFailoverErr)
 				return
 			}
+		}
+		if bananaBridgeRequest && (selection.Account.Type != service.AccountTypeAPIKey || selection.Account.Platform != service.PlatformGemini) {
+			if selection.Acquired && selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			unsupportedGeminiBananaAccounts[selection.Account.ID] = struct{}{}
+			continue
 		}
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -724,7 +767,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
-		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
+		if bananaBridgeRequest {
+			result, err = h.forwardGeminiBananaBridge(requestCtx, c, account, modelName, body, channelMapping)
+		} else if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 			result, err = h.antigravityGatewayService.ForwardGemini(
 				requestCtx,
 				c,
@@ -741,6 +786,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
+		}
+		if result == nil && err == nil {
+			return
 		}
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
@@ -960,6 +1008,93 @@ func googleClientErrorType(status int) string {
 func googleConcurrencyError(c *gin.Context, err error, slotType string) {
 	status, errType, code, message := concurrencyErrorResponse(err, slotType)
 	googleErrorWithType(c, status, errType, code, message)
+}
+
+func (h *GatewayHandler) forwardGeminiBananaBridge(
+	requestCtx context.Context,
+	c *gin.Context,
+	account *service.Account,
+	modelName string,
+	body []byte,
+	channelMapping service.ChannelMappingResult,
+) (*service.ForwardResult, error) {
+	imageRelease, acquired := h.acquireGeminiImageGenerationSlot(c)
+	if !acquired {
+		return nil, nil
+	}
+	if imageRelease != nil {
+		defer imageRelease()
+	}
+	if h.openAIGatewayService == nil {
+		googleError(c, http.StatusServiceUnavailable, "OpenAI image gateway is not configured")
+		return nil, nil
+	}
+	openAIBody, openAIContentType, openAIEndpoint, err := service.BuildOpenAIImagesRequestFromGeminiBanana(modelName, body)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return nil, nil
+	}
+	openAIReq := c.Request.Clone(requestCtx)
+	openAIReq.URL.Path = openAIEndpoint
+	openAIReq.Body = io.NopCloser(bytes.NewReader(openAIBody))
+	openAIReq.ContentLength = int64(len(openAIBody))
+	openAIReq.Header = openAIReq.Header.Clone()
+	openAIReq.Header.Set("Content-Type", openAIContentType)
+	openAICtx := *c
+	openAICtx.Request = openAIReq
+	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(&openAICtx, openAIBody)
+	if err != nil {
+		googleError(c, http.StatusBadRequest, err.Error())
+		return nil, nil
+	}
+	channelMappedModel := service.NormalizeGeminiModelID(channelMapping.MappedModel)
+	raw, err := h.openAIGatewayService.ForwardImagesRaw(requestCtx, c, account, openAIBody, parsed, channelMappedModel)
+	if err != nil {
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(err, &failoverErr) {
+			return nil, err
+		}
+		if !c.Writer.Written() {
+			googleError(c, http.StatusBadGateway, err.Error())
+		}
+		return nil, nil
+	}
+	geminiBody, usage, imageCount, err := h.openAIGatewayService.BuildGeminiBananaResponseFromOpenAIImages(context.WithoutCancel(c.Request.Context()), account, modelName, raw.Body)
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
+		return nil, nil
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", geminiBody)
+	return geminiBananaForwardResult(modelName, raw.ForwardResult, usage, imageCount), nil
+}
+
+func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, imageCount int) *service.ForwardResult {
+	result := &service.ForwardResult{
+		Usage:      usage,
+		Model:      strings.TrimSpace(modelName),
+		Stream:     false,
+		ImageCount: imageCount,
+	}
+	if raw == nil {
+		return result
+	}
+	result.RequestID = raw.RequestID
+	result.UpstreamModel = raw.UpstreamModel
+	result.Duration = raw.Duration
+	result.FirstTokenMs = raw.FirstTokenMs
+	result.ImageSize = raw.ImageSize
+	result.ImageInputSize = raw.ImageInputSize
+	result.ImageOutputSize = raw.ImageOutputSize
+	result.ImageOutputSizes = raw.ImageOutputSizes
+	result.ImageSizeSource = raw.ImageSizeSource
+	result.ImageSizeBreakdown = raw.ImageSizeBreakdown
+	if result.ImageCount <= 0 {
+		result.ImageCount = raw.ImageCount
+	}
+	if result.UpstreamModel == "" {
+		result.UpstreamModel = raw.Model
+	}
+	return result
 }
 
 func writeUpstreamResponse(c *gin.Context, res *service.UpstreamHTTPResult) {

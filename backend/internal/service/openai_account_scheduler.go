@@ -528,7 +528,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		clearBinding()
 		return nil, false, nil
 	}
-	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+	if shouldClearStickySession(account, req.RequestedModel) || !isOpenAIImagesAccountCompatible(account, req.Platform, req.RequiredImageCapability) || !account.IsSchedulable() {
 		clearBinding()
 		return nil, false, nil
 	}
@@ -1453,7 +1453,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("not_schedulable")
 			continue
 		}
-		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if !isOpenAIImagesAccountCompatible(account, req.Platform, req.RequiredImageCapability) {
 			filterStats.exclude("platform_mismatch")
 			continue
 		}
@@ -2142,15 +2142,19 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	platform := PlatformOpenAI
+	if resolved, ok := ResolvedTargetPlatformFromContext(ctx); ok && resolved == PlatformGemini && requiredCapability == OpenAIImagesCapabilityAPIKey {
+		platform = resolved
+	}
 	// Dedicated image endpoints bypass the separate profit gate, but still honor
 	// the configured API-pricing-sync upstream-rate ordering like token requests.
-	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, true)
+	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, platform, false, true)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, true)
+		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, platform, false, true)
 	}
 	return selection, decision, err
 }
@@ -2324,6 +2328,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
 	platform = NormalizeOpenAICompatiblePlatform(platform)
+	if resolved, ok := ResolvedTargetPlatformFromContext(ctx); ok && resolved == PlatformGemini && requiredImageCapability == OpenAIImagesCapabilityAPIKey {
+		platform = PlatformGemini
+	}
 	decision := OpenAIAccountScheduleDecision{}
 	preserveGuardianParentBinding := preserveOpenAIGuardianParentBinding(ctx, sessionHash)
 	guardianParentAccountID := int64(0)
@@ -2479,6 +2486,16 @@ func accountSupportsOpenAICapabilities(account *Account, requiredCapability Open
 	}
 	return account.SupportsOpenAIEndpointCapability(requiredCapability) &&
 		account.SupportsOpenAIImageCapability(requiredImageCapability)
+}
+
+func isOpenAIImagesAccountCompatible(account *Account, platform string, capability OpenAIImagesCapability) bool {
+	if account == nil {
+		return false
+	}
+	if platform == PlatformGemini && capability == OpenAIImagesCapabilityAPIKey {
+		return account.Platform == PlatformGemini && account.Type == AccountTypeAPIKey
+	}
+	return account.IsOpenAICompatible()
 }
 
 func cloneExcludedAccountIDs(excludedIDs map[int64]struct{}) map[int64]struct{} {

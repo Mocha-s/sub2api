@@ -781,6 +781,34 @@ func TestOpenAIImagesSchedulerUsesSyncedUpstreamRateWhenPrioritizationEnabled(t 
 	}
 }
 
+func TestOpenAIImagesSchedulerUsesGeminiAPIKeyForResolvedGeminiGroup(t *testing.T) {
+	groupID := int64(1)
+	account := Account{
+		ID:            51,
+		Platform:      PlatformGemini,
+		Type:          AccountTypeAPIKey,
+		Status:        StatusActive,
+		Schedulable:   true,
+		Credentials:   map[string]any{"api_key": "key", "model_mapping": map[string]any{"nano-banana-pro-4k": "nano-banana-pro-4k"}},
+		AccountGroups: []AccountGroup{{GroupID: groupID}},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cache:       &schedulerTestGatewayCache{},
+		cfg:         &config.Config{},
+	}
+	ctx := WithResolvedTargetPlatform(context.Background(), PlatformGemini)
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(ctx, &groupID, "", "nano-banana-pro-4k", nil, OpenAIImagesCapabilityAPIKey)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, int64(51), selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
 func TestOpenAIFreshUpstreamBillingRateUsesFreshCachedSuccessOnly(t *testing.T) {
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
