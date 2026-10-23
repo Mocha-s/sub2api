@@ -76,7 +76,11 @@ export default {
         maxPositive: 'Interval #{index}: maximum token count ({value}) must be greater than 0',
         maxGreaterThanMin: 'Interval #{index}: maximum token count ({max}) must be greater than minimum token count ({min})',
         negativePrice: 'Interval #{index}: {field} cannot be negative',
+        nonFinitePrice: 'Interval #{index}: {field} must be a finite number',
         multiplierPositive: 'Interval #{index}: {field} must be greater than 0',
+        tierLabelUnique: 'Video tier labels must be unique',
+        videoTierLabelRequired: 'Video interval #{index}: resolution is required',
+        videoTierPriceRequired: 'Video interval #{index}: price per second is required',
         unboundedLast: 'Interval #{index}: an unbounded interval (empty maximum token count) must be last',
         overlap: 'Intervals #{previousIndex} and #{currentIndex} overlap: previous upper bound ({previousMax}) is greater than current lower bound ({currentMin})',
         price: {
@@ -85,7 +89,8 @@ export default {
           cacheWritePrice: 'cache write price',
           cacheWrite1hPrice: '1h cache write price',
           cacheReadPrice: 'cache read price',
-          perRequestPrice: 'per-request price'
+          perRequestPrice: 'per-request price',
+          videoPricePerSecond: 'video price per second'
         }
       },
       timePricingValidation: {
@@ -94,6 +99,16 @@ export default {
         range: 'Start time must be earlier than end time; split ranges across midnight',
         overlap: 'Time periods must not overlap',
         multiplier: 'Multiplier must be greater than 0 with at most two decimal places'
+      },
+      pricingValidation: {
+        invalidPrice: '{field} must be a finite number greater than or equal to 0'
+      },
+      videoValidation: {
+        defaultSeconds: 'Default video duration must be an integer between 1 and 3600 seconds',
+        allowedSecondsBounds: 'Allowed video durations must be integers between 1 and 3600 seconds',
+        allowedSecondsUnique: 'Allowed video durations must not contain duplicates',
+        defaultNotAllowed: 'Default video duration must be included in allowed durations',
+        missingPrice: 'Video price per second or a priced video tier is required'
       },
       deleteConfirm: 'Are you sure you want to delete channel "{name}"? This cannot be undone.',
       columns: {
@@ -201,6 +216,10 @@ export default {
         defaultPerRequestPrice: 'Default per-request price (fallback when no tier matches)',
         defaultImagePrice: 'Default image price (fallback when no tier matches)',
         defaultVideoPrice: 'Default video price per second (fallback when no tier matches)',
+        videoPricePerSecond: 'Price per second',
+        videoDefaultSeconds: 'Default duration (seconds)',
+        videoAllowedSeconds: 'Allowed durations (seconds, optional)',
+        videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',
         platformConfig: 'Platform Configuration',
         webSearchEmulation: 'Web Search Emulation',
         webSearchEmulationHint: '⚠️ When enabled, all accounts in this channel\'s Anthropic groups will intercept web_search requests. Use with caution.',

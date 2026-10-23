@@ -76,7 +76,11 @@ export default {
         maxPositive: '区间 #{index}：最大 token 数（{value}）必须大于 0',
         maxGreaterThanMin: '区间 #{index}：最大 token 数（{max}）必须大于最小 token 数（{min}）',
         negativePrice: '区间 #{index}：{field}不能为负数',
+        nonFinitePrice: '区间 #{index}：{field}必须为有限数字',
         multiplierPositive: '区间 #{index}：{field}必须大于 0',
+        tierLabelUnique: '视频层级标签不能重复',
+        videoTierLabelRequired: '视频区间 #{index}：必须填写分辨率',
+        videoTierPriceRequired: '视频区间 #{index}：必须填写每秒价格',
         unboundedLast: '区间 #{index}：无上限区间（最大 token 数为空）必须放在最后',
         overlap: '区间 #{previousIndex} 和 #{currentIndex} 重叠：前一个上界（{previousMax}）大于当前下界（{currentMin}）',
         price: {
@@ -85,7 +89,8 @@ export default {
           cacheWritePrice: '缓存写入价格',
           cacheWrite1hPrice: '1h 缓存写入价格',
           cacheReadPrice: '缓存读取价格',
-          perRequestPrice: '单次价格'
+          perRequestPrice: '单次价格',
+          videoPricePerSecond: '视频每秒价格'
         }
       },
       timePricingValidation: {
@@ -94,6 +99,16 @@ export default {
         range: '开始时间必须早于结束时间；跨午夜请拆分为两个时间段',
         overlap: '时间段不能重叠',
         multiplier: '倍率必须大于 0，且最多保留两位小数'
+      },
+      pricingValidation: {
+        invalidPrice: '{field}必须为大于等于 0 的有限数字'
+      },
+      videoValidation: {
+        defaultSeconds: '默认视频时长必须是 1 到 3600 秒之间的整数',
+        allowedSecondsBounds: '允许的视频时长必须是 1 到 3600 秒之间的整数',
+        allowedSecondsUnique: '允许的视频时长不能重复',
+        defaultNotAllowed: '默认视频时长必须包含在允许时长中',
+        missingPrice: '必须设置视频每秒价格或至少一个有价格的视频层级'
       },
       deleteConfirm: '确定要删除渠道「{name}」吗？此操作不可撤销。',
       columns: {
@@ -201,6 +216,10 @@ export default {
         defaultPerRequestPrice: '默认单次价格（未命中层级时使用）',
         defaultImagePrice: '默认图片价格（未命中层级时使用）',
         defaultVideoPrice: '默认视频每秒价格（未命中层级时使用）',
+        videoPricePerSecond: '每秒价格',
+        videoDefaultSeconds: '默认时长（秒）',
+        videoAllowedSeconds: '允许时长（秒，可选）',
+        videoAllowedSecondsPlaceholder: '例如：5, 10, 15',
         platformConfig: '平台配置',
         webSearchEmulation: 'Web Search 模拟',
         webSearchEmulationHint: '⚠️ 开启后该渠道下所有 Anthropic 分组的账号将自动拦截 web_search 请求，请谨慎操作',

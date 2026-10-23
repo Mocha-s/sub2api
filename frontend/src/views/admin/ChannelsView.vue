@@ -638,7 +638,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
-import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm, findModelConflict, formIntervalsToAPI, formReasoningEffortMultipliersToAPI, formTimePricingToAPI, isValidPositiveMultiplier, mTokToPerToken, perTokenToMTok, validateIntervals, validateReasoningEffortMultipliers, validateTimePricing } from '@/components/admin/channel/types'
+import { apiIntervalsToForm, apiTimePricingToForm, createDefaultTimePricingForm, findModelConflict, formIntervalsToAPI, formReasoningEffortMultipliersToAPI, formTimePricingToAPI, isValidPositiveMultiplier, mTokToPerToken, normalizeVideoAllowedSeconds, perTokenToMTok, toNullableNumber, validateIntervals, validateReasoningEffortMultipliers, validateTimePricing, validateVideoPricing } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass, platformLabel as catalogPlatformLabel } from '@/utils/platformColors'
@@ -876,6 +876,9 @@ function addPricingEntry(sectionIdx: number) {
     image_input_price: null,
     image_output_price: null,
     per_request_price: null,
+    video_price_per_second: null,
+    video_default_seconds: null,
+    video_allowed_seconds: [],
     intervals: [],
     time_pricing: createDefaultTimePricingForm()
   })
@@ -916,6 +919,9 @@ async function syncLatestModels(sectionIdx: number) {
       image_input_price: null,
       image_output_price: null,
       per_request_price: null,
+      video_price_per_second: null,
+      video_default_seconds: null,
+      video_allowed_seconds: [],
       intervals: [],
       time_pricing: createDefaultTimePricingForm()
     })
@@ -984,6 +990,9 @@ function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
     image_input_price: null,
     image_output_price: null,
     per_request_price: null,
+    video_price_per_second: null,
+    video_default_seconds: null,
+    video_allowed_seconds: [],
     intervals: [],
     time_pricing: createDefaultTimePricingForm()
   })
@@ -1104,9 +1113,9 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
             image_output_price: mTokToPerToken(p.image_output_price),
             per_request_price: p.per_request_price != null && p.per_request_price !== '' ? Number(p.per_request_price) : null,
             video_price_per_second: p.video_price_per_second != null && p.video_price_per_second !== '' ? Number(p.video_price_per_second) : null,
-            video_default_seconds: p.video_default_seconds ?? null,
-            video_allowed_seconds: p.video_allowed_seconds ?? [],
-            intervals: formIntervalsToAPI(p.intervals || []),
+            video_default_seconds: toNullableNumber(p.video_default_seconds),
+            video_allowed_seconds: normalizeVideoAllowedSeconds(p.video_allowed_seconds || []),
+            intervals: formIntervalsToAPI(p.intervals || [], p.billing_mode),
             time_pricing: null
           }))
       })
@@ -1154,9 +1163,9 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         image_output_price: mTokToPerToken(entry.image_output_price),
          per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
          video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
-         video_default_seconds: entry.video_default_seconds ?? null,
-         video_allowed_seconds: entry.video_allowed_seconds ?? [],
-        intervals: formIntervalsToAPI(entry.intervals || []),
+         video_default_seconds: toNullableNumber(entry.video_default_seconds),
+         video_allowed_seconds: normalizeVideoAllowedSeconds(entry.video_allowed_seconds || []),
+         intervals: formIntervalsToAPI(entry.intervals || [], entry.billing_mode),
         time_pricing: formTimePricingToAPI(entry.time_pricing)
       })
     }
@@ -1257,10 +1266,13 @@ function apiToForm(channel: Channel): PlatformSection[] {
         fast_multiplier: p.fast_multiplier,
         flex_multiplier: p.flex_multiplier,
         reasoning_effort_multipliers: p.reasoning_effort_multipliers ? { ...p.reasoning_effort_multipliers } : null,
-        image_input_price: perTokenToMTok(p.image_input_price),
-        image_output_price: perTokenToMTok(p.image_output_price),
-        per_request_price: p.per_request_price,
-        intervals: apiIntervalsToForm(p.intervals || []),
+         image_input_price: perTokenToMTok(p.image_input_price),
+         image_output_price: perTokenToMTok(p.image_output_price),
+         per_request_price: p.per_request_price,
+         video_price_per_second: p.video_price_per_second,
+         video_default_seconds: p.video_default_seconds,
+         video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
+         intervals: apiIntervalsToForm(p.intervals || []),
         time_pricing: apiTimePricingToForm(p.time_pricing)
       } as PricingFormEntry))
 
@@ -1450,10 +1462,13 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
         cache_write_1h_price: perTokenToMTok(p.cache_write_1h_price),
         cache_read_price: perTokenToMTok(p.cache_read_price),
         reasoning_effort_multipliers: p.reasoning_effort_multipliers ? { ...p.reasoning_effort_multipliers } : null,
-        image_input_price: perTokenToMTok(p.image_input_price),
-        image_output_price: perTokenToMTok(p.image_output_price),
-        per_request_price: p.per_request_price,
-        intervals: apiIntervalsToForm(p.intervals || []),
+         image_input_price: perTokenToMTok(p.image_input_price),
+         image_output_price: perTokenToMTok(p.image_output_price),
+         per_request_price: p.per_request_price,
+         video_price_per_second: p.video_price_per_second,
+         video_default_seconds: p.video_default_seconds,
+         video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
+         intervals: apiIntervalsToForm(p.intervals || []),
         time_pricing: createDefaultTimePricingForm()
       } as PricingFormEntry))
     }
@@ -1570,6 +1585,24 @@ async function handleSubmit() {
     ]
     for (const entry of entries) {
       const error = validateReasoningEffortMultipliers(entry.reasoning_effort_multipliers, t)
+      if (!error) continue
+      const platformLabel = t('admin.groups.platforms.' + section.platform, catalogPlatformLabel(section.platform))
+      const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')
+      appStore.showError(`${platformLabel} - ${modelLabel}: ${error}`)
+      activeTab.value = section.platform
+      return
+    }
+  }
+
+  // Video pricing has duration and resolution-specific constraints that the API also enforces.
+  for (const section of form.platforms.filter(s => s.enabled)) {
+    const entries = [
+      ...section.model_pricing,
+      ...section.account_stats_pricing_rules.flatMap(rule => rule.pricing),
+    ]
+    for (const entry of entries) {
+      if (entry.billing_mode !== 'video') continue
+      const error = validateVideoPricing(entry, t)
       if (!error) continue
       const platformLabel = t('admin.groups.platforms.' + section.platform, catalogPlatformLabel(section.platform))
       const modelLabel = entry.models.join(', ') || t('admin.channels.form.unnamed')

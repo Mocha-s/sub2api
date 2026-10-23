@@ -119,7 +119,11 @@ describe('PricingEntryCard video billing', () => {
 
   it('retains duplicate duration evidence through blur and clears it after correction', async () => {
     const wrapper = mountCard()
-    const inputs = wrapper.findAll('input')
+    const inputs = [
+      wrapper.get('#test-entry-video-default-price'),
+      wrapper.get('#test-entry-video-default-seconds'),
+      wrapper.get('#test-entry-video-allowed-seconds'),
+    ]
 
     expect(inputs).toHaveLength(3)
     await inputs[0].setValue('0.03')

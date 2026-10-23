@@ -4562,7 +4562,7 @@ const groupPricingToAPI = (
       intervals:
         entry.billing_mode === "token"
           ? []
-          : formIntervalsToAPI(entry.intervals || []),
+          : formIntervalsToAPI(entry.intervals || [], entry.billing_mode),
       time_pricing: null,
     }));
 

@@ -68,6 +68,18 @@ describe('interval multiplier conversion', () => {
       cache_read_multiplier: 2,
     })
   })
+
+  it('serializes video tiers as normalized resolutions with per-second prices', () => {
+    expect(formIntervalsToAPI([
+      makeInterval({ tier_label: ' 1080P ', video_price_per_second: '0.05' }),
+    ], 'video')[0]).toMatchObject({
+      min_tokens: 0,
+      max_tokens: null,
+      tier_label: '1080p',
+      per_request_price: null,
+      video_price_per_second: 0.05,
+    })
+  })
 })
 
 describe('positive multiplier validation', () => {

@@ -90,6 +90,9 @@
               @update:modelValue="emit('update', {
                 ...entry,
                 billing_mode: $event as BillingMode,
+                video_default_seconds: $event === 'video' && entry.video_default_seconds == null
+                  ? 10
+                  : entry.video_default_seconds,
                 intervals: [],
                 time_pricing: { ...entry.time_pricing, periods: [] },
               })"
@@ -245,11 +248,10 @@
           </div>
         </div>
 
-        <!-- Image/video mode -->
-        <div v-else-if="entry.billing_mode === 'image' || entry.billing_mode === 'video'">
-          <!-- Default image price (per-request, same as per_request mode) -->
+        <!-- Image mode -->
+        <div v-else-if="entry.billing_mode === 'image'">
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ entry.billing_mode === 'video' ? t('admin.channels.form.defaultVideoPrice') : t('admin.channels.form.defaultImagePrice') }}
+            {{ t('admin.channels.form.defaultImagePrice') }}
             <span class="ml-1 font-normal text-gray-400">$</span>
           </label>
           <div class="mt-1 w-48">
@@ -260,7 +262,7 @@
           <!-- Image tiers -->
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ entry.billing_mode === 'video' ? t('admin.channels.form.videoTiers') : t('admin.channels.form.imageTiers') }}
+              {{ t('admin.channels.form.imageTiers') }}
             </label>
             <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
               + {{ t('admin.channels.form.addTier') }}
@@ -272,6 +274,55 @@
               :key="idx"
               :interval="iv"
               :mode="entry.billing_mode"
+              :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
+              @update="updateInterval(idx, $event)"
+              @remove="removeInterval(idx)"
+            />
+          </div>
+        </div>
+
+        <!-- Video mode -->
+        <div v-else-if="entry.billing_mode === 'video'">
+          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div>
+              <label :for="videoDefaultPriceId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.defaultVideoPrice') }}
+                <span class="ml-1 font-normal text-gray-400">USD/s</span>
+              </label>
+              <input :id="videoDefaultPriceId" :value="entry.video_price_per_second" @input="emitField('video_price_per_second', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
+            </div>
+            <div>
+              <label :for="videoDefaultSecondsId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.videoDefaultSeconds') }}
+              </label>
+              <input :id="videoDefaultSecondsId" :value="entry.video_default_seconds" @input="emitField('video_default_seconds', ($event.target as HTMLInputElement).value)"
+                type="number" step="1" min="1" max="3600" required class="input mt-0.5 text-sm" />
+            </div>
+            <div>
+              <label :for="videoAllowedSecondsId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.videoAllowedSeconds') }}
+              </label>
+              <input :id="videoAllowedSecondsId" :value="allowedSecondsInput" @focus="allowedSecondsFocused = true" @input="emitAllowedSeconds(($event.target as HTMLInputElement).value)" @blur="normalizeAllowedSeconds"
+                type="text" class="input mt-0.5 text-sm" :aria-label="t('admin.channels.form.videoAllowedSeconds')" :placeholder="t('admin.channels.form.videoAllowedSecondsPlaceholder')" />
+            </div>
+          </div>
+
+          <div class="mt-3 flex items-center justify-between">
+            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.videoTiers') }}
+            </label>
+            <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
+              + {{ t('admin.channels.form.addTier') }}
+            </button>
+          </div>
+          <div v-if="entry.intervals && entry.intervals.length > 0" class="mt-2 space-y-2">
+            <IntervalRow
+              v-for="(iv, idx) in entry.intervals"
+              :key="idx"
+              :interval="iv"
+              :mode="entry.billing_mode"
+              :input-id-prefix="`${props.inputIdPrefix}-interval-${idx}`"
               @update="updateInterval(idx, $event)"
               @remove="removeInterval(idx)"
             />
@@ -320,7 +371,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, getCurrentInstance } from 'vue'
+import { ref, computed, getCurrentInstance, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -358,6 +409,15 @@ const emit = defineEmits<{
 
 // Collapse state: entries with existing models default to collapsed
 const collapsed = ref(props.entry.models.length > 0)
+const allowedSecondsInput = ref((props.entry.video_allowed_seconds || []).join(', '))
+const allowedSecondsFocused = ref(false)
+let lastAllowedSecondsEntry: PricingFormEntry | null = null
+
+watch(() => props.entry, entry => {
+  if (allowedSecondsFocused.value && toRaw(entry) === lastAllowedSecondsEntry) return
+  allowedSecondsInput.value = (entry.video_allowed_seconds || []).join(', ')
+  lastAllowedSecondsEntry = null
+})
 
 const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },
@@ -373,6 +433,9 @@ const billingModeLabel = computed(() => {
 
 const descriptionLength = computed(() => (props.entry.description || '').length)
 const descriptionInputId = computed(() => `${props.inputIdPrefix || `pricing-entry-${getCurrentInstance()?.uid ?? 0}`}-description`)
+const videoDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-default-price`)
+const videoDefaultSecondsId = computed(() => `${props.inputIdPrefix}-video-default-seconds`)
+const videoAllowedSecondsId = computed(() => `${props.inputIdPrefix}-video-allowed-seconds`)
 
 const reasoningEffortMultiplierError = computed(() =>
   validateReasoningEffortMultipliers(props.entry.reasoning_effort_multipliers, t)
@@ -420,11 +483,37 @@ function addMediaTier() {
     input_price: null, output_price: null, cache_write_price: null,
     cache_write_1h_price: null,
     cache_read_price: null, per_request_price: null,
+    video_price_per_second: null,
     input_multiplier: null, output_multiplier: null,
     cache_write_multiplier: null, cache_read_multiplier: null,
     sort_order: intervals.length
   })
   emit('update', { ...props.entry, intervals })
+}
+
+function emitAllowedSeconds(value: string) {
+  allowedSecondsInput.value = value
+  const seconds = value
+    .split(',')
+    .map(part => part.trim())
+    .filter(part => part !== '')
+    .map(Number)
+  const updated = { ...props.entry, video_allowed_seconds: seconds }
+  lastAllowedSecondsEntry = updated
+  emit('update', updated)
+}
+
+function normalizeAllowedSeconds() {
+  allowedSecondsFocused.value = false
+  const seconds = allowedSecondsInput.value
+    .split(',')
+    .map(part => part.trim())
+    .filter(part => part !== '')
+    .map(Number)
+  allowedSecondsInput.value = seconds.join(', ')
+  const updated = { ...props.entry, video_allowed_seconds: seconds }
+  lastAllowedSecondsEntry = updated
+  emit('update', updated)
 }
 
 function updateInterval(idx: number, updated: IntervalFormEntry) {

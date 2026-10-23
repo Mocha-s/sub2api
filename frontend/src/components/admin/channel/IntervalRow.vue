@@ -1,6 +1,8 @@
 <template>
-  <div class="flex items-start gap-2 rounded border p-2"
-       :class="isEmpty ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-dark-500 dark:bg-dark-700'">
+  <div
+    class="flex items-start gap-2 rounded border p-2"
+    :class="[mode === 'video' && 'flex-wrap', isEmpty ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-dark-500 dark:bg-dark-700']"
+  >
     <!-- Token mode: context range + prices ($/MTok) -->
     <template v-if="mode === 'token'">
       <div class="pricing-interval-grid grid min-w-0 flex-1 gap-2">
@@ -64,6 +66,24 @@
       </div>
     </template>
 
+    <!-- Video mode: resolution label + USD per second -->
+    <template v-else-if="mode === 'video'">
+      <div class="w-24">
+        <label :for="`${inputIdPrefix}-tier-label`" class="text-xs text-gray-400">
+          {{ t('admin.channels.form.resolution') }}
+        </label>
+        <input :id="`${inputIdPrefix}-tier-label`" :value="interval.tier_label" @input="emitField('tier_label', ($event.target as HTMLInputElement).value)"
+          type="text" class="input mt-0.5 text-xs" />
+      </div>
+      <div class="flex-1">
+        <label :for="`${inputIdPrefix}-video-price`" class="text-xs text-gray-400">
+          {{ t('admin.channels.form.videoPricePerSecond') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">USD/s</span>
+        </label>
+        <input :id="`${inputIdPrefix}-video-price`" :value="interval.video_price_per_second" @input="emitField('video_price_per_second', ($event.target as HTMLInputElement).value)"
+          type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+      </div>
+    </template>
+
     <!-- Per-request / Image mode: tier label + context range + price -->
     <template v-else>
       <div class="w-24">
@@ -109,6 +129,7 @@ const props = defineProps<{
   interval: IntervalFormEntry
   mode: BillingMode
   enableMultipliers?: boolean
+  inputIdPrefix?: string
 }>()
 
 const emit = defineEmits<{
@@ -119,6 +140,9 @@ const emit = defineEmits<{
 // 检测所有价格字段是否都为空
 const isEmpty = computed(() => {
   const iv = props.interval
+  if (props.mode === 'video') {
+    return iv.video_price_per_second == null || iv.video_price_per_second === ''
+  }
   return (iv.input_price == null || iv.input_price === '') &&
     (iv.output_price == null || iv.output_price === '') &&
     (iv.cache_write_price == null || iv.cache_write_price === '') &&

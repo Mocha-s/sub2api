@@ -225,6 +225,70 @@ export function perTokenToMTok(val: number | null | undefined): number | null {
   return parseFloat((val * MTOK).toPrecision(10))
 }
 
+export function normalizeVideoAllowedSeconds(seconds: number[]): number[] {
+  return [...new Set(seconds)].sort((a, b) => a - b)
+}
+
+export function normalizeVideoTierLabel(value: string): string {
+  const label = value.trim().toLowerCase()
+  switch (label) {
+    case '854x480':
+    case '480p':
+      return '480p'
+    case '1280x720':
+    case '720p':
+      return '720p'
+    case '1920x1080':
+    case '1080p':
+      return '1080p'
+    case '3840x2160':
+    case '2160p':
+    case '4k':
+      return '4k'
+    default:
+      return label
+  }
+}
+
+export function validateVideoPricing(entry: PricingFormEntry, t: TranslateFn): string | null {
+  const defaultSeconds = toNullableNumber(entry.video_default_seconds)
+  if (
+    defaultSeconds == null ||
+    !Number.isInteger(defaultSeconds) ||
+    defaultSeconds < 1 ||
+    defaultSeconds > 3600
+  ) {
+    return t('admin.channels.videoValidation.defaultSeconds')
+  }
+
+  const allowedSeconds = entry.video_allowed_seconds || []
+  if (allowedSeconds.some(seconds => !Number.isInteger(seconds) || seconds < 1 || seconds > 3600)) {
+    return t('admin.channels.videoValidation.allowedSecondsBounds')
+  }
+  if (new Set(allowedSeconds).size !== allowedSeconds.length) {
+    return t('admin.channels.videoValidation.allowedSecondsUnique')
+  }
+  if (allowedSeconds.length > 0 && !allowedSeconds.includes(defaultSeconds)) {
+    return t('admin.channels.videoValidation.defaultNotAllowed')
+  }
+
+  const hasPrice = (value: number | string | null | undefined) => value != null && value !== ''
+  const prices = [
+    entry.video_price_per_second,
+    ...entry.intervals.map(interval => interval.video_price_per_second),
+  ]
+  if (!prices.some(hasPrice)) {
+    return t('admin.channels.videoValidation.missingPrice')
+  }
+  if (prices.some(value => hasPrice(value) && (!Number.isFinite(Number(value)) || Number(value) < 0))) {
+    return t('admin.channels.pricingValidation.invalidPrice', {
+      field: t('admin.channels.form.videoPricePerSecond'),
+    })
+  }
+
+  return validateIntervals(entry.intervals || [], 'video', t)
+}
+
 export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEntry[] {
   return (intervals || []).map(iv => ({
     min_tokens: iv.min_tokens,
@@ -245,22 +309,22 @@ export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEn
   }))
 }
 
-export function formIntervalsToAPI(intervals: IntervalFormEntry[]): PricingInterval[] {
+export function formIntervalsToAPI(intervals: IntervalFormEntry[], mode?: BillingMode): PricingInterval[] {
   return (intervals || []).map(iv => ({
-    min_tokens: iv.min_tokens,
-    max_tokens: iv.max_tokens,
-    tier_label: iv.tier_label,
-    input_price: mTokToPerToken(iv.input_price),
-    output_price: mTokToPerToken(iv.output_price),
-    cache_write_price: mTokToPerToken(iv.cache_write_price),
-    cache_write_1h_price: mTokToPerToken(iv.cache_write_1h_price),
-    cache_read_price: mTokToPerToken(iv.cache_read_price),
+    min_tokens: mode === 'video' ? 0 : iv.min_tokens,
+    max_tokens: mode === 'video' ? null : iv.max_tokens,
+    tier_label: mode === 'video' ? normalizeVideoTierLabel(iv.tier_label) : iv.tier_label.trim(),
+    input_price: mode === 'token' || mode == null ? mTokToPerToken(iv.input_price) : null,
+    output_price: mode === 'token' || mode == null ? mTokToPerToken(iv.output_price) : null,
+    cache_write_price: mode === 'token' || mode == null ? mTokToPerToken(iv.cache_write_price) : null,
+    cache_write_1h_price: mode === 'token' || mode == null ? mTokToPerToken(iv.cache_write_1h_price) : null,
+    cache_read_price: mode === 'token' || mode == null ? mTokToPerToken(iv.cache_read_price) : null,
     input_multiplier: toNullableNumber(iv.input_multiplier),
     output_multiplier: toNullableNumber(iv.output_multiplier),
     cache_write_multiplier: toNullableNumber(iv.cache_write_multiplier),
     cache_read_multiplier: toNullableNumber(iv.cache_read_multiplier),
-    per_request_price: toNullableNumber(iv.per_request_price),
-    video_price_per_second: toNullableNumber(iv.video_price_per_second),
+    per_request_price: mode === 'video' ? null : toNullableNumber(iv.per_request_price),
+    video_price_per_second: mode === 'video' ? toNullableNumber(iv.video_price_per_second) : null,
     sort_order: iv.sort_order
   }))
 }
@@ -310,7 +374,7 @@ export function findModelConflict(models: string[]): [string, string] | null {
  *
  * mode 决定区间语义：
  * - token：区间是上下文 token 数分段 (min, max]，不能重叠，无上限段必须放最后
- * - per_request / image：区间是按 tier_label 分层（1K/2K/4K 等），后端按 label
+ * - per_request / image / video：区间是按 tier_label 分层（1K/2K/4K 等），后端按 label
  *   匹配，不依赖 min/max，因此跳过重叠 / last-unlimited 校验
  */
 export function validateIntervals(
@@ -320,12 +384,21 @@ export function validateIntervals(
 ): string | null {
   if (!intervals || intervals.length === 0) return null
 
-  // 按 min_tokens 排序（不修改原数组）
-  const sorted = [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
+  // 视频层级按分辨率标签匹配，不使用 token 范围。
+  const sorted = mode === 'video'
+    ? [...intervals]
+    : [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
 
   for (let i = 0; i < sorted.length; i++) {
-    const err = validateSingleInterval(sorted[i], i, t)
+    const err = validateSingleInterval(sorted[i], i, mode, t)
     if (err) return err
+  }
+
+  if (mode === 'video') {
+    const labels = sorted.map(interval => normalizeVideoTierLabel(interval.tier_label))
+    if (new Set(labels).size !== labels.length) {
+      return intervalValidationMessage(t, 'tierLabelUnique', {})
+    }
   }
 
   // per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
@@ -345,9 +418,16 @@ function intervalPriceLabel(t: TranslateFn, key: string): string {
   return t(`admin.channels.intervalValidation.price.${key}`)
 }
 
-function validateSingleInterval(iv: IntervalFormEntry, idx: number, t: TranslateFn): string | null {
+function validateSingleInterval(iv: IntervalFormEntry, idx: number, mode: BillingMode, t: TranslateFn): string | null {
   const index = idx + 1
-  if (iv.min_tokens < 0) {
+  if (mode === 'video') {
+    if (!iv.tier_label.trim()) {
+      return intervalValidationMessage(t, 'videoTierLabelRequired', { index })
+    }
+    if (iv.video_price_per_second == null || iv.video_price_per_second === '') {
+      return intervalValidationMessage(t, 'videoTierPriceRequired', { index })
+    }
+  } else if (iv.min_tokens < 0) {
     return intervalValidationMessage(
       t,
       'negativeMin',
@@ -370,20 +450,27 @@ function validateSingleInterval(iv: IntervalFormEntry, idx: number, t: Translate
       )
     }
   }
-  return validateIntervalPrices(iv, idx, t)
+  return validateIntervalPrices(iv, idx, mode, t)
 }
 
-function validateIntervalPrices(iv: IntervalFormEntry, idx: number, t: TranslateFn): string | null {
+function validateIntervalPrices(iv: IntervalFormEntry, idx: number, mode: BillingMode, t: TranslateFn): string | null {
   const index = idx + 1
-  const prices: [string, number | string | null][] = [
-    ['inputPrice', iv.input_price],
-    ['outputPrice', iv.output_price],
-    ['cacheWritePrice', iv.cache_write_price],
-    ['cacheWrite1hPrice', iv.cache_write_1h_price ?? null],
-    ['cacheReadPrice', iv.cache_read_price],
-    ['perRequestPrice', iv.per_request_price],
-  ]
+  const prices: [string, number | string | null][] = mode === 'token'
+    ? [
+        ['inputPrice', iv.input_price],
+        ['outputPrice', iv.output_price],
+        ['cacheWritePrice', iv.cache_write_price],
+        ['cacheWrite1hPrice', iv.cache_write_1h_price ?? null],
+        ['cacheReadPrice', iv.cache_read_price],
+      ]
+    : mode === 'video'
+      ? [['videoPricePerSecond', iv.video_price_per_second ?? null]]
+      : [['perRequestPrice', iv.per_request_price]]
   for (const [key, val] of prices) {
+    if (val != null && val !== '' && !Number.isFinite(Number(val))) {
+      const field = intervalPriceLabel(t, key)
+      return intervalValidationMessage(t, 'nonFinitePrice', { index, field })
+    }
     if (val != null && val !== '' && Number(val) < 0) {
       const field = intervalPriceLabel(t, key)
       return intervalValidationMessage(
