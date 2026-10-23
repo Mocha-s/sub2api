@@ -32,7 +32,7 @@ func BuildOpenAIImagesRequestFromGeminiBanana(model string, body []byte) ([]byte
 
 	var output bytes.Buffer
 	writer := multipart.NewWriter(&output)
-	for _, field := range []string{"model", "prompt", "size", "aspect_ratio"} {
+	for _, field := range []string{"model", "prompt", "size", "quality"} {
 		if value := strings.TrimSpace(gjson.GetBytes(converted, field).String()); value != "" {
 			if err := writer.WriteField(field, value); err != nil {
 				return nil, "", "", fmt.Errorf("write image field %s: %w", field, err)
@@ -115,11 +115,11 @@ func BuildOpenAIImagesBodyFromGeminiBanana(model string, body []byte) ([]byte, e
 	out := []byte(`{"model":"","prompt":"","response_format":"b64_json"}`)
 	out, _ = sjson.SetBytes(out, "model", model)
 	out, _ = sjson.SetBytes(out, "prompt", prompt)
-	if size := geminiBananaImageSize(body); size != "" {
-		out, _ = sjson.SetBytes(out, "size", geminiBananaOpenAIImageSize(size))
-	}
 	if aspectRatio := geminiBananaAspectRatio(body); aspectRatio != "" {
-		out, _ = sjson.SetBytes(out, "aspect_ratio", aspectRatio)
+		out, _ = sjson.SetBytes(out, "size", aspectRatio)
+	}
+	if size := geminiBananaImageSize(body); size != "" {
+		out, _ = sjson.SetBytes(out, "quality", strings.ToLower(size))
 	}
 	if images := geminiBananaInputImages(body); len(images) > 0 {
 		out, _ = sjson.SetRawBytes(out, "images", []byte(`[]`))
@@ -304,19 +304,6 @@ func geminiBananaPrompt(body []byte) string {
 
 func geminiBananaImageSize(body []byte) string {
 	return strings.TrimSpace(gjson.GetBytes(body, "generationConfig.imageConfig.imageSize").String())
-}
-
-func geminiBananaOpenAIImageSize(size string) string {
-	switch strings.ToUpper(strings.TrimSpace(size)) {
-	case "1K":
-		return "1024x1024"
-	case "2K":
-		return "2048x2048"
-	case "4K":
-		return "4096x4096"
-	default:
-		return strings.TrimSpace(size)
-	}
 }
 
 func geminiBananaAspectRatio(body []byte) string {
