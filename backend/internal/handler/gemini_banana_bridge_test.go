@@ -237,7 +237,7 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	t.Cleanup(func() { _ = form.RemoveAll() })
 	require.Equal(t, []string{"nano-banana-pro-4k"}, form.Value["model"])
 	require.Equal(t, []string{"draw a cat"}, form.Value["prompt"])
-	require.Equal(t, []string{"4K"}, form.Value["size"])
+	require.Equal(t, []string{"4096x4096"}, form.Value["size"])
 	require.Equal(t, []string{"9:16"}, form.Value["aspect_ratio"])
 	require.Len(t, form.File["image"], 1)
 }
