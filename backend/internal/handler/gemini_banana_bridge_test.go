@@ -121,7 +121,7 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 		Credentials: map[string]any{
 			"api_key":       "test-key",
 			"base_url":      "https://compatible.example/v1",
-			"model_mapping": map[string]any{"nano-banana-pro-4k": "models/nano-banana-pro-4k"},
+			"model_mapping": map[string]any{"gemini-nano-banana-2.1": "models/gemini-nano-banana-2.1"},
 		},
 		AccountGroups: []service.AccountGroup{{GroupID: groupID}},
 	}
@@ -134,7 +134,7 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	oauthAccount.Priority = 0
 	oauthAccount.Credentials = map[string]any{
 		"access_token":  "oauth-token",
-		"model_mapping": map[string]any{"nano-banana-pro-4k": "models/nano-banana-pro-4k"},
+		"model_mapping": map[string]any{"gemini-nano-banana-2.1": "models/gemini-nano-banana-2.1"},
 	}
 	account.Priority = 1
 	upstream := &geminiBananaBridgeHTTPUpstream{}
@@ -203,11 +203,11 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 		cfg:                      &config.Config{Gateway: config.GatewayConfig{ImageNonstreamKeepaliveInterval: 10}},
 	}
 	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"draw a cat"},{"inlineData":{"mimeType":"image/png","data":"QUJD"}}]}],"generationConfig":{"imageConfig":{"imageSize":"4K","aspectRatio":"9:16"}}}`)
-	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/nano-banana-pro-4k:generateContent", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-nano-banana-2.1:generateContent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Params = gin.Params{{Key: "modelAction", Value: "nano-banana-pro-4k:generateContent"}}
+	c.Params = gin.Params{{Key: "modelAction", Value: "gemini-nano-banana-2.1:generateContent"}}
 	c.Request = req
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      19,
@@ -235,7 +235,7 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	form, err := multipart.NewReader(bytes.NewReader(upstream.lastBody), params["boundary"]).ReadForm(int64(len(upstream.lastBody)))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = form.RemoveAll() })
-	require.Equal(t, []string{"nano-banana-pro-4k"}, form.Value["model"])
+	require.Equal(t, []string{"gemini-nano-banana-2.1"}, form.Value["model"])
 	require.Equal(t, []string{"draw a cat"}, form.Value["prompt"])
 	require.Equal(t, []string{"9:16"}, form.Value["size"])
 	require.Equal(t, []string{"4k"}, form.Value["quality"])

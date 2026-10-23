@@ -96,7 +96,7 @@ func decodeGeminiBananaImageData(data string) ([]byte, error) {
 
 func IsGeminiBananaBridgeModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(model, "models/")))
-	return strings.HasPrefix(model, "nano-banana2-") || strings.HasPrefix(model, "banana2-") || strings.HasPrefix(model, "nano-banana-pro-")
+	return strings.HasPrefix(model, "gemini-nano-banana-") || strings.HasPrefix(model, "nano-banana2-") || strings.HasPrefix(model, "banana2-") || strings.HasPrefix(model, "nano-banana-pro-")
 }
 
 func BuildOpenAIImagesBodyFromGeminiBanana(model string, body []byte) ([]byte, error) {
