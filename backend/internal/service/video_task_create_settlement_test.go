@@ -42,7 +42,8 @@ func TestVideoTaskCreateImmediateProviderFailurePersistsThenReleasesWithoutCaptu
 	require.NoError(t, err)
 	require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
 	require.Zero(t, settlement.captureCalls)
-	require.Equal(t, 1, settlement.reconcilePersistedCalls)
+	require.Equal(t, 1, settlement.failAndReleaseCalls)
+	require.Zero(t, settlement.reconcilePersistedCalls)
 	stored := repo.tasks[result.Task.PublicTaskID]
 	require.Equal(t, VideoTaskStatusFailed, stored.Status)
 }
@@ -258,7 +259,7 @@ func TestVideoTaskServiceCreatePerRequestPricingProviderFailureFailsAndReleases(
 	require.Zero(t, usage.calls)
 }
 
-func TestVideoTaskServiceCreatePerRequestPricingImmediateFailureReconcilesPersistedTask(t *testing.T) {
+func TestVideoTaskServiceCreatePerRequestPricingImmediateFailureReleasesAdmission(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	usage := &fakeVideoTaskUsageRecorder{events: events}
 	svc, _, provider, settlement := perRequestVideoTaskServiceFixture(events, usage)
@@ -268,7 +269,8 @@ func TestVideoTaskServiceCreatePerRequestPricingImmediateFailureReconcilesPersis
 
 	require.NoError(t, err)
 	require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
-	require.Equal(t, 1, settlement.reconcilePersistedCalls)
+	require.Equal(t, 1, settlement.failAndReleaseCalls)
+	require.Zero(t, settlement.reconcilePersistedCalls)
 	require.Zero(t, settlement.captureCalls)
 	require.Zero(t, usage.calls)
 }

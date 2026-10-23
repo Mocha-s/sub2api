@@ -498,7 +498,7 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		captureCtx, cancelCapture := videoTaskPersistenceContext(ctx)
 		var captureErr error
 		if providerResult.Status == VideoTaskStatusFailed {
-			captureErr = s.settlement.ReconcilePersistedTask(captureCtx, publicTaskID)
+			captureErr = s.settlement.FailAndRelease(captureCtx, publicTaskID, errors.New("video task provider returned failed status"))
 		} else {
 			_, captureErr = s.settlement.Capture(captureCtx, publicTaskID)
 		}
