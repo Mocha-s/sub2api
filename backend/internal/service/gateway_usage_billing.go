@@ -71,6 +71,13 @@ type usageLogBestEffortWriter interface {
 	CreateBestEffort(ctx context.Context, log *UsageLog) error
 }
 
+func optionalFloat64Value(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
 	Cost                  *CostBreakdown
@@ -236,6 +243,12 @@ func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string)
 	return "generated:" + generateRequestID()
 }
 
+// ResolveUsageBillingRequestID exposes the billing request identity to
+// post-processing flows such as automatic media refunds.
+func ResolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
+	return resolveUsageBillingRequestID(ctx, upstreamRequestID)
+}
+
 func isForcedUsageBillingRequestID(requestID string) bool {
 	id := strings.TrimSpace(requestID)
 	return strings.HasPrefix(id, "web_search:") ||
@@ -346,6 +359,31 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	if p.shouldUpdateAccountQuota() {
 		cmd.AccountQuotaCost = p.Cost.TotalCost * p.AccountRateMultiplier
 	}
+	if usageLog != nil && (usageLog.ImageCount > 0 || usageLog.VideoCount > 0) {
+		platformQuotaCost := 0.0
+		if !p.IsSubscriptionBill {
+			platformQuotaCost = p.Cost.ActualCost
+		}
+		cmd.MediaRefundSnapshot = &MediaRefundEffectSnapshot{
+			RequestID:           requestID,
+			APIKeyID:            p.APIKey.ID,
+			UserID:              p.User.ID,
+			AccountID:           p.Account.ID,
+			GroupID:             p.APIKey.GroupID,
+			SubscriptionID:      cmd.SubscriptionID,
+			Platform:            p.Platform,
+			BillingType:         usageLog.BillingType,
+			TotalCost:           p.Cost.TotalCost,
+			ActualCost:          p.Cost.ActualCost,
+			BalanceCost:         cmd.BalanceCost,
+			SubscriptionCost:    cmd.SubscriptionCost,
+			APIKeyQuotaCost:     cmd.APIKeyQuotaCost,
+			APIKeyRateLimitCost: cmd.APIKeyRateLimitCost,
+			AccountQuotaCost:    cmd.AccountQuotaCost,
+			PlatformQuotaCost:   platformQuotaCost,
+			AccountStatsCost:    optionalFloat64Value(usageLog.AccountStatsCost),
+		}
+	}
 
 	cmd.Normalize()
 	return cmd
@@ -365,6 +403,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		// must retain request-id deduplication and never bill other balances.
 		postUsageBilling(ctx, p, deps)
 		return true, nil
+	}
+	if cmd.MediaRefundSnapshot != nil && !p.IsSubscriptionBill && p.User != nil && deps.billingCacheService != nil && p.Platform != "" && !deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
+		cmd.MediaRefundSnapshot.PlatformQuotaCost = 0
 	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)
@@ -665,6 +706,21 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		QuotaPlatform:      input.QuotaPlatform,
 		ChannelUsageFields: input.ChannelUsageFields,
 	})
+}
+
+func (s *GatewayService) RefundMediaUsage(ctx context.Context, cmd *MediaUsageRefundCommand) (*MediaUsageRefundResult, error) {
+	if s == nil || s.usageBillingRepo == nil {
+		return nil, errors.New("media refund repository is not configured")
+	}
+	repo, ok := s.usageBillingRepo.(MediaUsageRefundRepository)
+	if !ok {
+		return nil, errors.New("media refund repository is not supported")
+	}
+	result, err := repo.RefundMediaUsage(ctx, cmd)
+	if err == nil {
+		invalidateMediaRefundCaches(ctx, s.billingCacheService, result)
+	}
+	return result, err
 }
 
 // recordUsageCoreInput 是 recordUsageCore 的公共输入字段，从两种输入结构体中提取。

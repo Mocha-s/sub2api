@@ -843,7 +843,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
 		// 长上下文阶梯由目录数据驱动，统一在计费路径内生效，入口无需声明。
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -870,6 +870,17 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 					zap.String("model", modelName),
 					zap.Int64("account_id", account.ID),
 				).Error("gemini.record_usage_failed", zap.Error(err))
+				return
+			}
+			if result != nil && result.RequestedImageCount > result.DeliveredImageCount {
+				if _, refundErr := h.gatewayService.RefundMediaUsage(ctx, &service.MediaUsageRefundCommand{
+					RequestID: service.ResolveUsageBillingRequestID(ctx, result.RequestID),
+					APIKeyID:  apiKey.ID, Scope: "image",
+					RequestedUnits: result.RequestedImageCount, DeliveredUnits: result.DeliveredImageCount,
+					Reason: "image output missing after successful upstream response",
+				}); refundErr != nil {
+					logger.L().With(zap.String("component", "handler.gemini_v1beta.models"), zap.Int64("api_key_id", apiKey.ID), zap.String("model", modelName)).Error("gemini.auto_refund_failed", zap.Error(refundErr))
+				}
 			}
 		})
 		reqLog.Debug("gemini.request_completed",
@@ -1062,18 +1073,20 @@ func (h *GatewayHandler) forwardGeminiBananaBridge(
 	geminiBody, usage, imageCount, err := h.openAIGatewayService.BuildGeminiBananaResponseFromOpenAIImages(context.WithoutCancel(c.Request.Context()), account, modelName, raw.Body)
 	if err != nil {
 		googleError(c, http.StatusBadGateway, err.Error())
-		return nil, nil
+		return geminiBananaForwardResult(modelName, raw.ForwardResult, service.ClaudeUsage{}, parsed.N, 0), nil
 	}
 	c.Data(http.StatusOK, "application/json; charset=utf-8", geminiBody)
-	return geminiBananaForwardResult(modelName, raw.ForwardResult, usage, imageCount), nil
+	return geminiBananaForwardResult(modelName, raw.ForwardResult, usage, parsed.N, imageCount), nil
 }
 
-func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, imageCount int) *service.ForwardResult {
+func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResult, usage service.ClaudeUsage, requestedImageCount, deliveredImageCount int) *service.ForwardResult {
 	result := &service.ForwardResult{
-		Usage:      usage,
-		Model:      strings.TrimSpace(modelName),
-		Stream:     false,
-		ImageCount: imageCount,
+		Usage:               usage,
+		Model:               strings.TrimSpace(modelName),
+		Stream:              false,
+		ImageCount:          requestedImageCount,
+		RequestedImageCount: requestedImageCount,
+		DeliveredImageCount: deliveredImageCount,
 	}
 	if raw == nil {
 		return result
@@ -1088,9 +1101,6 @@ func geminiBananaForwardResult(modelName string, raw *service.OpenAIForwardResul
 	result.ImageOutputSizes = raw.ImageOutputSizes
 	result.ImageSizeSource = raw.ImageSizeSource
 	result.ImageSizeBreakdown = raw.ImageSizeBreakdown
-	if result.ImageCount <= 0 {
-		result.ImageCount = raw.ImageCount
-	}
 	if result.UpstreamModel == "" {
 		result.UpstreamModel = raw.Model
 	}

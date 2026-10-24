@@ -1067,9 +1067,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	imageInputSize := s.extractImageInputSize(body)
 	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
 	imageCount := resolveGeminiImageCount(c, originalModel, mappedModel)
-	if (imageInputSize != "" || isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel)) && observedGeminiImageOutputResponseWithoutImage(c) {
-		// Do not record a successful image use when the client received no inline image data.
-		return nil, nil
+	requestedImageCount := 0
+	if isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel) || imageInputSize != "" {
+		requestedImageCount = geminiRequestedImageCount(body, imageCount)
 	}
 
 	return &ForwardResult{
@@ -1084,7 +1084,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
 		ReasoningEffort:               extractGeminiReasoningEffortFromBody(geminiReq),
-		ImageCount:                    imageCount,
+		ImageCount:                    max(imageCount, requestedImageCount),
+		RequestedImageCount:           requestedImageCount,
+		DeliveredImageCount:           observedGeminiImageOutputs(c),
 		ImageSize:                     imageSize,
 		ImageInputSize:                imageInputSize,
 	}, nil
@@ -1606,9 +1608,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	imageInputSize := s.extractImageInputSize(body)
 	imageSize := normalizeOpenAIImageSizeTier(imageInputSize)
 	imageCount := resolveGeminiImageCount(c, originalModel, mappedModel)
-	if (imageInputSize != "" || isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel)) && observedGeminiImageOutputResponseWithoutImage(c) {
-		// Do not record a successful image use when the client received no inline image data.
-		return nil, nil
+	requestedImageCount := 0
+	if isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel) || imageInputSize != "" {
+		requestedImageCount = geminiRequestedImageCount(body, imageCount)
 	}
 
 	return &ForwardResult{
@@ -1623,7 +1625,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		ReasoningEffort:               extractGeminiReasoningEffortFromBody(body),
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
-		ImageCount:                    imageCount,
+		ImageCount:                    max(imageCount, requestedImageCount),
+		RequestedImageCount:           requestedImageCount,
+		DeliveredImageCount:           observedGeminiImageOutputs(c),
 		ImageSize:                     imageSize,
 		ImageInputSize:                imageInputSize,
 	}, nil

@@ -12,6 +12,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -461,6 +462,14 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 			providerResult.Status = VideoTaskStatusQueued
 		}
 	}
+	completedWithoutOutput := providerResult.Status == VideoTaskStatusCompleted && !videoTaskHasOutputReference(providerResult.RawBody, providerResult.Metadata)
+	if completedWithoutOutput {
+		providerResult.Status = VideoTaskStatusFailed
+		if strings.TrimSpace(providerResult.ProviderStatus) == "" {
+			providerResult.ProviderStatus = "completed_without_output"
+		}
+		providerResult.Metadata = mergeVideoTaskFailureMetadata(providerResult.Metadata, "video provider completed without a usable output reference")
+	}
 	submittedAt := time.Now()
 	expiresAt := providerResult.ExpiresAt
 	if expiresAt == nil {
@@ -499,6 +508,13 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		var captureErr error
 		switch providerResult.Status {
 		case VideoTaskStatusFailed:
+			if completedWithoutOutput {
+				_, captureErr = s.settlement.Capture(captureCtx, publicTaskID)
+				if captureErr == nil {
+					captureErr = s.settlement.ReconcilePersistedTask(captureCtx, publicTaskID)
+				}
+				break
+			}
 			captureErr = s.settlement.FailAndRelease(captureCtx, publicTaskID, errors.New("video task provider returned failed status"))
 		case VideoTaskStatusCancelled, VideoTaskStatusExpired:
 			captureErr = s.settlement.ReconcilePersistedTask(captureCtx, publicTaskID)
@@ -547,6 +563,15 @@ func (s *VideoTaskService) submitVideoTask(ctx, providerCtx context.Context, par
 		return nil, err
 	}
 	return &VideoTaskCreateResult{Task: task, ResponseBody: rewritten, Header: http.Header{}}, nil
+}
+
+func mergeVideoTaskFailureMetadata(metadata map[string]any, reason string) map[string]any {
+	out := make(map[string]any, len(metadata)+1)
+	for key, value := range metadata {
+		out[key] = value
+	}
+	out["local_failure_reason"] = reason
+	return out
 }
 
 func (s *VideoTaskService) markVideoTaskCaptureReconciliation(ctx context.Context, publicTaskID string, result *VideoProviderCreateResult, cause error) error {
@@ -924,17 +949,25 @@ func (s *VideoTaskService) updateVideoTaskFromProviderResult(ctx context.Context
 	if providerResult == nil {
 		return nil, errors.New("video task provider returned nil fetch result")
 	}
+	status := providerResult.Status
+	errorMessage := providerResult.ErrorMessage
+	if status == VideoTaskStatusCompleted && !videoTaskHasOutputReference(providerResult.RawBody, providerResult.Metadata) {
+		status = VideoTaskStatusFailed
+		if strings.TrimSpace(errorMessage) == "" {
+			errorMessage = "video provider completed without a usable output reference"
+		}
+	}
 	completedAt := providerResult.CompletedAt
-	if completedAt == nil && providerResult.Status.Terminal() {
+	if completedAt == nil && status.Terminal() {
 		now := time.Now()
 		completedAt = &now
 	}
 	_, err := s.repo.UpdateFromProvider(ctx, task.PublicTaskID, VideoTaskProviderUpdate{
-		Status:         providerResult.Status,
+		Status:         status,
 		ProviderStatus: providerResult.ProviderStatus,
 		ResponseBody:   providerResult.RawBody,
 		Metadata:       providerResult.Metadata,
-		ErrorMessage:   providerResult.ErrorMessage,
+		ErrorMessage:   errorMessage,
 		CompletedAt:    completedAt,
 		ExpiresAt:      providerResult.ExpiresAt,
 	})
@@ -953,7 +986,7 @@ func (s *VideoTaskService) updateVideoTaskFromProviderResult(ctx context.Context
 	}
 	if reloaded == nil {
 		reloaded = task
-		reloaded.Status = providerResult.Status
+		reloaded.Status = status
 		reloaded.ProviderStatus = providerResult.ProviderStatus
 		reloaded.ResponseBody = append([]byte(nil), providerResult.RawBody...)
 		reloaded.CompletedAt = completedAt
@@ -968,6 +1001,35 @@ func (s *VideoTaskService) updateVideoTaskFromProviderResult(ctx context.Context
 		return nil, err
 	}
 	return &VideoTaskFetchResult{Task: reloaded, ResponseBody: rewritten}, nil
+}
+
+func videoTaskHasOutputReference(raw []byte, metadata map[string]any) bool {
+	for _, path := range []string{
+		"video_url", "videoUrl", "url", "output_url", "outputUrl", "download_url", "downloadUrl",
+		"result.video_url", "result.videoUrl", "result.url", "result.output_url", "result.outputUrl",
+		"data.video_url", "data.videoUrl", "data.url", "data.output_url", "data.outputUrl",
+		"content.video_url", "content.videoUrl", "content.url",
+	} {
+		if strings.TrimSpace(gjson.GetBytes(raw, path).String()) != "" {
+			return true
+		}
+	}
+	if len(metadata) == 0 {
+		return false
+	}
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return false
+	}
+	for _, path := range []string{
+		"video_url", "videoUrl", "url", "output_url", "outputUrl", "download_url", "downloadUrl",
+		"result.video_url", "result.videoUrl", "result.url", "data.video_url", "data.videoUrl", "data.url",
+	} {
+		if strings.TrimSpace(gjson.GetBytes(encoded, path).String()) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *VideoTaskService) selectVideoTaskActionAccount(ctx context.Context, apiKey *APIKey, user *User, body []byte) (*Account, string, func(), error) {

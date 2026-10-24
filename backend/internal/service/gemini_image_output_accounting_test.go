@@ -156,7 +156,7 @@ func TestResolveGeminiImageCount(t *testing.T) {
 		beginGeminiImageOutputObservation(c)
 		observeGeminiImageOutputs(c, textOnly)
 
-		require.Equal(t, 0, resolveGeminiImageCount(c, "gemini-3-pro-image-preview", "gemini-3-pro-image-preview"))
+		require.Equal(t, 1, resolveGeminiImageCount(c, "gemini-3-pro-image-preview", "gemini-3-pro-image-preview"))
 	})
 
 	t.Run("falls back to mapped upstream model name", func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestResolveGeminiImageCount(t *testing.T) {
 		beginGeminiImageOutputObservation(c)
 		observeGeminiImageOutputs(c, textOnly)
 
-		require.Equal(t, 0, resolveGeminiImageCount(c, "my-image-alias", "gemini-2.5-flash-image"))
+		require.Equal(t, 1, resolveGeminiImageCount(c, "my-image-alias", "gemini-2.5-flash-image"))
 	})
 
 	t.Run("text model stays unbilled", func(t *testing.T) {
@@ -175,12 +175,12 @@ func TestResolveGeminiImageCount(t *testing.T) {
 		require.Equal(t, 0, resolveGeminiImageCount(c, "gemini-2.5-pro", "gemini-2.5-pro"))
 	})
 
-	t.Run("observed image model without image stays unbilled", func(t *testing.T) {
+	t.Run("observed image model without image retains requested charge count for refund", func(t *testing.T) {
 		c := newGeminiImageTestContext(t)
 		beginGeminiImageOutputObservation(c)
 		observeGeminiImageOutputs(c, textOnly)
 
-		require.Equal(t, 0, resolveGeminiImageCount(c, "gemini-nano-banana-2.1", "gemini-nano-banana-2.1"))
+		require.Equal(t, 1, resolveGeminiImageCount(c, "gemini-nano-banana-2.1", "gemini-nano-banana-2.1"))
 	})
 
 	t.Run("no counter on context degrades to name heuristic", func(t *testing.T) {
@@ -188,6 +188,13 @@ func TestResolveGeminiImageCount(t *testing.T) {
 		require.Equal(t, 0, resolveGeminiImageCount(c, "nana-banana-2", "nana-banana-2"))
 		require.Equal(t, 1, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
 	})
+}
+
+func TestGeminiRequestedImageCountUsesCandidateCount(t *testing.T) {
+	body := []byte(`{"generationConfig":{"candidateCount":2,"imageConfig":{"imageSize":"1K"}}}`)
+	require.Equal(t, 2, geminiRequestedImageCount(body, 1))
+	require.Equal(t, 1, geminiRequestedImageCount([]byte(`{"generationConfig":{"imageConfig":{"imageSize":"1K"}}}`), 1))
+	require.Equal(t, 3, geminiRequestedImageCount([]byte(`{"generationConfig":{"candidateCount":3}}`), 0))
 }
 
 // 端到端守住接线：/v1beta/models/{model}:generateContent 的非流式响应体
@@ -220,6 +227,9 @@ func TestForwardNative_ImageModelWithoutInlineImageSkipsUsageResult(t *testing.T
 	result, err := svc.ForwardNative(context.Background(), c, geminiSignalTestAccount(),
 		"gemini-nano-banana-2.1", "generateContent", false, body)
 	require.NoError(t, err)
-	require.Nil(t, result)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, 1, result.RequestedImageCount)
+	require.Zero(t, result.DeliveredImageCount)
 	require.Equal(t, http.StatusOK, rec.Code)
 }

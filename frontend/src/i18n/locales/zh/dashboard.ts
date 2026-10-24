@@ -355,6 +355,8 @@ export default {
     actualCost: '实际',
     accountCost: '成本',
     userBilled: '用户扣费',
+    refunded: '已退款',
+    refundPending: '退款处理中',
     accountBilled: '账号计费',
     resetNow: '现在',
     resetPending: '待刷新',

@@ -65,6 +65,23 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingUsesDecodedOutputDimens
 	require.Equal(t, []string{"1672x941"}, run.result.ImageOutputSizes)
 }
 
+func TestOpenAIGatewayServiceNonStreamingImageWithoutOutputReportsZeroDelivered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	parsed := &OpenAIImagesRequest{N: 2, Model: "gpt-image-1", SizeTier: ImageBillingSize1K}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[],"usage":{"input_tokens":1}}`)),
+	}
+
+	svc := &OpenAIGatewayService{}
+	_, delivered, _, err := svc.handleOpenAIImagesNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, parsed)
+	require.NoError(t, err)
+	require.Equal(t, 0, delivered)
+}
+
 type openAIOAuthImageActualSizeTestRun struct {
 	result   *OpenAIForwardResult
 	recorder *httptest.ResponseRecorder

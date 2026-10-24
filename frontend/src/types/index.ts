@@ -1815,6 +1815,7 @@ export interface UsageLog {
   refunded_total_cost?: number | null
   net_actual_cost?: number | null
   net_total_cost?: number | null
+  refund_status?: 'none' | 'pending' | 'refunded' | string | null
   refund_reason?: string | null
   refunded_at?: string | null
   rate_multiplier: number

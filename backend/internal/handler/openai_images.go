@@ -439,6 +439,17 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					zap.String("model", clientRequestModel),
 					zap.Int64("account_id", account.ID),
 				).Error("openai.images.record_usage_failed", zap.Error(err))
+				return
+			}
+			if result != nil && result.RequestedImageCount > result.DeliveredImageCount {
+				if _, refundErr := h.gatewayService.RefundMediaUsage(ctx, &service.MediaUsageRefundCommand{
+					RequestID: service.ResolveUsageBillingRequestID(ctx, result.RequestID),
+					APIKeyID:  apiKey.ID, Scope: "image",
+					RequestedUnits: result.RequestedImageCount, DeliveredUnits: result.DeliveredImageCount,
+					Reason: "image output missing after successful upstream response",
+				}); refundErr != nil {
+					logger.L().With(zap.String("component", "handler.openai_gateway.images"), zap.Int64("api_key_id", apiKey.ID), zap.String("model", clientRequestModel)).Error("openai.images.auto_refund_failed", zap.Error(refundErr))
+				}
 			}
 		})
 

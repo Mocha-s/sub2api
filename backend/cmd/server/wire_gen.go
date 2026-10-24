@@ -357,18 +357,20 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
 	videoTaskPoller := service.ProvideVideoTaskPoller(videoTaskRepository, accountRepository, openAIGatewayService, videoTaskSettlementService)
 	videoTaskSettlementReconciler := service.ProvideVideoTaskSettlementReconciler(videoTaskSettlementRepository, videoTaskSettlementService)
+	mediaUsageRefundWorker := service.ProvideMediaUsageRefundWorker(usageBillingRepository)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	channelMonitorQuotaFetcher := service.NewChannelMonitorQuotaFetcher(accountUsageService, cnProviderQuotaService, cnProviderBalanceService, accountRepository, configConfig)
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, channelMonitorQuotaFetcher)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, videoTaskPoller, videoTaskSettlementReconciler, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, videoTaskPoller, videoTaskSettlementReconciler, mediaUsageRefundWorker, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	application := &Application{
-		Server:        httpServer,
-		PromptAudit:   promptService,
-		PluginManager: pluginManager,
-		Cleanup:       v,
+		Server:                 httpServer,
+		PromptAudit:            promptService,
+		PluginManager:          pluginManager,
+		Cleanup:                v,
+		MediaUsageRefundWorker: mediaUsageRefundWorker,
 	}
 	return application, nil
 }
@@ -376,10 +378,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 // wire.go:
 
 type Application struct {
-	Server        *http.Server
-	PromptAudit   *securityaudit.PromptService
-	PluginManager *service.PluginManager
-	Cleanup       func()
+	Server                 *http.Server
+	PromptAudit            *securityaudit.PromptService
+	PluginManager          *service.PluginManager
+	Cleanup                func()
+	MediaUsageRefundWorker *service.MediaUsageRefundWorker
 }
 
 func providePrivacyClientFactory() service.PrivacyClientFactory {
@@ -438,6 +441,7 @@ func provideCleanup(
 	grokOAuth *service.GrokOAuthService,
 	videoTaskPoller *service.VideoTaskPoller,
 	videoTaskSettlementReconciler *service.VideoTaskSettlementReconciler,
+	mediaUsageRefundWorker *service.MediaUsageRefundWorker,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
@@ -463,6 +467,12 @@ func provideCleanup(
 		}
 
 		parallelSteps := []cleanupStep{
+			{"MediaUsageRefundWorker", func() error {
+				if mediaUsageRefundWorker != nil {
+					mediaUsageRefundWorker.Stop()
+				}
+				return nil
+			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()

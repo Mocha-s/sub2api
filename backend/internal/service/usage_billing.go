@@ -42,6 +42,28 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+	MediaRefundSnapshot *MediaRefundEffectSnapshot
+}
+
+type MediaRefundEffectSnapshot struct {
+	RequestID           string
+	APIKeyID            int64
+	UserID              int64
+	AccountID           int64
+	GroupID             *int64
+	SubscriptionID      *int64
+	Platform            string
+	BillingType         int8
+	TotalCost           float64
+	ActualCost          float64
+	BalanceCost         float64
+	SubscriptionCost    float64
+	APIKeyQuotaCost     float64
+	APIKeyRateLimitCost float64
+	AccountQuotaCost    float64
+	PlatformQuotaCost   float64
+	AccountStatsCost    float64
+	WindowSnapshot      map[string]string
 }
 
 func (c *UsageBillingCommand) Normalize() {

@@ -2,6 +2,7 @@
 package dto
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -718,8 +719,9 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ActualCost:                l.ActualCost,
 		RefundedCost:              l.RefundedCost,
 		RefundedTotalCost:         l.RefundedTotalCost,
-		NetActualCost:             l.ActualCost - l.RefundedCost,
-		NetTotalCost:              l.TotalCost - l.RefundedTotalCost,
+		RefundStatus:              l.RefundStatus,
+		NetActualCost:             math.Max(0, l.ActualCost-l.RefundedCost),
+		NetTotalCost:              math.Max(0, l.TotalCost-l.RefundedTotalCost),
 		RefundReason:              l.RefundReason,
 		RefundedAt:                l.RefundedAt,
 		RateMultiplier:            l.RateMultiplier,

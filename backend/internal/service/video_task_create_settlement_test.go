@@ -98,6 +98,7 @@ func TestVideoTaskCreateLegacyUsageSkipsUnsuccessfulTerminalStatuses(t *testing.
 				Status:         tt.status,
 				ProviderStatus: string(tt.status),
 				RawBody:        []byte(`{"id":"upstream_unpriced","status":"` + string(tt.status) + `"}`),
+				Metadata:       map[string]any{"video_url": "https://cdn.example/video.mp4"},
 			}}
 			selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
 			svc := newVideoTaskServiceForTest(repo, nil, selector, provider, usage)

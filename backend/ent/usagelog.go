@@ -83,6 +83,8 @@ type UsageLog struct {
 	RefundedTotalCost float64 `json:"refunded_total_cost,omitempty"`
 	// RefundedAccountCost holds the value of the "refunded_account_cost" field.
 	RefundedAccountCost float64 `json:"refunded_account_cost,omitempty"`
+	// RefundStatus holds the value of the "refund_status" field.
+	RefundStatus usagelog.RefundStatus `json:"refund_status,omitempty"`
 	// RefundReason holds the value of the "refund_reason" field.
 	RefundReason *string `json:"refund_reason,omitempty"`
 	// RefundedAt holds the value of the "refunded_at" field.
@@ -218,7 +220,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldRefundReason, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
+		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldRefundStatus, usagelog.FieldRefundReason, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldRefundedAt, usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -432,6 +434,12 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field refunded_account_cost", values[i])
 			} else if value.Valid {
 				_m.RefundedAccountCost = value.Float64
+			}
+		case usagelog.FieldRefundStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field refund_status", values[i])
+			} else if value.Valid {
+				_m.RefundStatus = usagelog.RefundStatus(value.String)
 			}
 		case usagelog.FieldRefundReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -750,6 +758,9 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("refunded_account_cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RefundedAccountCost))
+	builder.WriteString(", ")
+	builder.WriteString("refund_status=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RefundStatus))
 	builder.WriteString(", ")
 	if v := _m.RefundReason; v != nil {
 		builder.WriteString("refund_reason=")

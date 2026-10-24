@@ -1493,7 +1493,7 @@ func reverseCapturedEffects(ctx context.Context, tx *sql.Tx, task *settlementTas
 		}
 	}
 	if row.usageLogID.Valid {
-		res, err := tx.ExecContext(ctx, `UPDATE usage_logs SET refunded_cost=$1,refunded_total_cost=$2,refunded_account_cost=$3,refund_reason=$4,refunded_at=NOW() WHERE id=$5`, applied.CustomerCostUSD, row.gross, applied.Effects.AccountStatsCost, reason, row.usageLogID.Int64)
+		res, err := tx.ExecContext(ctx, `UPDATE usage_logs SET refunded_cost=$1,refunded_total_cost=$2,refunded_account_cost=$3,refund_reason=$4,refunded_at=NOW(),refund_status='refunded' WHERE id=$5`, applied.CustomerCostUSD, row.gross, applied.Effects.AccountStatsCost, reason, row.usageLogID.Int64)
 		if err != nil {
 			return err
 		}

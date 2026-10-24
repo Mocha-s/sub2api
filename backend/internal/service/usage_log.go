@@ -169,6 +169,7 @@ type UsageLog struct {
 	RefundedCost              float64
 	RefundedTotalCost         float64
 	RefundedAccountCost       float64
+	RefundStatus              string
 	RefundReason              *string
 	RefundedAt                *time.Time
 	RateMultiplier            float64

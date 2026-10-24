@@ -548,6 +548,21 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	return nil
 }
 
+func (s *OpenAIGatewayService) RefundMediaUsage(ctx context.Context, cmd *MediaUsageRefundCommand) (*MediaUsageRefundResult, error) {
+	if s == nil || s.usageBillingRepo == nil {
+		return nil, errors.New("media refund repository is not configured")
+	}
+	repo, ok := s.usageBillingRepo.(MediaUsageRefundRepository)
+	if !ok {
+		return nil, errors.New("media refund repository is not supported")
+	}
+	result, err := repo.RefundMediaUsage(ctx, cmd)
+	if err == nil {
+		invalidateMediaRefundCaches(ctx, s.billingCacheService, result)
+	}
+	return result, err
+}
+
 // hasIdentifiedOpenAIResponsePricing 判断上游自报的响应模型是否可以作为计费基准，
 // 并回传它是否解析到了渠道级定价（供 responseModelBillingAdoptable 的跨定价源守卫使用，
 // 避免为此再解析一次）。

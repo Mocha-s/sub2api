@@ -208,7 +208,10 @@
         <template #cell-cost="{ row }">
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
-              <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
+              <span class="font-medium text-green-600 dark:text-green-400">${{ (row.net_actual_cost ?? Math.max(0, (row.actual_cost ?? 0) - (row.refunded_cost ?? 0))).toFixed(6) }}</span>
+              <span v-if="row.refund_status && row.refund_status !== 'none'" class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" :title="row.refund_reason || undefined">
+                {{ row.refund_status === 'refunded' ? t('usage.refunded') : t('usage.refundPending') }}
+              </span>
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
@@ -508,8 +511,13 @@
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
-            <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(8) || '0.00000000' }}</span>
+            <span class="font-semibold text-green-400">${{ (tooltipData?.net_actual_cost ?? Math.max(0, (tooltipData?.actual_cost ?? 0) - (tooltipData?.refunded_cost ?? 0))).toFixed(8) }}</span>
           </div>
+          <div v-if="tooltipData && tooltipData.refund_status && tooltipData.refund_status !== 'none'" class="flex items-center justify-between gap-6">
+            <span class="text-gray-400">{{ t('usage.refunded') }}</span>
+            <span class="font-medium text-amber-300">${{ (tooltipData.refunded_cost ?? 0).toFixed(8) }}</span>
+          </div>
+          <div v-if="tooltipData?.refund_reason" class="max-w-[260px] whitespace-normal text-amber-300">{{ tooltipData.refund_reason }}</div>
           <!-- Account billing (separated from user billing) -->
           <template v-if="showAccountBilling">
             <div class="flex items-center justify-between gap-6 border-t border-gray-700 pt-1.5">
