@@ -278,6 +278,8 @@ type OpenAIForwardResult struct {
 	FirstTokenMs          *int
 	ClientDisconnect      bool
 	ImageCount            int
+	RequestedImageCount   int
+	DeliveredImageCount   int
 	ImageSize             string
 	ImageInputSize        string
 	ImageOutputSize       string

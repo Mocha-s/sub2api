@@ -45751,6 +45751,7 @@ type UsageLogMutation struct {
 	addrefunded_total_cost       *float64
 	refunded_account_cost        *float64
 	addrefunded_account_cost     *float64
+	refund_status                *usagelog.RefundStatus
 	refund_reason                *string
 	refunded_at                  *time.Time
 	rate_multiplier              *float64
@@ -47426,6 +47427,42 @@ func (m *UsageLogMutation) ResetRefundedAccountCost() {
 	m.addrefunded_account_cost = nil
 }
 
+// SetRefundStatus sets the "refund_status" field.
+func (m *UsageLogMutation) SetRefundStatus(us usagelog.RefundStatus) {
+	m.refund_status = &us
+}
+
+// RefundStatus returns the value of the "refund_status" field in the mutation.
+func (m *UsageLogMutation) RefundStatus() (r usagelog.RefundStatus, exists bool) {
+	v := m.refund_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundStatus returns the old "refund_status" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRefundStatus(ctx context.Context) (v usagelog.RefundStatus, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundStatus: %w", err)
+	}
+	return oldValue.RefundStatus, nil
+}
+
+// ResetRefundStatus resets all changes to the "refund_status" field.
+func (m *UsageLogMutation) ResetRefundStatus() {
+	m.refund_status = nil
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (m *UsageLogMutation) SetRefundReason(s string) {
 	m.refund_reason = &s
@@ -48733,7 +48770,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 52)
+	fields := make([]string, 0, 53)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -48823,6 +48860,9 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.refunded_account_cost != nil {
 		fields = append(fields, usagelog.FieldRefundedAccountCost)
+	}
+	if m.refund_status != nil {
+		fields = append(fields, usagelog.FieldRefundStatus)
 	}
 	if m.refund_reason != nil {
 		fields = append(fields, usagelog.FieldRefundReason)
@@ -48958,6 +48998,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.RefundedTotalCost()
 	case usagelog.FieldRefundedAccountCost:
 		return m.RefundedAccountCost()
+	case usagelog.FieldRefundStatus:
+		return m.RefundStatus()
 	case usagelog.FieldRefundReason:
 		return m.RefundReason()
 	case usagelog.FieldRefundedAt:
@@ -49071,6 +49113,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldRefundedTotalCost(ctx)
 	case usagelog.FieldRefundedAccountCost:
 		return m.OldRefundedAccountCost(ctx)
+	case usagelog.FieldRefundStatus:
+		return m.OldRefundStatus(ctx)
 	case usagelog.FieldRefundReason:
 		return m.OldRefundReason(ctx)
 	case usagelog.FieldRefundedAt:
@@ -49333,6 +49377,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRefundedAccountCost(v)
+		return nil
+	case usagelog.FieldRefundStatus:
+		v, ok := value.(usagelog.RefundStatus)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundStatus(v)
 		return nil
 	case usagelog.FieldRefundReason:
 		v, ok := value.(string)
@@ -50064,6 +50115,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldRefundedAccountCost:
 		m.ResetRefundedAccountCost()
+		return nil
+	case usagelog.FieldRefundStatus:
+		m.ResetRefundStatus()
 		return nil
 	case usagelog.FieldRefundReason:
 		m.ResetRefundReason()

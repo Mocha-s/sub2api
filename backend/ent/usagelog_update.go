@@ -625,6 +625,20 @@ func (_u *UsageLogUpdate) AddRefundedAccountCost(v float64) *UsageLogUpdate {
 	return _u
 }
 
+// SetRefundStatus sets the "refund_status" field.
+func (_u *UsageLogUpdate) SetRefundStatus(v usagelog.RefundStatus) *UsageLogUpdate {
+	_u.mutation.SetRefundStatus(v)
+	return _u
+}
+
+// SetNillableRefundStatus sets the "refund_status" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRefundStatus(v *usagelog.RefundStatus) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRefundStatus(*v)
+	}
+	return _u
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_u *UsageLogUpdate) SetRefundReason(v string) *UsageLogUpdate {
 	_u.mutation.SetRefundReason(v)
@@ -1180,6 +1194,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RefundStatus(); ok {
+		if err := usagelog.RefundStatusValidator(v); err != nil {
+			return &ValidationError{Name: "refund_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.refund_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -1385,6 +1404,9 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
 		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundStatus(); ok {
+		_spec.SetField(usagelog.FieldRefundStatus, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.RefundReason(); ok {
 		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
@@ -2272,6 +2294,20 @@ func (_u *UsageLogUpdateOne) AddRefundedAccountCost(v float64) *UsageLogUpdateOn
 	return _u
 }
 
+// SetRefundStatus sets the "refund_status" field.
+func (_u *UsageLogUpdateOne) SetRefundStatus(v usagelog.RefundStatus) *UsageLogUpdateOne {
+	_u.mutation.SetRefundStatus(v)
+	return _u
+}
+
+// SetNillableRefundStatus sets the "refund_status" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRefundStatus(v *usagelog.RefundStatus) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRefundStatus(*v)
+	}
+	return _u
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_u *UsageLogUpdateOne) SetRefundReason(v string) *UsageLogUpdateOne {
 	_u.mutation.SetRefundReason(v)
@@ -2840,6 +2876,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RefundStatus(); ok {
+		if err := usagelog.RefundStatusValidator(v); err != nil {
+			return &ValidationError{Name: "refund_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.refund_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -3062,6 +3103,9 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedRefundedAccountCost(); ok {
 		_spec.AddField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RefundStatus(); ok {
+		_spec.SetField(usagelog.FieldRefundStatus, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.RefundReason(); ok {
 		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)

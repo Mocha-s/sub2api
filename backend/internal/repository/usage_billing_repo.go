@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -15,7 +17,7 @@ type usageBillingRepository struct {
 	db *sql.DB
 }
 
-func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) service.UsageBillingRepository {
+func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) *usageBillingRepository {
 	return &usageBillingRepository{db: sqlDB}
 }
 
@@ -54,12 +56,77 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
 		return nil, err
 	}
+	if cmd.MediaRefundSnapshot != nil {
+		if err := persistMediaRefundSnapshot(ctx, tx, cmd.MediaRefundSnapshot); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	tx = nil
 	return result, nil
+}
+
+func persistMediaRefundSnapshot(ctx context.Context, tx *sql.Tx, snapshot *service.MediaRefundEffectSnapshot) error {
+	if snapshot == nil || strings.TrimSpace(snapshot.RequestID) == "" || snapshot.APIKeyID <= 0 {
+		return nil
+	}
+	windows := map[string]string{}
+	var five, day, week sql.NullTime
+	if err := tx.QueryRowContext(ctx, `SELECT window_5h_start,window_1d_start,window_7d_start FROM api_keys WHERE id=$1`, snapshot.APIKeyID).Scan(&five, &day, &week); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if five.Valid {
+		windows["api_key_5h"] = five.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if day.Valid {
+		windows["api_key_1d"] = day.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if week.Valid {
+		windows["api_key_7d"] = week.Time.UTC().Format(time.RFC3339Nano)
+	}
+	if snapshot.SubscriptionID != nil {
+		var d, w, m sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT daily_window_start,weekly_window_start,monthly_window_start FROM user_subscriptions WHERE id=$1`, *snapshot.SubscriptionID).Scan(&d, &w, &m); err != nil {
+			return err
+		}
+		if d.Valid {
+			windows["subscription_daily"] = d.Time.UTC().Format(time.RFC3339Nano)
+		}
+		if w.Valid {
+			windows["subscription_weekly"] = w.Time.UTC().Format(time.RFC3339Nano)
+		}
+		if m.Valid {
+			windows["subscription_monthly"] = m.Time.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	if snapshot.PlatformQuotaCost > 0 && strings.TrimSpace(snapshot.Platform) != "" {
+		var d, w, m sql.NullTime
+		if err := tx.QueryRowContext(ctx, `SELECT daily_window_start,weekly_window_start,monthly_window_start FROM user_platform_quotas WHERE user_id=$1 AND platform=$2 AND deleted_at IS NULL`, snapshot.UserID, snapshot.Platform).Scan(&d, &w, &m); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if d.Valid {
+			windows["platform_daily"] = d.Time.UTC().Format(time.RFC3339Nano)
+		}
+		if w.Valid {
+			windows["platform_weekly"] = w.Time.UTC().Format(time.RFC3339Nano)
+		}
+		if m.Valid {
+			windows["platform_monthly"] = m.Time.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	data, err := json.Marshal(windows)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO media_usage_refund_snapshots
+		(request_id,api_key_id,user_id,account_id,group_id,subscription_id,platform,billing_type,total_cost,actual_cost,balance_cost,subscription_cost,api_key_quota_cost,api_key_rate_limit_cost,account_quota_cost,platform_quota_cost,account_stats_cost,window_snapshot)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		ON CONFLICT (request_id,api_key_id) DO UPDATE SET updated_at=NOW()`, snapshot.RequestID, snapshot.APIKeyID, snapshot.UserID, snapshot.AccountID, snapshot.GroupID, snapshot.SubscriptionID, snapshot.Platform, snapshot.BillingType, snapshot.TotalCost, snapshot.ActualCost, snapshot.BalanceCost, snapshot.SubscriptionCost, snapshot.APIKeyQuotaCost, snapshot.APIKeyRateLimitCost, snapshot.AccountQuotaCost, snapshot.PlatformQuotaCost, snapshot.AccountStatsCost, data)
+	return err
 }
 
 func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand) (bool, error) {
@@ -190,6 +257,9 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	// Key 已不存在时跳过其自身的额度/限速计数，其余结算项不受影响。
 	if cmd.APIKeyQuotaCost > 0 {
 		exhausted, err := incrementUsageBillingAPIKeyQuota(ctx, tx, cmd.APIKeyID, cmd.APIKeyQuotaCost)
+		if errors.Is(err, service.ErrAPIKeyNotFound) && cmd.MediaRefundSnapshot != nil {
+			cmd.MediaRefundSnapshot.APIKeyQuotaCost = 0
+		}
 		if err != nil && !errors.Is(err, service.ErrAPIKeyNotFound) {
 			return err
 		}
@@ -197,8 +267,12 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.APIKeyRateLimitCost > 0 {
-		if err := incrementUsageBillingAPIKeyRateLimit(ctx, tx, cmd.APIKeyID, cmd.APIKeyRateLimitCost); err != nil && !errors.Is(err, service.ErrAPIKeyNotFound) {
-			return err
+		if err := incrementUsageBillingAPIKeyRateLimit(ctx, tx, cmd.APIKeyID, cmd.APIKeyRateLimitCost); err != nil {
+			if errors.Is(err, service.ErrAPIKeyNotFound) && cmd.MediaRefundSnapshot != nil {
+				cmd.MediaRefundSnapshot.APIKeyRateLimitCost = 0
+			} else if !errors.Is(err, service.ErrAPIKeyNotFound) {
+				return err
+			}
 		}
 	}
 

@@ -1680,6 +1680,26 @@ func RefundedAccountCostLTE(v float64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldRefundedAccountCost, v))
 }
 
+// RefundStatusEQ applies the EQ predicate on the "refund_status" field.
+func RefundStatusEQ(v RefundStatus) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRefundStatus, v))
+}
+
+// RefundStatusNEQ applies the NEQ predicate on the "refund_status" field.
+func RefundStatusNEQ(v RefundStatus) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRefundStatus, v))
+}
+
+// RefundStatusIn applies the In predicate on the "refund_status" field.
+func RefundStatusIn(vs ...RefundStatus) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRefundStatus, vs...))
+}
+
+// RefundStatusNotIn applies the NotIn predicate on the "refund_status" field.
+func RefundStatusNotIn(vs ...RefundStatus) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRefundStatus, vs...))
+}
+
 // RefundReasonEQ applies the EQ predicate on the "refund_reason" field.
 func RefundReasonEQ(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldRefundReason, v))

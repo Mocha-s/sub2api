@@ -631,6 +631,7 @@ type UsageLog struct {
 	RefundedTotalCost         float64    `json:"refunded_total_cost"`
 	NetActualCost             float64    `json:"net_actual_cost"`
 	NetTotalCost              float64    `json:"net_total_cost"`
+	RefundStatus              string     `json:"refund_status"`
 	RefundReason              *string    `json:"refund_reason,omitempty"`
 	RefundedAt                *time.Time `json:"refunded_at,omitempty"`
 	RateMultiplier            float64    `json:"rate_multiplier"`

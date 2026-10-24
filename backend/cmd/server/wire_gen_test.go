@@ -89,6 +89,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // grokOAuth
 		nil, // videoTaskPoller
 		nil, // videoTaskSettlementReconciler
+		nil, // mediaUsageRefundWorker
 		nil, // openAIGateway
 		nil, // scheduledTestRunner
 		nil, // backupSvc

@@ -1,11 +1,28 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
+
+func geminiRequestedImageCount(body []byte, fallback int) int {
+	requested := fallback
+	var payload struct {
+		GenerationConfig struct {
+			CandidateCount int `json:"candidateCount"`
+		} `json:"generationConfig"`
+	}
+	if json.Unmarshal(body, &payload) == nil && payload.GenerationConfig.CandidateCount > requested {
+		requested = payload.GenerationConfig.CandidateCount
+	}
+	if requested <= 0 {
+		requested = 1
+	}
+	return requested
+}
 
 // geminiImageOutputCounterKey 是请求级内联图片计数器挂在 gin.Context 上的键。
 const geminiImageOutputCounterKey = "gemini_image_output_counter"
@@ -83,11 +100,11 @@ func observedGeminiImageOutputResponseWithoutImage(c *gin.Context) bool {
 // 于是 ImageCount=0，calculateRecordUsageCost 整条按次计费分支不触发，
 // 生图请求全部记 $0。
 //
-// 只有尚未开始观测响应时才退回模型名启发式；一旦观测到响应却没有 inlineData，
-// 必须按 0 张图处理，避免上游空响应或文本响应被误扣一张图。
+// 计费张数保留原有模型名回退行为；DeliveredImageCount 单独由响应观测决定，
+// 供 handler 在正常扣费后计算补偿退款。
 func resolveGeminiImageCount(c *gin.Context, originalModel, mappedModel string) int {
-	if counter := geminiImageOutputCounterFromContext(c); counter != nil && counter.observed {
-		return counter.count
+	if observed := observedGeminiImageOutputs(c); observed > 0 {
+		return observed
 	}
 	if isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel) {
 		return 1

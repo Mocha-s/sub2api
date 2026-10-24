@@ -1955,7 +1955,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 					ResponseHeaders:               resp.Header.Clone(),
 					Duration:                      time.Since(startTime),
 					FirstTokenMs:                  firstTokenMs,
-					ImageCount:                    imageCount,
+					ImageCount:                    parsed.N,
+					RequestedImageCount:           parsed.N,
+					DeliveredImageCount:           imageCount,
 					ImageSize:                     parsed.SizeTier,
 					ImageInputSize:                parsed.Size,
 					ImageOutputSizes:              imageOutputSizes,
@@ -1991,9 +1993,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			)
 		}
 	}
-	if imageCount <= 0 {
-		imageCount = parsed.N
-	}
 	return &OpenAIForwardResult{
 		RequestID:                     resp.Header.Get("x-request-id"),
 		UpstreamHeaders:               resp.Header,
@@ -2007,7 +2006,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		ResponseHeaders:               resp.Header.Clone(),
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
-		ImageCount:                    imageCount,
+		ImageCount:                    parsed.N,
+		RequestedImageCount:           parsed.N,
+		DeliveredImageCount:           imageCount,
 		ImageSize:                     parsed.SizeTier,
 		ImageInputSize:                parsed.Size,
 		ImageOutputSizes:              imageOutputSizes,

@@ -320,7 +320,7 @@ func TestVideoTaskPollerPollOnceSkipsTaskWhoseExpiredLeaseWasReclaimedBeforeItsT
 		enforceLeaseContract: true,
 	}
 	provider := &pollerVideoTaskProviderFake{
-		results: map[string]*VideoProviderFetchResult{"task_first": {Status: VideoTaskStatusCompleted}},
+		results: map[string]*VideoProviderFetchResult{"task_first": {Status: VideoTaskStatusCompleted, Metadata: map[string]any{"video_url": "https://cdn.example/video.mp4"}}},
 		afterFetch: func(taskID string) {
 			if taskID == "task_first" {
 				repo.replaceLease("task_reclaimed", "newer-worker", now.Add(2*videoTaskPollLockTTL))

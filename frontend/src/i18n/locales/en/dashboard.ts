@@ -350,6 +350,8 @@ export default {
     actualCost: 'Actual',
     accountCost: 'Cost',
     userBilled: 'User billed',
+    refunded: 'Refunded',
+    refundPending: 'Refund pending',
     accountBilled: 'Account billed',
     resetNow: 'Now',
     resetPending: 'Pending refresh',

@@ -188,7 +188,12 @@ func TestCodexDirectImagesStreaming(t *testing.T) {
 			}
 			if test.wantCount > 0 {
 				require.NotNil(t, result)
-				require.Equal(t, test.wantCount, result.ImageCount)
+				if test.name == "partial_requested_multiple" {
+					require.Equal(t, 2, result.ImageCount)
+				} else {
+					require.Equal(t, test.wantCount, result.ImageCount)
+				}
+				require.Equal(t, test.wantCount, result.DeliveredImageCount)
 				require.Equal(t, 20, result.Usage.ImageOutputTokens)
 				if !test.wantError {
 					require.Equal(t, "gpt-image-2-codex", result.UpstreamResponseModel)

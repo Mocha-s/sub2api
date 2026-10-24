@@ -407,6 +407,20 @@ func (_c *UsageLogCreate) SetNillableRefundedAccountCost(v *float64) *UsageLogCr
 	return _c
 }
 
+// SetRefundStatus sets the "refund_status" field.
+func (_c *UsageLogCreate) SetRefundStatus(v usagelog.RefundStatus) *UsageLogCreate {
+	_c.mutation.SetRefundStatus(v)
+	return _c
+}
+
+// SetNillableRefundStatus sets the "refund_status" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRefundStatus(v *usagelog.RefundStatus) *UsageLogCreate {
+	if v != nil {
+		_c.SetRefundStatus(*v)
+	}
+	return _c
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_c *UsageLogCreate) SetRefundReason(v string) *UsageLogCreate {
 	_c.mutation.SetRefundReason(v)
@@ -827,6 +841,10 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultRefundedAccountCost
 		_c.mutation.SetRefundedAccountCost(v)
 	}
+	if _, ok := _c.mutation.RefundStatus(); !ok {
+		v := usagelog.DefaultRefundStatus
+		_c.mutation.SetRefundStatus(v)
+	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		v := usagelog.DefaultRateMultiplier
 		_c.mutation.SetRateMultiplier(v)
@@ -962,6 +980,14 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.RefundedAccountCost(); !ok {
 		return &ValidationError{Name: "refunded_account_cost", err: errors.New(`ent: missing required field "UsageLog.refunded_account_cost"`)}
+	}
+	if _, ok := _c.mutation.RefundStatus(); !ok {
+		return &ValidationError{Name: "refund_status", err: errors.New(`ent: missing required field "UsageLog.refund_status"`)}
+	}
+	if v, ok := _c.mutation.RefundStatus(); ok {
+		if err := usagelog.RefundStatusValidator(v); err != nil {
+			return &ValidationError{Name: "refund_status", err: fmt.Errorf(`ent: validator failed for field "UsageLog.refund_status": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.RateMultiplier(); !ok {
 		return &ValidationError{Name: "rate_multiplier", err: errors.New(`ent: missing required field "UsageLog.rate_multiplier"`)}
@@ -1157,6 +1183,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RefundedAccountCost(); ok {
 		_spec.SetField(usagelog.FieldRefundedAccountCost, field.TypeFloat64, value)
 		_node.RefundedAccountCost = value
+	}
+	if value, ok := _c.mutation.RefundStatus(); ok {
+		_spec.SetField(usagelog.FieldRefundStatus, field.TypeEnum, value)
+		_node.RefundStatus = value
 	}
 	if value, ok := _c.mutation.RefundReason(); ok {
 		_spec.SetField(usagelog.FieldRefundReason, field.TypeString, value)
@@ -1896,6 +1926,18 @@ func (u *UsageLogUpsert) UpdateRefundedAccountCost() *UsageLogUpsert {
 // AddRefundedAccountCost adds v to the "refunded_account_cost" field.
 func (u *UsageLogUpsert) AddRefundedAccountCost(v float64) *UsageLogUpsert {
 	u.Add(usagelog.FieldRefundedAccountCost, v)
+	return u
+}
+
+// SetRefundStatus sets the "refund_status" field.
+func (u *UsageLogUpsert) SetRefundStatus(v usagelog.RefundStatus) *UsageLogUpsert {
+	u.Set(usagelog.FieldRefundStatus, v)
+	return u
+}
+
+// UpdateRefundStatus sets the "refund_status" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRefundStatus() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRefundStatus)
 	return u
 }
 
@@ -2927,6 +2969,20 @@ func (u *UsageLogUpsertOne) AddRefundedAccountCost(v float64) *UsageLogUpsertOne
 func (u *UsageLogUpsertOne) UpdateRefundedAccountCost() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRefundedAccountCost()
+	})
+}
+
+// SetRefundStatus sets the "refund_status" field.
+func (u *UsageLogUpsertOne) SetRefundStatus(v usagelog.RefundStatus) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundStatus(v)
+	})
+}
+
+// UpdateRefundStatus sets the "refund_status" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRefundStatus() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundStatus()
 	})
 }
 
@@ -4188,6 +4244,20 @@ func (u *UsageLogUpsertBulk) AddRefundedAccountCost(v float64) *UsageLogUpsertBu
 func (u *UsageLogUpsertBulk) UpdateRefundedAccountCost() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateRefundedAccountCost()
+	})
+}
+
+// SetRefundStatus sets the "refund_status" field.
+func (u *UsageLogUpsertBulk) SetRefundStatus(v usagelog.RefundStatus) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRefundStatus(v)
+	})
+}
+
+// UpdateRefundStatus sets the "refund_status" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRefundStatus() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRefundStatus()
 	})
 }
 

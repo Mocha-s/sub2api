@@ -25,10 +25,11 @@ import (
 )
 
 type Application struct {
-	Server        *http.Server
-	PromptAudit   *securityaudit.PromptService
-	PluginManager *service.PluginManager
-	Cleanup       func()
+	Server                 *http.Server
+	PromptAudit            *securityaudit.PromptService
+	PluginManager          *service.PluginManager
+	Cleanup                func()
+	MediaUsageRefundWorker *service.MediaUsageRefundWorker
 }
 
 func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
@@ -58,7 +59,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "Cleanup", "MediaUsageRefundWorker"),
 	)
 	return nil, nil
 }
@@ -119,6 +120,7 @@ func provideCleanup(
 	grokOAuth *service.GrokOAuthService,
 	videoTaskPoller *service.VideoTaskPoller,
 	videoTaskSettlementReconciler *service.VideoTaskSettlementReconciler,
+	mediaUsageRefundWorker *service.MediaUsageRefundWorker,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
@@ -145,6 +147,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"MediaUsageRefundWorker", func() error {
+				if mediaUsageRefundWorker != nil {
+					mediaUsageRefundWorker.Stop()
+				}
+				return nil
+			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()

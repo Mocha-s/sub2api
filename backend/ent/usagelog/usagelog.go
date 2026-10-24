@@ -3,6 +3,7 @@
 package usagelog
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -74,6 +75,8 @@ const (
 	FieldRefundedTotalCost = "refunded_total_cost"
 	// FieldRefundedAccountCost holds the string denoting the refunded_account_cost field in the database.
 	FieldRefundedAccountCost = "refunded_account_cost"
+	// FieldRefundStatus holds the string denoting the refund_status field in the database.
+	FieldRefundStatus = "refund_status"
 	// FieldRefundReason holds the string denoting the refund_reason field in the database.
 	FieldRefundReason = "refund_reason"
 	// FieldRefundedAt holds the string denoting the refunded_at field in the database.
@@ -200,6 +203,7 @@ var Columns = []string{
 	FieldRefundedCost,
 	FieldRefundedTotalCost,
 	FieldRefundedAccountCost,
+	FieldRefundStatus,
 	FieldRefundReason,
 	FieldRefundedAt,
 	FieldRateMultiplier,
@@ -312,6 +316,33 @@ var (
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
+
+// RefundStatus defines the type for the "refund_status" enum field.
+type RefundStatus string
+
+// RefundStatusNone is the default value of the RefundStatus enum.
+const DefaultRefundStatus = RefundStatusNone
+
+// RefundStatus values.
+const (
+	RefundStatusNone     RefundStatus = "none"
+	RefundStatusPending  RefundStatus = "pending"
+	RefundStatusRefunded RefundStatus = "refunded"
+)
+
+func (rs RefundStatus) String() string {
+	return string(rs)
+}
+
+// RefundStatusValidator is a validator for the "refund_status" field enum values. It is called by the builders before save.
+func RefundStatusValidator(rs RefundStatus) error {
+	switch rs {
+	case RefundStatusNone, RefundStatusPending, RefundStatusRefunded:
+		return nil
+	default:
+		return fmt.Errorf("usagelog: invalid enum value for refund_status field: %q", rs)
+	}
+}
 
 // OrderOption defines the ordering options for the UsageLog queries.
 type OrderOption func(*sql.Selector)
@@ -469,6 +500,11 @@ func ByRefundedTotalCost(opts ...sql.OrderTermOption) OrderOption {
 // ByRefundedAccountCost orders the results by the refunded_account_cost field.
 func ByRefundedAccountCost(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRefundedAccountCost, opts...).ToFunc()
+}
+
+// ByRefundStatus orders the results by the refund_status field.
+func ByRefundStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRefundStatus, opts...).ToFunc()
 }
 
 // ByRefundReason orders the results by the refund_reason field.

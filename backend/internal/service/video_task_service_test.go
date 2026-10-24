@@ -575,6 +575,7 @@ func TestVideoTaskServiceFetchUsesStoredAccount(t *testing.T) {
 			Status:         VideoTaskStatusCompleted,
 			ProviderStatus: "completed",
 			RawBody:        []byte(`{"id":"upstream_fetch_1","status":"completed"}`),
+			Metadata:       map[string]any{"video_url": "https://cdn.example/video.mp4"},
 		},
 	}
 	svc := newVideoTaskServiceForTest(repo, accountStore, selector, provider, nil)
@@ -611,6 +612,7 @@ func TestVideoTaskServiceRefreshUsesPersistedAdapterAndUpdatesTask(t *testing.T)
 		Status:         VideoTaskStatusCompleted,
 		ProviderStatus: "completed",
 		RawBody:        []byte(`{"id":"upstream_refresh","status":"completed"}`),
+		Metadata:       map[string]any{"video_url": "https://cdn.example/video.mp4"},
 	}}
 	svc := newVideoTaskServiceForTest(repo, accountStore, nil, provider, nil)
 
@@ -759,6 +761,7 @@ func TestVideoTaskServiceFetchAndRefreshPersistTerminalResultAfterProviderCancel
 					Status:         VideoTaskStatusCompleted,
 					ProviderStatus: "completed",
 					RawBody:        []byte(`{"id":"upstream_terminal","status":"completed"}`),
+					Metadata:       map[string]any{"video_url": "https://cdn.example/video.mp4"},
 				},
 			}
 			svc := newVideoTaskServiceForTest(repo, &fakeVideoTaskAccountStore{accounts: map[int64]*Account{99: {ID: 99}}}, nil, provider, nil)
@@ -970,7 +973,7 @@ func TestVideoTaskServiceFetchPreservesPersistedAdapterMetadata(t *testing.T) {
 		Status:         VideoTaskStatusCompleted,
 		ProviderStatus: "succeeded",
 		RawBody:        []byte(`{"id":"123","status":"completed"}`),
-		Metadata:       map[string]any{VideoAdapterMetadataKey: VideoAdapterSeedanceAPIV1},
+		Metadata:       map[string]any{VideoAdapterMetadataKey: VideoAdapterSeedanceAPIV1, "video_url": "https://cdn.example/video.mp4"},
 	}}
 	durationProvider := &fakeVideoTaskProvider{events: events}
 	provider := &accountVideoTaskProvider{registry: videoAdapterRegistry{
@@ -2769,4 +2772,10 @@ func mergeMaps(base map[string]any, update map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func TestVideoTaskProviderSuccessRequiresOutputReference(t *testing.T) {
+	require.False(t, videoTaskHasOutputReference([]byte(`{"status":"completed","data":{}}`), nil))
+	require.True(t, videoTaskHasOutputReference([]byte(`{"status":"completed","result":{"video_url":"https://cdn.example/video.mp4"}}`), nil))
+	require.True(t, videoTaskHasOutputReference(nil, map[string]any{"video_url": "https://cdn.example/video.mp4"}))
 }

@@ -117,6 +117,9 @@ func (UsageLog) Fields() []ent.Field {
 		field.Float("refunded_account_cost").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
+		field.Enum("refund_status").
+			Values("none", "pending", "refunded").
+			Default("none"),
 		field.String("refund_reason").
 			Optional().
 			Nillable().

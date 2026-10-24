@@ -71,6 +71,12 @@ func ProvideVideoTaskSettlementReconciler(repo VideoTaskSettlementRepository, se
 	return reconciler
 }
 
+func ProvideMediaUsageRefundWorker(repo MediaUsageRefundRepository) *MediaUsageRefundWorker {
+	worker := NewMediaUsageRefundWorker(repo)
+	worker.Start()
+	return worker
+}
+
 // ProvideAuthService wires the optional captcha providers into AuthService while
 // keeping NewAuthService's public constructor compatible with existing tests.
 func ProvideAuthService(
@@ -907,6 +913,7 @@ var ProviderSet = wire.NewSet(
 	NewVideoTaskService,
 	ProvideVideoTaskPoller,
 	ProvideVideoTaskSettlementReconciler,
+	ProvideMediaUsageRefundWorker,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideClaudeResetCreditService,

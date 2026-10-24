@@ -927,6 +927,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.0, 0.0, 0.0, 0.0, 0.8, 0.8,
 			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
+			sql.NullString{}, // refund_status
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),
@@ -1012,6 +1013,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0.0,               // refunded_account_cost
 			sql.NullString{},  // refund_reason
 			sql.NullTime{},    // refunded_at
+			sql.NullString{},  // refund_status
 			1.0,               // rate_multiplier
 			sql.NullFloat64{}, // account_rate_multiplier
 			int16(service.BillingTypeBalance),
@@ -1076,6 +1078,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
 			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
+			sql.NullString{}, // refund_status
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),
@@ -1141,6 +1144,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			0, 0.0, // image_input_tokens, image_input_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
 			0.0, 0.0, 0.0, sql.NullString{}, sql.NullTime{},
+			sql.NullString{}, // refund_status
 			1.0,
 			sql.NullFloat64{},
 			int16(service.BillingTypeBalance),
