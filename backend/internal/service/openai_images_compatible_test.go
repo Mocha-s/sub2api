@@ -161,3 +161,67 @@ func TestCompatibleImagesNativeAccountsRejectGeminiBeforeForwarding(t *testing.T
 		}
 	}
 }
+
+func TestCompatibleImagesThirdPartyModels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	thirdParty := []string{"seedream-5.0-pro", "doubao-seedream-5-0-flash", "flux-3-image", "flux-2-pro"}
+	for _, model := range thirdParty {
+		t.Run(model, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw"}`, model))
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, strings.NewReader(string(body)))
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapability)
+			require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapabilityForModel(model))
+			require.True(t, (&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}).SupportsOpenAIImageCapability(parsed.RequiredCapability))
+			for _, typ := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
+				require.False(t, (&Account{Platform: PlatformOpenAI, Type: typ}).SupportsOpenAIImageCapability(parsed.RequiredCapability))
+			}
+		})
+	}
+	for _, model := range []string{"midjourney", "midjourney-v7", "grok-imagine-image", "grok-imagine-image-2.0"} {
+		t.Run("accept_"+model, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw"}`, model))
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, strings.NewReader(string(body)))
+			parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			require.Equal(t, model, parsed.Model)
+		})
+	}
+	for _, model := range []string{"gpt-5.5", "unknown-image", "fluxx-3-image", "seedreaming-1"} {
+		t.Run("reject_"+model, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw"}`, model))
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, strings.NewReader(string(body)))
+			_, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+			require.ErrorContains(t, err, "images endpoint requires an image model")
+		})
+	}
+}
+
+func TestCompatibleImagesForwardThirdPartyModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, model := range []string{"seedream-5.0-pro", "doubao-seedream-5-0-flash", "flux-3-image", "midjourney"} {
+		t.Run(model, func(t *testing.T) {
+			endpoint := openAIImagesGenerationsEndpoint
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw","size":"1024x1024","custom_field":"preserved"}`, model))
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(string(body)))
+			c.Request.Header.Set("Content-Type", "application/json")
+			upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"aW1hZ2U="}]}`))}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			result, err := svc.ForwardImages(c.Request.Context(), c, &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "image-key", "base_url": "https://compatible.example/v1"}}, body, parsed, "")
+			require.NoError(t, err)
+			require.Equal(t, model, result.UpstreamModel)
+			require.Equal(t, model, gjson.GetBytes(upstream.lastBody, "model").String())
+			require.Equal(t, "preserved", gjson.GetBytes(upstream.lastBody, "custom_field").String())
+			require.Equal(t, "https://compatible.example"+endpoint, upstream.lastReq.URL.String())
+			require.Equal(t, "Bearer image-key", upstream.lastReq.Header.Get("Authorization"))
+		})
+	}
+}

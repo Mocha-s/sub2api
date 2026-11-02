@@ -530,7 +530,17 @@ func isOpenAICompatibleBananaImageGenerationModel(model string) bool {
 
 func isMidjourneyImageGenerationModel(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
-	return strings.HasPrefix(model, "midjourney-")
+	return model == "midjourney" || strings.HasPrefix(model, "midjourney-")
+}
+
+// isOpenAICompatibleThirdPartyImageModel identifies third-party image families
+// (Seedream, Flux, ...) served through OpenAI-compatible API-key accounts. Keep
+// it out of isOpenAIImageGenerationModel for the same reason as
+// isGeminiCompatibleImageModel: that predicate drives native Responses tool
+// conversion, pricing and rate-limit policy.
+func isOpenAICompatibleThirdPartyImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "seedream-") || strings.HasPrefix(model, "doubao-seedream-") || strings.HasPrefix(model, "flux-")
 }
 
 func validateOpenAIImagesModel(model string) error {
@@ -553,7 +563,7 @@ func isGeminiCompatibleImageModel(model string) bool {
 }
 
 func validateCompatibleImagesModel(model string) error {
-	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) {
+	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) || isOpenAICompatibleThirdPartyImageModel(model) {
 		return nil
 	}
 	return validateOpenAIImagesModel(model)
@@ -562,7 +572,7 @@ func validateCompatibleImagesModel(model string) error {
 // RequiredCapabilityForModel also applies the API-key-only fence when channel
 // mapping introduces a compatible provider model after request parsing.
 func (req *OpenAIImagesRequest) RequiredCapabilityForModel(model string) OpenAIImagesCapability {
-	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) {
+	if isGeminiCompatibleImageModel(model) || IsGeminiBananaBridgeModel(model) || isOpenAICompatibleThirdPartyImageModel(model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
 	return req.RequiredCapability
@@ -584,7 +594,7 @@ func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapabi
 	if req == nil {
 		return OpenAIImagesCapabilityNative
 	}
-	if isGeminiCompatibleImageModel(req.Model) || IsGeminiBananaBridgeModel(req.Model) {
+	if isGeminiCompatibleImageModel(req.Model) || IsGeminiBananaBridgeModel(req.Model) || isOpenAICompatibleThirdPartyImageModel(req.Model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
 	if req.ExplicitModel || req.ExplicitSize {
