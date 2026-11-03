@@ -105,7 +105,7 @@ func NewModelPlazaService(
 //   - 渠道按 lower(name) 排序后遍历，保证同名模型去重结果确定；
 //   - 同分组同名模型「先见者胜」，仅当已存条目无定价而新条目有定价时升级替换；
 //   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule），
-//     图片计费模型的档位价按实收口径合成（见 plazaImageDisplayPricing）；
+//     图片/视频计费模型的档位价按实收口径合成（见 plazaImageDisplayPricing / plazaVideoDisplayPricing）；
 //   - 每个模型附带官方参考价（查不到为 nil）；
 //   - 只返回 Models 非空的分组；分组按 RateMultiplier 升序（同倍率按名称），
 //     组内模型按名称排序。
@@ -238,7 +238,8 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 
 // fillDisplayPricing 把模型的展示定价换成实收口径：
 // token 模型取计费阶梯表（单价与档位均由真实计费函数得出），
-// 图片/按次模型（或阶梯表不可用时）沿用渠道定价与分组图片档位价。
+// 图片/视频计费模型合成分组档位价（见 plazaImageDisplayPricing / plazaVideoDisplayPricing），
+// 其余（或阶梯表不可用时）沿用渠道定价。
 func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
 	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
 		m.Pricing = groupPricing
@@ -258,6 +259,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			return
 		}
 	}
+	m.Pricing = plazaVideoDisplayPricing(m.Pricing, g, m.Name)
 	m.Pricing = plazaImageDisplayPricing(m.Pricing, g)
 }
 
@@ -343,6 +345,56 @@ func plazaImageDisplayPricing(p *ChannelModelPricing, g *Group) *ChannelModelPri
 			TierLabel:       t.label,
 			PerRequestPrice: &v,
 			SortOrder:       i,
+		})
+	}
+	return &clone
+}
+
+// plazaVideoDisplayPricing 为视频计费模型合成展示定价，使档位价与实收口径一致：
+// 每档（480p/720p/1080p）每秒单价 = 渠道同档位价 > 渠道默认每秒价 > 分组每秒价
+// （分组 VideoModelPrices 按模型优先于分档配置），渠道未配的档回落到分组价，无价的档不展示。
+// 分组未配任何视频价、渠道定价缺失或定价非视频模式时原样返回。返回克隆，不修改入参
+// （渠道定价指针指向缓存共享数据）。
+func plazaVideoDisplayPricing(p *ChannelModelPricing, g *Group, modelName string) *ChannelModelPricing {
+	if p == nil || g == nil || p.BillingMode != BillingModeVideo {
+		return p
+	}
+	tiers := []string{VideoBillingResolution480P, VideoBillingResolution720P, VideoBillingResolution1080P}
+	groupPrice := func(label string) *float64 { return g.GetVideoPriceForModel(modelName, label) }
+	hasGroupPrice := false
+	for _, label := range tiers {
+		if groupPrice(label) != nil {
+			hasGroupPrice = true
+			break
+		}
+	}
+	if !hasGroupPrice {
+		return p
+	}
+	// 渠道同档位价（tier_label 归一化后匹配）> 渠道默认每秒价。
+	channelTierPrice := func(label string) *float64 {
+		for i := range p.Intervals {
+			if NormalizeVideoBillingTierLabel(p.Intervals[i].TierLabel) == label && p.Intervals[i].VideoPricePerSecond != nil {
+				return p.Intervals[i].VideoPricePerSecond
+			}
+		}
+		return p.VideoPricePerSecond
+	}
+	clone := *p
+	clone.Intervals = make([]PricingInterval, 0, len(tiers))
+	for i, label := range tiers {
+		price := channelTierPrice(label)
+		if price == nil {
+			price = groupPrice(label)
+		}
+		if price == nil {
+			continue
+		}
+		v := *price
+		clone.Intervals = append(clone.Intervals, PricingInterval{
+			TierLabel:           label,
+			VideoPricePerSecond: &v,
+			SortOrder:           i,
 		})
 	}
 	return &clone

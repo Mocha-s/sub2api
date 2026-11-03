@@ -337,6 +337,81 @@ func TestListPlazaGroups_GroupImagePriceIgnoredForNonImageModes(t *testing.T) {
 	require.Nil(t, p.PerRequestPrice)
 }
 
+func TestListPlazaGroups_GroupVideoPriceOverridesChannelPricing(t *testing.T) {
+	// 视频计费模型:渠道配置优先(任务结算按渠道每秒价),渠道未配的档回落分组每秒价
+	// (分组 VideoModelPrices 按模型优先于分档列);未配分组视频价的分组保持渠道定价原样。
+	channel720p := 0.5
+	defaultSeconds := 10
+	group480p := 0.05
+	group1080p := 0.09
+	map480p := 0.11
+	channels := []Channel{{
+		ID: 1, Name: "vid-ch", Status: StatusActive, GroupIDs: []int64{10, 20},
+		ModelPricing: []ChannelModelPricing{{
+			Platform:            "openai",
+			Models:              []string{"sora-2"},
+			BillingMode:         BillingModeVideo,
+			VideoDefaultSeconds: &defaultSeconds,
+			Intervals:           []PricingInterval{{TierLabel: "1280x720", VideoPricePerSecond: &channel720p}},
+		}},
+	}}
+	groups := []Group{
+		{ID: 10, Name: "g-video", Platform: "openai", RateMultiplier: 1,
+			VideoPrice480P: &group480p, VideoPrice1080P: &group1080p,
+			VideoModelPrices: map[string]map[string]float64{"sora-2": {"480p": map480p}}},
+		{ID: 20, Name: "g-plain", Platform: "openai", RateMultiplier: 0.5},
+	}
+	svc := newPlazaService(channels, groups, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	byName := map[string]PlazaGroup{}
+	for _, g := range out {
+		byName[g.Name] = g
+	}
+
+	video := byName["g-video"]
+	require.Len(t, video.Models, 1)
+	p := video.Models[0].Pricing
+	require.NotNil(t, p)
+	require.Equal(t, BillingModeVideo, p.BillingMode)
+	require.NotNil(t, p.VideoDefaultSeconds, "克隆保留渠道其余字段")
+	tierPrices := map[string]float64{}
+	for _, iv := range p.Intervals {
+		require.NotNil(t, iv.VideoPricePerSecond)
+		tierPrices[iv.TierLabel] = *iv.VideoPricePerSecond
+	}
+	require.Len(t, tierPrices, 3)
+	require.InDelta(t, 0.11, tierPrices["480p"], 1e-9, "480p 分组按模型价优先于分档列")
+	require.InDelta(t, 0.5, tierPrices["720p"], 1e-9, "720p 渠道档位价优先(1280x720 归一化)")
+	require.InDelta(t, 0.09, tierPrices["1080p"], 1e-9, "1080p 渠道未配,回落分组分档价")
+
+	plain := byName["g-plain"]
+	require.Len(t, plain.Models, 1)
+	pp := plain.Models[0].Pricing
+	require.NotNil(t, pp)
+	require.Len(t, pp.Intervals, 1, "未配分组视频价:渠道定价原样")
+	require.InDelta(t, 0.5, *pp.Intervals[0].VideoPricePerSecond, 1e-9)
+
+	// 合成为克隆,渠道原始定价不被修改
+	require.Len(t, channels[0].ModelPricing[0].Intervals, 1)
+}
+
+func TestListPlazaGroups_GroupVideoPriceIgnoredForNonVideoModes(t *testing.T) {
+	// token 模式定价不受分组视频价影响。
+	group480p := 0.05
+	channels := []Channel{plazaPricedChannel(1, "ch", []int64{10}, "openai", "gpt-5")}
+	groups := []Group{{ID: 10, Name: "g", Platform: "openai", RateMultiplier: 1, VideoPrice480P: &group480p}}
+	svc := newPlazaService(channels, groups, nil)
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	p := out[0].Models[0].Pricing
+	require.NotNil(t, p)
+	require.Empty(t, p.Intervals)
+	require.NotNil(t, p.InputPrice)
+}
+
 func TestListPlazaGroups_RepoErrorsPropagate(t *testing.T) {
 	sentinel := errors.New("boom")
 	repo := &mockChannelRepository{

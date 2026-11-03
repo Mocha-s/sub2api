@@ -136,9 +136,9 @@
             />
 
             <PricingRow
-              v-if="model.pricing.billing_mode === BILLING_MODE_VIDEO && model.pricing.per_request_price != null"
+              v-if="videoUnitPrice != null"
               :label="t(prefixKey('videoPrice'))"
-              :value="model.pricing.per_request_price"
+              :value="videoUnitPrice"
               :unit="t(prefixKey('unitPerSecond'))"
               :scale="1"
             />
@@ -251,6 +251,13 @@ const billingModeLabel = computed(() => {
   }
 })
 
+/** 视频每秒价:新字段优先,兼容历史把每秒价写在按次字段的数据。 */
+const videoUnitPrice = computed<number | null>(() => {
+  const pricing = props.model.pricing
+  if (pricing?.billing_mode !== BILLING_MODE_VIDEO) return null
+  return pricing.video_price_per_second ?? pricing.per_request_price
+})
+
 function formatRange(min: number, max: number | null): string {
   const maxLabel = max == null ? '∞' : String(max)
   return `(${min}, ${maxLabel}]`
@@ -258,7 +265,7 @@ function formatRange(min: number, max: number | null): string {
 
 function formatInterval(iv: UserPricingInterval, pricing: UserSupportedModelPricing): string {
   if (pricing.billing_mode === BILLING_MODE_VIDEO) {
-    return `${formatScaled(iv.per_request_price, 1)} ${t(prefixKey('unitPerSecond'))}`
+    return `${formatScaled(iv.video_price_per_second ?? iv.per_request_price, 1)} ${t(prefixKey('unitPerSecond'))}`
   }
   if (pricing.billing_mode === BILLING_MODE_PER_REQUEST || pricing.billing_mode === BILLING_MODE_IMAGE) {
     return formatScaled(iv.per_request_price, 1)

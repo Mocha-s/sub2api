@@ -193,6 +193,33 @@
             </td>
           </template>
 
+          <!-- 视频按秒计费:分档(480p/720p/1080p)芯片或单一每秒价 -->
+          <template v-else-if="billingMode(m) === BILLING_MODE_VIDEO">
+            <td colspan="3" class="pz-cell px-3 py-2.5 align-middle">
+              <div
+                v-if="videoIntervals(m).length"
+                class="flex flex-wrap items-center gap-1.5"
+              >
+                <span
+                  v-for="(iv, idx) in videoIntervals(m)"
+                  :key="idx"
+                  class="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-800 dark:bg-dark-700/60 dark:text-gray-200"
+                >
+                  <span class="font-sans text-gray-400 dark:text-dark-500">{{ tierLabel(iv) }}</span>
+                  {{ paidRequestPrice(m, videoIntervalPrice(iv))
+                  }}<span class="font-sans text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.perUnitSecond') }}</span>
+                </span>
+              </div>
+              <template v-else-if="videoUnitPrice(m) != null">
+                <span class="font-mono font-semibold text-gray-900 dark:text-gray-50">
+                  {{ paidRequestPrice(m, videoUnitPrice(m)) }}
+                </span>
+                <span class="ml-1 text-xs text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.perUnitSecond') }}</span>
+              </template>
+              <span v-else class="text-gray-400 dark:text-dark-500">-</span>
+            </td>
+          </template>
+
           <!-- 按次 / 按图片计费:实付区整体合并,阶梯芯片或单一按次价 -->
           <template v-else>
             <td colspan="3" class="pz-cell px-3 py-2.5 align-middle">
@@ -402,9 +429,14 @@ function billingMode(m: PlazaModel): BillingMode {
 }
 
 function billingModeLabel(m: PlazaModel): string {
-  return billingMode(m) === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perImage')
-    : t('modelPlaza.table.perRequest')
+  switch (billingMode(m)) {
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.perImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.perSecond')
+    default:
+      return t('modelPlaza.table.perRequest')
+  }
 }
 
 /** 价格统一保底 2 位小数,更长的有效小数原样保留。 */
@@ -461,6 +493,21 @@ function requestRate(m: PlazaModel): number {
 function paidRequestPrice(m: PlazaModel, value: number | null | undefined): string {
   if (value == null) return '-'
   return formatScaled(value * requestRate(m), 1, MIN_DECIMALS)
+}
+
+/** 视频每秒单价:分档用档位视频价,兼容历史写在按次字段的每秒价。 */
+function videoIntervalPrice(iv: UserPricingInterval): number | null {
+  return iv.video_price_per_second ?? iv.per_request_price
+}
+
+/** 视频计费的分档每秒价(仅保留有价的档位)。 */
+function videoIntervals(m: PlazaModel): UserPricingInterval[] {
+  return (m.pricing?.intervals ?? []).filter((iv) => videoIntervalPrice(iv) != null)
+}
+
+/** 视频计费的默认每秒价(无分档配置时的平价)。 */
+function videoUnitPrice(m: PlazaModel): number | null {
+  return m.pricing?.video_price_per_second ?? m.pricing?.per_request_price ?? null
 }
 
 /** 官方参考价不乘倍率。 */

@@ -101,6 +101,68 @@ describe('PlazaModelPricingTable', () => {
     wrapper.unmount()
   })
 
+  it('视频计费按每秒单价展示:分档芯片、单位后缀与默认价回退', () => {
+    const model = tokenModel({
+      name: 'video-canonical',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        video_price_per_second: 0.06,
+        video_default_seconds: 10,
+        video_allowed_seconds: [5, 10],
+        intervals: [
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '480p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null,
+            video_price_per_second: 0.05
+          },
+          {
+            min_tokens: 0,
+            max_tokens: null,
+            tier_label: '720p',
+            input_price: null,
+            output_price: null,
+            cache_write_price: null,
+            cache_read_price: null,
+            per_request_price: null,
+            video_price_per_second: 0.09
+          }
+        ]
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 0.5)
+    const text = wrapper.text()
+    // 徽章与单位后缀标注按秒计费
+    expect(text).toContain('modelPlaza.table.perSecond')
+    expect(text).toContain('modelPlaza.table.perUnitSecond')
+    // 分档芯片:480p $0.025 / 720p $0.045(倍率 0.5)
+    expect(text).toContain('480p')
+    expect(text).toContain('$0.025')
+    expect(text).toContain('720p')
+    expect(text).toContain('$0.045')
+    wrapper.unmount()
+
+    // 无分档时用默认每秒价(0.06 × 0.5)
+    model.pricing!.intervals = []
+    const flat = mountTable([model], 0.5)
+    expect(flat.text()).toContain('$0.03')
+    expect(flat.text()).toContain('modelPlaza.table.perUnitSecond')
+    flat.unmount()
+  })
+
   it('倍率为 1 时展示渠道单价原值($/1M),价格保底 2 位小数', () => {
     const wrapper = mountTable([tokenModel()], 1)
     const text = wrapper.text()

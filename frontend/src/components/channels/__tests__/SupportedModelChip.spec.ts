@@ -61,6 +61,10 @@ describe('SupportedModelChip', () => {
         })
         expect(tooltip?.textContent).toContain(`${pricingKeyPrefix}.videoPrice`)
         expect(wrapper.findComponent({ name: 'PricingRow' }).text()).toContain(`$0 ${pricingKeyPrefix}.unitPerSecond`)
+        await wrapper.setProps({
+          model: { ...model, pricing: { ...model.pricing!, per_request_price: null, video_price_per_second: 0.09 } }
+        })
+        expect(tooltip?.textContent).toContain(`$0.09 ${pricingKeyPrefix}.unitPerSecond`)
       } finally {
         wrapper.unmount()
       }
