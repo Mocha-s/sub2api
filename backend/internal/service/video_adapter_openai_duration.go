@@ -14,16 +14,46 @@ import (
 
 type openAIVideosDurationAdapter struct {
 	provider *openAICompatibleVideoProvider
+	name     string
+	body     func(body []byte, upstreamModel string) ([]byte, error)
 }
 
 func NewOpenAIVideosDurationAdapter(openai *OpenAIGatewayService) VideoTaskAdapter {
-	return &openAIVideosDurationAdapter{provider: &openAICompatibleVideoProvider{client: http.DefaultClient, openai: openai}}
+	return newOpenAIVideosDurationAdapter(openai, VideoAdapterOpenAIVideosDuration, openAIDurationCreateBody)
 }
 
-func (a *openAIVideosDurationAdapter) Name() string { return VideoAdapterOpenAIVideosDuration }
+// newOpenAIVideosDurationAdapter exposes the same adapter under another protocol name
+// with an optional create-body rewriter; Fetch/Refresh/Content/Estimate stay shared.
+func newOpenAIVideosDurationAdapter(openai *OpenAIGatewayService, name string, body func(body []byte, upstreamModel string) ([]byte, error)) *openAIVideosDurationAdapter {
+	if name == "" {
+		name = VideoAdapterOpenAIVideosDuration
+	}
+	if body == nil {
+		body = openAIDurationCreateBody
+	}
+	return &openAIVideosDurationAdapter{
+		provider: &openAICompatibleVideoProvider{client: http.DefaultClient, openai: openai},
+		name:     name,
+		body:     body,
+	}
+}
+
+func (a *openAIVideosDurationAdapter) Name() string {
+	if a != nil && a.name != "" {
+		return a.name
+	}
+	return VideoAdapterOpenAIVideosDuration
+}
+
+func (a *openAIVideosDurationAdapter) createBody(body []byte, upstreamModel string) ([]byte, error) {
+	if a != nil && a.body != nil {
+		return a.body(body, upstreamModel)
+	}
+	return openAIDurationCreateBody(body, upstreamModel)
+}
 
 func (a *openAIVideosDurationAdapter) ValidateCreate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) error {
-	if _, err := openAIDurationCreateBody(body, upstreamModel); err != nil {
+	if _, err := a.createBody(body, upstreamModel); err != nil {
 		return err
 	}
 	if err := validateUnifiedVideoGenerationFields(ctx, body,
@@ -48,13 +78,13 @@ func (a *openAIVideosDurationAdapter) Create(ctx context.Context, account *Accou
 	if err != nil {
 		return nil, err
 	}
-	forwardBody, err := openAIDurationCreateBody(body, upstreamModel)
+	forwardBody, err := a.createBody(body, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
 	result, err := provider.Create(ctx, account, forwardBody, contentType, upstreamModel)
 	if result != nil {
-		result.Metadata = openAIDurationMetadata(result.Metadata, result.RawBody)
+		result.Metadata = a.metadata(result.Metadata, result.RawBody)
 	}
 	return result, err
 }
@@ -66,7 +96,7 @@ func (a *openAIVideosDurationAdapter) Fetch(ctx context.Context, account *Accoun
 	}
 	result, err := provider.Fetch(ctx, account, task)
 	if result != nil {
-		result.Metadata = openAIDurationMetadata(result.Metadata, result.RawBody)
+		result.Metadata = a.metadata(result.Metadata, result.RawBody)
 	}
 	return result, err
 }
@@ -80,7 +110,7 @@ func (a *openAIVideosDurationAdapter) Estimate(ctx context.Context, account *Acc
 	if err != nil {
 		return nil, err
 	}
-	forwardBody, err := openAIDurationCreateBody(body, upstreamModel)
+	forwardBody, err := a.createBody(body, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +265,8 @@ func openAIDurationRawNumericField(payload map[string]json.RawMessage, key strin
 	return number, true, nil
 }
 
-func openAIDurationMetadata(metadata map[string]any, raw []byte) map[string]any {
-	return stampVideoResultMetadata(metadata, raw, VideoAdapterOpenAIVideosDuration)
+func (a *openAIVideosDurationAdapter) metadata(metadata map[string]any, raw []byte) map[string]any {
+	return stampVideoResultMetadata(metadata, raw, a.Name())
 }
 
 func stampVideoResultMetadata(metadata map[string]any, raw []byte, adapterName string) map[string]any {

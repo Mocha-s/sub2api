@@ -12,6 +12,7 @@ const (
 	VideoAdapterJimengOpenAIVideos     = "jimeng_openai_videos"
 	VideoAdapterSeedanceAPIV1          = "seedance_api_v1"
 	VideoAdapterOpenAIVideosDuration   = "openai_videos_duration"
+	VideoAdapterCangyuanReferenceURLs  = "cangyuan_reference_urls"
 	VideoAdapterNewAPIVideoGenerations = "newapi_video_generations"
 	VideoAdapterAutoVideoGenerations   = "auto_video_generations"
 )
@@ -110,6 +111,7 @@ func newDefaultVideoAdapterRegistry(openai *OpenAIGatewayService) videoAdapterRe
 		jimeng.Name():                      jimeng,
 		VideoAdapterSeedanceAPIV1:          NewSeedanceAPIV1VideoAdapter(openai),
 		VideoAdapterOpenAIVideosDuration:   NewOpenAIVideosDurationAdapter(openai),
+		VideoAdapterCangyuanReferenceURLs:  NewCangyuanReferenceURLsVideoAdapter(openai),
 		VideoAdapterNewAPIVideoGenerations: NewNewAPIVideoGenerationsAdapter(openai),
 		VideoAdapterAutoVideoGenerations:   NewAutoVideoGenerationsAdapter(openai),
 	}
@@ -137,7 +139,7 @@ func resolveVideoAdapterName(account *Account, task *VideoTask) (string, error) 
 		return VideoAdapterJimengOpenAIVideos, nil
 	}
 	switch name {
-	case VideoAdapterJimengOpenAIVideos, VideoAdapterSeedanceAPIV1, VideoAdapterOpenAIVideosDuration, VideoAdapterNewAPIVideoGenerations, VideoAdapterAutoVideoGenerations:
+	case VideoAdapterJimengOpenAIVideos, VideoAdapterSeedanceAPIV1, VideoAdapterOpenAIVideosDuration, VideoAdapterNewAPIVideoGenerations, VideoAdapterAutoVideoGenerations, VideoAdapterCangyuanReferenceURLs:
 		return name, nil
 	default:
 		return "", fmt.Errorf("unknown video_adapter %q", name)

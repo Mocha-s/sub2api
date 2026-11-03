@@ -383,3 +383,10 @@ func TestJimengOpenAIVideosAdapterStampsFetchMetadata(t *testing.T) {
 	require.Equal(t, "https://cdn.example/jimeng.mp4", result.Metadata["result_url"])
 	require.Equal(t, VideoAdapterJimengOpenAIVideos, result.Metadata[VideoAdapterMetadataKey])
 }
+
+func TestResolveVideoAdapterNameAcceptsCangyuanReferenceURLs(t *testing.T) {
+	name, err := resolveVideoAdapterName(&Account{Credentials: map[string]any{VideoAdapterMetadataKey: VideoAdapterCangyuanReferenceURLs}}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, VideoAdapterCangyuanReferenceURLs, name)
+}
