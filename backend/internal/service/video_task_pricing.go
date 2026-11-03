@@ -163,48 +163,96 @@ func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *
 	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
 	}
-
-	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice)
+	// 先按默认按次价完成金额校验，保持配置错误优先于请求体错误的既有次序。
+	amounts, err := perRequestVideoTaskAmounts(unitPrice, rateMultiplier, accountRateMultiplier)
 	if err != nil {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request gross cost must be finite")
-	}
-	actualCost := grossCost * rateMultiplier
-	if !validVideoPriceMultiplier(actualCost) {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request actual cost must be finite")
-	}
-	accountUnitPrice, _ := decimal.NewFromFloat(unitPrice).Round(10).Float64()
-	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice)
-	if err != nil {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account base cost is outside pricing precision")
-	}
-	accountCost := accountBaseCost * accountRateMultiplier
-	if !validVideoPriceMultiplier(accountCost) {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account cost must be finite")
-	}
-	actualCost, err = NormalizeVideoTaskSettlementAmount(actualCost)
-	if err != nil {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request actual cost is outside applied precision")
-	}
-	accountCost, err = NormalizeVideoTaskSettlementAmount(accountCost)
-	if err != nil {
-		return VideoTaskQuote{}, invalidVideoPricingConfig("per-request account cost is outside applied precision")
+		return VideoTaskQuote{}, err
 	}
 	payload, err := decodeVideoPricingPayload(body)
 	if err != nil {
 		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
 	}
+	// 按次计费同样按请求分辨率命中档位（与按秒路径一致），未命中回退默认按次价。
+	resolution := resolveVideoTaskResolution(payload, billingModel)
+	if tierPrice := perRequestVideoTierPrice(pricing, resolution); tierPrice != nil && *tierPrice != unitPrice {
+		amounts, err = perRequestVideoTaskAmounts(*tierPrice, rateMultiplier, accountRateMultiplier)
+		if err != nil {
+			return VideoTaskQuote{}, err
+		}
+		unitPrice = *tierPrice
+	}
 	return VideoTaskQuote{
 		BillingMode:           BillingModePerRequest,
 		BillingModel:          strings.TrimSpace(billingModel),
-		Effective:             VideoTaskEffectiveParams{Seconds: resolveOptionalVideoTaskSeconds(payload), Resolution: resolveOptionalVideoTaskResolution(payload), VideoCount: 1},
+		Effective:             VideoTaskEffectiveParams{Seconds: resolveOptionalVideoTaskSeconds(payload), Resolution: resolution, VideoCount: 1},
 		UnitPriceUSD:          unitPrice,
-		GrossCostUSD:          grossCost,
-		ActualCostUSD:         actualCost,
-		AccountUnitPriceUSD:   accountUnitPrice,
-		AccountBaseCostUSD:    accountBaseCost,
-		AccountCostUSD:        accountCost,
+		GrossCostUSD:          amounts.gross,
+		ActualCostUSD:         amounts.actual,
+		AccountUnitPriceUSD:   amounts.accountUnit,
+		AccountBaseCostUSD:    amounts.accountBase,
+		AccountCostUSD:        amounts.accountCost,
 		RateMultiplier:        rateMultiplier,
 		AccountRateMultiplier: accountRateMultiplier,
+	}, nil
+}
+
+// perRequestVideoTierPrice 按请求分辨率返回按次档位价（tier_label 归一化匹配，与按秒路径一致）。
+func perRequestVideoTierPrice(pricing *ChannelModelPricing, resolution string) *float64 {
+	for i := range pricing.Intervals {
+		interval := &pricing.Intervals[i]
+		if NormalizeVideoResolutionTier(interval.TierLabel) != resolution || interval.PerRequestPrice == nil {
+			continue
+		}
+		return interval.PerRequestPrice
+	}
+	return nil
+}
+
+// perRequestVideoTaskAmount 按次报价的派生金额（毛额、实付、账户侧口径）。
+type perRequestVideoTaskAmount struct {
+	gross       float64
+	actual      float64
+	accountUnit float64
+	accountBase float64
+	accountCost float64
+}
+
+// perRequestVideoTaskAmounts 由按次单价派生报价金额；命中档位价后按同一口径重算。
+func perRequestVideoTaskAmounts(unitPrice, rateMultiplier, accountRateMultiplier float64) (perRequestVideoTaskAmount, error) {
+	if !validVideoPriceMultiplier(unitPrice) {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request price must be finite and non-negative")
+	}
+	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice)
+	if err != nil {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request gross cost must be finite")
+	}
+	actualCost := grossCost * rateMultiplier
+	if !validVideoPriceMultiplier(actualCost) {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request actual cost must be finite")
+	}
+	accountUnitPrice, _ := decimal.NewFromFloat(unitPrice).Round(10).Float64()
+	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice)
+	if err != nil {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request account base cost is outside pricing precision")
+	}
+	accountCost := accountBaseCost * accountRateMultiplier
+	if !validVideoPriceMultiplier(accountCost) {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request account cost must be finite")
+	}
+	actualCost, err = NormalizeVideoTaskSettlementAmount(actualCost)
+	if err != nil {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request actual cost is outside applied precision")
+	}
+	accountCost, err = NormalizeVideoTaskSettlementAmount(accountCost)
+	if err != nil {
+		return perRequestVideoTaskAmount{}, invalidVideoPricingConfig("per-request account cost is outside applied precision")
+	}
+	return perRequestVideoTaskAmount{
+		gross:       grossCost,
+		actual:      actualCost,
+		accountUnit: accountUnitPrice,
+		accountBase: accountBaseCost,
+		accountCost: accountCost,
 	}, nil
 }
 
@@ -339,19 +387,6 @@ func resolveVideoTaskResolution(payload map[string]any, model string) string {
 		return strings.ToLower(match[1])
 	}
 	return "720p"
-}
-
-func resolveOptionalVideoTaskResolution(payload map[string]any) string {
-	for _, field := range []string{"resolution", "size"} {
-		value, ok := payload[field].(string)
-		if !ok {
-			continue
-		}
-		if normalized := NormalizeVideoResolutionTier(value); normalized != "" {
-			return normalized
-		}
-	}
-	return ""
 }
 
 // NormalizeVideoResolutionTier returns the canonical label used for video tier matching.

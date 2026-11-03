@@ -414,9 +414,11 @@ func intervalToModelPricing(iv *PricingInterval, base *ModelPricing, chPricing *
 }
 
 // GetRequestTierPrice 根据层级标签获取按次价格
+// 档位标签按视频分辨率别名归一化后比较，兼容 1280x720 / 720P 等写法。
 func (r *ModelPricingResolver) GetRequestTierPrice(resolved *ResolvedPricing, tierLabel string) float64 {
+	wanted := NormalizeVideoBillingTierLabel(tierLabel)
 	for _, tier := range resolved.RequestTiers {
-		if tier.TierLabel == tierLabel && tier.PerRequestPrice != nil {
+		if NormalizeVideoBillingTierLabel(tier.TierLabel) == wanted && tier.PerRequestPrice != nil {
 			return *tier.PerRequestPrice
 		}
 	}

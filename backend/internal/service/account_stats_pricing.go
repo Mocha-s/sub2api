@@ -250,7 +250,7 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 		return
 	}
 	if quote.BillingMode == BillingModePerRequest {
-		base := calculatePerRequestStatsCost(pricing, 1)
+		base := perRequestVideoAccountStatsBase(pricing, quote.Effective.Resolution)
 		if base == nil {
 			return
 		}
@@ -292,6 +292,26 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	quote.AccountUnitPriceUSD = unitPrice
 	quote.AccountBaseCostUSD = accountBase
 	quote.AccountCostUSD = accountCost
+}
+
+// perRequestVideoAccountStatsBase 账户侧按次价：优先按请求分辨率匹配档位价，
+// 未命中回退默认按次价；无有效价时返回 nil（与默认按次价的无价语义一致）。
+func perRequestVideoAccountStatsBase(pricing *ChannelModelPricing, resolution string) *float64 {
+	unit := pricing.PerRequestPrice
+	if normalized := NormalizeVideoResolutionTier(resolution); normalized != "" {
+		for i := range pricing.Intervals {
+			interval := &pricing.Intervals[i]
+			if NormalizeVideoResolutionTier(interval.TierLabel) == normalized && interval.PerRequestPrice != nil {
+				unit = interval.PerRequestPrice
+				break
+			}
+		}
+	}
+	if unit == nil || *unit <= 0 || !validVideoPriceMultiplier(*unit) {
+		return nil
+	}
+	cost := *unit
+	return &cost
 }
 
 // calculatePerRequestStatsCost 按次/图片计费。

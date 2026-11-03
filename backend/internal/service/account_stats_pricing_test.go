@@ -1178,3 +1178,31 @@ func newTestChannelServiceForStats(t *testing.T, channel *Channel, groupID int64
 	cs.cache.Store(cache)
 	return cs
 }
+
+func TestApplyVideoAccountStatsPricing_PerRequestUsesResolutionTier(t *testing.T) {
+	flat := 65.0
+	tier := 40.0
+	pricing := &ChannelModelPricing{
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: &flat,
+		Intervals:       []PricingInterval{{TierLabel: "720p", PerRequestPrice: &tier}},
+	}
+
+	quote := VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		Effective:             VideoTaskEffectiveParams{Resolution: "720p", VideoCount: 1},
+		AccountRateMultiplier: 1.25,
+	}
+	applyVideoAccountStatsPricing(&quote, pricing)
+	require.InDelta(t, tier, quote.AccountUnitPriceUSD, 1e-12)
+	require.InDelta(t, tier, quote.AccountBaseCostUSD, 1e-12)
+	require.InDelta(t, tier*1.25, quote.AccountCostUSD, 1e-12)
+
+	quote = VideoTaskQuote{
+		BillingMode:           BillingModePerRequest,
+		Effective:             VideoTaskEffectiveParams{Resolution: "480p", VideoCount: 1},
+		AccountRateMultiplier: 1,
+	}
+	applyVideoAccountStatsPricing(&quote, pricing)
+	require.InDelta(t, flat, quote.AccountUnitPriceUSD, 1e-12, "未命中档位回退默认按次价")
+}

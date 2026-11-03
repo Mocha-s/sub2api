@@ -34,3 +34,21 @@ func TestResolveWithChannelOverridePreservesVideoPricing(t *testing.T) {
 	require.Nil(t, resolved.BasePricing, "video pricing must not fall through to token pricing")
 	require.Empty(t, resolved.Intervals, "video tiers must not become token intervals")
 }
+
+func TestGetRequestTierPriceNormalizesVideoResolutionAliases(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:        "anthropic",
+		Models:          []string{"sd16-seedance-2.0"},
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: testPtrFloat64(6.96),
+		Intervals: []PricingInterval{
+			{TierLabel: " 1280x720 ", PerRequestPrice: testPtrFloat64(0.48)},
+		},
+	}})
+
+	resolved := r.Resolve(context.Background(), PricingInput{Model: "sd16-seedance-2.0", GroupID: groupIDPtr()})
+
+	require.Equal(t, BillingModePerRequest, resolved.Mode)
+	require.InDelta(t, 0.48, r.GetRequestTierPrice(resolved, "720p"), 1e-12)
+	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "480p"), 1e-12, "未命中档位由调用方回退默认按次价")
+}

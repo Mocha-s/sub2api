@@ -212,22 +212,30 @@ func TestResolveVideoTaskQuotePerRequestPricing(t *testing.T) {
 		Intervals:           []PricingInterval{{TierLabel: "480p", PerRequestPrice: &intervalPrice}},
 	}
 
+	// 请求分辨率命中档位时按档位价计费（按次口径），档位价覆盖默认按次价。
 	quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":"5","resolution":"480p"}`), "seedance-2.0", pricing, 0.1065, 0.071)
 	require.NoError(t, err)
 	require.Equal(t, VideoTaskQuote{
 		BillingMode:           BillingModePerRequest,
 		BillingModel:          "seedance-2.0",
 		Effective:             VideoTaskEffectiveParams{Seconds: 5, Resolution: "480p", VideoCount: 1},
-		UnitPriceUSD:          65,
-		GrossCostUSD:          65,
-		ActualCostUSD:         6.9225,
-		AccountUnitPriceUSD:   65,
-		AccountBaseCostUSD:    65,
-		AccountCostUSD:        4.615,
+		UnitPriceUSD:          100,
+		GrossCostUSD:          100,
+		ActualCostUSD:         10.65,
+		AccountUnitPriceUSD:   100,
+		AccountBaseCostUSD:    100,
+		AccountCostUSD:        7.1,
 		RateMultiplier:        0.1065,
 		AccountRateMultiplier: 0.071,
 	}, quote)
 	require.True(t, validVideoTaskQuote(&quote))
+
+	// 未命中档位时回退默认按次价。
+	quote, err = ResolveVideoTaskQuote([]byte(`{"seconds":"5","resolution":"720p"}`), "seedance-2.0", pricing, 0.1065, 0.071)
+	require.NoError(t, err)
+	require.Equal(t, 65.0, quote.UnitPriceUSD)
+	require.Equal(t, 65.0, quote.GrossCostUSD)
+	require.Equal(t, "720p", quote.Effective.Resolution)
 }
 
 func TestResolveVideoTaskQuotePerRequestNilPriceIsZeroCost(t *testing.T) {
@@ -241,16 +249,26 @@ func TestResolveVideoTaskQuotePerRequestNilPriceIsZeroCost(t *testing.T) {
 		Intervals:           []PricingInterval{{TierLabel: "480p", PerRequestPrice: &intervalPrice}},
 	}
 
+	// 请求分辨率默认 720p，未命中 480p 档且无默认价时按 0 计。
 	quote, err := ResolveVideoTaskQuote([]byte(`{}`), "seedance-2.0", pricing, 0.1065, 0.071)
 	require.NoError(t, err)
 	require.Equal(t, VideoTaskQuote{
 		BillingMode:           BillingModePerRequest,
 		BillingModel:          "seedance-2.0",
-		Effective:             VideoTaskEffectiveParams{VideoCount: 1},
+		Effective:             VideoTaskEffectiveParams{Resolution: "720p", VideoCount: 1},
 		RateMultiplier:        0.1065,
 		AccountRateMultiplier: 0.071,
 	}, quote)
 	require.True(t, validVideoTaskQuote(&quote))
+
+	// 无默认价但命中档位时按档位价计费（此前会按 0 计）。
+	tierPricing := &ChannelModelPricing{
+		BillingMode: BillingModePerRequest,
+		Intervals:   []PricingInterval{{TierLabel: "720p", PerRequestPrice: &intervalPrice}},
+	}
+	quote, err = ResolveVideoTaskQuote([]byte(`{}`), "seedance-2.0", tierPricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, intervalPrice, quote.UnitPriceUSD)
 }
 
 func TestResolveVideoTaskQuotePerRequestRejectsNonfinitePrice(t *testing.T) {
@@ -327,10 +345,10 @@ func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *test
 		wantSecond int
 		wantRes    string
 	}{
-		{name: "missing duration", body: `{}`, wantSecond: 0, wantRes: ""},
-		{name: "empty duration", body: `{"seconds":""}`, wantSecond: 0, wantRes: ""},
-		{name: "malformed duration", body: `{"duration":"five"}`, wantSecond: 0, wantRes: ""},
-		{name: "out of range duration", body: `{"duration_seconds":3601}`, wantSecond: 0, wantRes: ""},
+		{name: "missing duration", body: `{}`, wantSecond: 0, wantRes: "720p"},
+		{name: "empty duration", body: `{"seconds":""}`, wantSecond: 0, wantRes: "720p"},
+		{name: "malformed duration", body: `{"duration":"five"}`, wantSecond: 0, wantRes: "720p"},
+		{name: "out of range duration", body: `{"duration_seconds":3601}`, wantSecond: 0, wantRes: "720p"},
 		{name: "size metadata", body: `{"size":"1920x1080"}`, wantSecond: 0, wantRes: "1080p"},
 	}
 	for _, tt := range tests {
@@ -343,6 +361,53 @@ func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *test
 			require.True(t, validVideoTaskQuote(&quote))
 		})
 	}
+}
+
+func TestResolveVideoTaskQuotePerRequestSelectsResolutionTier(t *testing.T) {
+	flat := 65.0
+	tier720 := 40.0
+	tier1080 := 120.0
+	pricing := &ChannelModelPricing{
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: &flat,
+		Intervals: []PricingInterval{
+			{TierLabel: " 1280x720 ", PerRequestPrice: &tier720},
+			{TierLabel: "1080p", PerRequestPrice: &tier1080},
+		},
+	}
+
+	quote, err := ResolveVideoTaskQuote([]byte(`{"resolution":"720p"}`), "seedance-2.0", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, tier720, quote.UnitPriceUSD, "档位标签归一化后命中 720p 档")
+	require.Equal(t, "720p", quote.Effective.Resolution)
+
+	quote, err = ResolveVideoTaskQuote([]byte(`{"size":"1920x1080"}`), "seedance-2.0", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, tier1080, quote.UnitPriceUSD)
+	require.Equal(t, "1080p", quote.Effective.Resolution)
+
+	quote, err = ResolveVideoTaskQuote([]byte(`{"resolution":"480p"}`), "seedance-2.0", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, flat, quote.UnitPriceUSD, "未命中档位回退默认按次价")
+}
+
+func TestResolveVideoTaskQuotePerRequestTierPriceValidation(t *testing.T) {
+	nan := math.NaN()
+	flat := 65.0
+	pricing := &ChannelModelPricing{
+		BillingMode:     BillingModePerRequest,
+		PerRequestPrice: &flat,
+		Intervals:       []PricingInterval{{TierLabel: "720p", PerRequestPrice: &nan}},
+	}
+
+	_, err := ResolveVideoTaskQuote([]byte(`{"resolution":"720p"}`), "seedance-2.0", pricing, 1, 1)
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Equal(t, "VIDEO_TASK_PRICING_INVALID_CONFIG", infraerrors.Reason(err))
+
+	quote, err := ResolveVideoTaskQuote([]byte(`{"resolution":"480p"}`), "seedance-2.0", pricing, 1, 1)
+	require.NoError(t, err, "未命中档位时不校验其他档位的非法价")
+	require.Equal(t, flat, quote.UnitPriceUSD)
 }
 
 func TestResolveVideoTaskQuoteRejectsInvalidConfigurationWithTyped400(t *testing.T) {
