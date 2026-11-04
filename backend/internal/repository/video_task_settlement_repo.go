@@ -1055,8 +1055,15 @@ func int64PtrValue(value *int) int64 {
 
 func validateSettlementTaskRelations(ctx context.Context, tx *sql.Tx, task *settlementTaskRow) error {
 	var valid bool
+	// Composite 路由会把 key 的有效组替换为目标组：task 行记录的是目标组，
+	// 而 api_keys.group_id 仍是 key 注册时所在的 composite 组。因此组一致
+	// 校验放宽为「key 直接属于该组」或「key 所在组通过 composite 动态目标 /
+	// 显式路由指向该组」。
 	err := tx.QueryRowContext(ctx, `SELECT
-		EXISTS(SELECT 1 FROM api_keys k WHERE k.id=$1 AND k.user_id=$2 AND k.group_id=$3 AND k.deleted_at IS NULL)
+		EXISTS(SELECT 1 FROM api_keys k WHERE k.id=$1 AND k.user_id=$2 AND k.deleted_at IS NULL
+			AND (k.group_id=$3
+				OR EXISTS(SELECT 1 FROM composite_group_targets cgt WHERE cgt.composite_group_id=k.group_id AND cgt.target_group_id=$3 AND cgt.deleted_at IS NULL)
+				OR EXISTS(SELECT 1 FROM composite_model_routes cmr WHERE cmr.group_id=k.group_id AND cmr.target_group_id=$3 AND cmr.deleted_at IS NULL)))
 		AND EXISTS(SELECT 1 FROM groups g WHERE g.id=$3 AND g.platform=$4 AND g.deleted_at IS NULL)
 		AND EXISTS(SELECT 1 FROM accounts a JOIN account_groups ag ON ag.account_id=a.id WHERE a.id=$5 AND ag.group_id=$3 AND a.platform=$4 AND a.deleted_at IS NULL)
 		AND ($6::bigint IS NULL OR EXISTS(SELECT 1 FROM channels c WHERE c.id=$6))`, task.apiKeyID, task.userID, task.groupID, task.platform, task.accountID, nullIntArg(task.channelID)).Scan(&valid)

@@ -3070,3 +3070,58 @@ func assertSubscriptionUsage(t *testing.T, subscriptionID int64, want float64) {
 	require.InDelta(t, want, weekly, 1e-9)
 	require.InDelta(t, want, monthly, 1e-9)
 }
+
+func TestVideoTaskSettlementRepository_ReserveAcceptsCompositeTargetGroupTask(t *testing.T) {
+	ctx := context.Background()
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+
+	attachCompositeKey := func(t *testing.T, keyID, targetGroupID int64, relation string) int64 {
+		t.Helper()
+		composite := mustCreateGroup(t, testEntClient(t), &service.Group{Name: "composite-" + uuid.NewString(), Platform: service.PlatformComposite})
+		_, err := integrationDB.ExecContext(ctx, `UPDATE api_keys SET group_id=$1 WHERE id=$2`, composite.ID, keyID)
+		require.NoError(t, err)
+		if relation == "dynamic" {
+			_, err = integrationDB.ExecContext(ctx, `INSERT INTO composite_group_targets (composite_group_id,target_group_id,priority,enabled,created_at,updated_at) VALUES ($1,$2,1,true,NOW(),NOW())`, composite.ID, targetGroupID)
+			require.NoError(t, err)
+		}
+		if relation == "route" {
+			_, err = integrationDB.ExecContext(ctx, `INSERT INTO composite_model_routes (group_id,target_group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes,created_at,updated_at) VALUES ($1,$2,'video','exact','openai','video','video',1,true,'',NOW(),NOW())`, composite.ID, targetGroupID)
+			require.NoError(t, err)
+		}
+		return composite.ID
+	}
+
+	t.Run("dynamic composite target accepted", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, false)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "dynamic")
+		_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+		require.NoError(t, err)
+		assertUserMoney(t, f.userID, 19, 1)
+	})
+
+	t.Run("explicit composite route accepted", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, false)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "route")
+		_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+		require.NoError(t, err)
+		assertUserMoney(t, f.userID, 19, 1)
+	})
+
+	t.Run("mismatched group without composite relation still rejected", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, false)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "none")
+		_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+		require.ErrorIs(t, err, service.ErrVideoTaskSettlementRelationInvalid)
+		assertUserMoney(t, f.userID, 20, 0)
+	})
+
+	t.Run("deleted composite relation rejected", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, false)
+		compositeID := attachCompositeKey(t, f.apiKeyID, f.groupID, "dynamic")
+		_, err := integrationDB.ExecContext(ctx, `UPDATE composite_group_targets SET deleted_at=NOW() WHERE composite_group_id=$1 AND target_group_id=$2`, compositeID, f.groupID)
+		require.NoError(t, err)
+		_, err = repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 1, Effects: service.VideoTaskBillingEffects{BalanceCost: 1}})
+		require.ErrorIs(t, err, service.ErrVideoTaskSettlementRelationInvalid)
+		assertUserMoney(t, f.userID, 20, 0)
+	})
+}
