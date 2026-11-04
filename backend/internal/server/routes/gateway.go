@@ -780,7 +780,10 @@ func installCompositeTargetSubscription(c *gin.Context, apiKey *service.APIKey, 
 	}
 	if !apiKey.Group.IsSubscriptionType() {
 		c.Set(string(middleware.ContextKeySubscription), (*service.UserSubscription)(nil))
-		if apiKey.User.Balance <= 0 {
+		// 未解析到具体目标分组（仍在 composite 分组）时，余额门槛交给下游 billing
+		// 检查，与鉴权层对 composite 的 defer 语义一致；只有显式目标分组才在中间
+		// 件强制余额门槛。
+		if apiKey.Group.Platform != service.PlatformComposite && apiKey.User.Balance <= 0 {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "insufficient_balance", "message": "Insufficient account balance"}})
 			return false
 		}

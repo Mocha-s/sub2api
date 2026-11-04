@@ -58,10 +58,9 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		imageTaskError(c, service.ErrImageTaskForbidden)
 		return
 	}
-	platform := ""
-	if apiKey.Group != nil {
-		platform = apiKey.Group.Platform
-	}
+	// composite 分组按解析后的目标平台判定，与同步 images 端点一致；
+	// 未解析时回退到分组平台本身。
+	platform := effectiveAPIKeyPlatform(c, apiKey)
 	if platform != service.PlatformOpenAI && platform != service.PlatformGrok {
 		imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "Images API is not supported for this platform")
 		return

@@ -88,8 +88,16 @@ func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (
 	}
 	copy := *apiKey
 	targetID := *decision.TargetGroupID
+	targetGroup := *decision.TargetGroup
+	if apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
+		// 生图/生视频开关是 composite 分组的客户面向策略（与计费倍率同源），
+		// 目标分组只决定提供方与账号策略。复制目标分组再覆盖这两个开关，既不
+		// 就地改写共享的路由决策对象，也不让客户在 composite 分组上的开关失效。
+		targetGroup.AllowImageGeneration = apiKey.Group.AllowImageGeneration
+		targetGroup.AllowVideoGeneration = apiKey.Group.AllowVideoGeneration
+	}
 	copy.GroupID = &targetID
-	copy.Group = decision.TargetGroup
+	copy.Group = &targetGroup
 	if apiKey.User != nil {
 		user := *apiKey.User
 		user.UserGroupRPMOverride = nil

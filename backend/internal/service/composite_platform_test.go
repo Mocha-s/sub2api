@@ -296,3 +296,27 @@ func TestCompositeConcretePlatformsIncludeCNProviders(t *testing.T) {
 		require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform))
 	}
 }
+
+// Scenario: composite 分组解析到目标分组时，客户面向的生图/生视频开关随有效键生效，
+// 且共享的目标分组对象不被就地改写。
+func TestEffectiveCompositeAPIKeyCarriesCompositeGenerationFlags(t *testing.T) {
+	compositeID, targetID := int64(10), int64(20)
+	target := &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
+	apiKey := &APIKey{ID: 1, GroupID: &compositeID, Group: &Group{ID: compositeID, Platform: PlatformComposite, AllowImageGeneration: true, AllowVideoGeneration: true}}
+
+	effective, ok := EffectiveCompositeAPIKey(apiKey, CompositeRouteDecision{
+		Matched:        true,
+		GroupID:        compositeID,
+		TargetPlatform: PlatformOpenAI,
+		TargetGroupID:  &targetID,
+		TargetGroup:    target,
+	})
+	require.True(t, ok)
+	require.Equal(t, targetID, *effective.GroupID)
+	require.Equal(t, PlatformOpenAI, effective.Group.Platform)
+	require.True(t, effective.Group.AllowImageGeneration)
+	require.True(t, effective.Group.AllowVideoGeneration)
+	require.False(t, target.AllowImageGeneration, "共享目标分组对象不得被就地改写")
+	require.False(t, target.AllowVideoGeneration, "共享目标分组对象不得被就地改写")
+	require.True(t, apiKey.Group.AllowImageGeneration)
+}

@@ -79,7 +79,7 @@ func (r *compatibleImagesUsage) Create(_ context.Context, log *service.UsageLog)
 
 func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted"} {
+	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted", "target_group"} {
 		t.Run(scenario, func(t *testing.T) {
 			const model = "gemini-3.1-flash-image"
 			groupID := int64(101)
@@ -109,10 +109,24 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			if scenario == "multipart_alias" {
 				publicModel = "public-image"
 			}
-			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{ID: 1, GroupID: groupID, PublicModel: publicModel, MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformOpenAI, UpstreamModel: model, Endpoint: service.CompositeRouteEndpointImages, Enabled: true}}})
+			route := service.CompositeModelRoute{ID: 1, GroupID: groupID, PublicModel: publicModel, MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformOpenAI, UpstreamModel: model, Endpoint: service.CompositeRouteEndpointImages, Enabled: true}
+			var targets compositeTargetRepoStub
+			if scenario == "target_group" {
+				// 目标分组自身开关全部关闭：请求能否成功只取决于 composite 分组的开关。
+				targetID := int64(202)
+				route.TargetGroupID = &targetID
+				targets = compositeTargetRepoStub{targets: []service.CompositeGroupTarget{{
+					ID: 1, CompositeGroupID: groupID, TargetGroupID: targetID, Priority: 1, Enabled: true,
+					TargetGroup: &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true},
+				}}}
+			}
+			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{route}})
+			if len(targets.targets) > 0 {
+				resolver.SetTargetRepository(targets)
+			}
 			router := gin.New()
 			router.Use(func(c *gin.Context) {
-				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{ID: 202, GroupID: &groupID, Group: group, User: &service.User{ID: 303}})
+				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{ID: 202, GroupID: &groupID, Group: group, User: &service.User{ID: 303, Balance: 1}})
 				c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 303})
 				c.Next()
 			})
@@ -158,8 +172,11 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			require.Contains(t, rec.Body.String(), "aW1hZ2U=")
 			require.Len(t, usage.logs, 1, "the image must reach usage recording, not just return HTTP 200")
 			require.Equal(t, 1, usage.logs[0].ImageCount)
-			require.InDelta(t, price, usage.logs[0].ActualCost, 1e-9)
 			require.Equal(t, publicModel, usage.logs[0].RequestedModel)
+			if scenario != "target_group" {
+				// target_group 场景只验证请求链路（开关来源与放行）；媒体价格来源保持现状不动。
+				require.InDelta(t, price, usage.logs[0].ActualCost, 1e-9)
+			}
 		})
 	}
 }
