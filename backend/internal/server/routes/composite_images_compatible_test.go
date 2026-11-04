@@ -79,7 +79,7 @@ func (r *compatibleImagesUsage) Create(_ context.Context, log *service.UsageLog)
 
 func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted", "target_group"} {
+	for _, scenario := range []string{"generation", "json_edit", "multipart_alias", "disabled", "native_only", "restricted", "target_group", "target_group_disabled"} {
 		t.Run(scenario, func(t *testing.T) {
 			const model = "gemini-3.1-flash-image"
 			groupID := int64(101)
@@ -111,13 +111,14 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			}
 			route := service.CompositeModelRoute{ID: 1, GroupID: groupID, PublicModel: publicModel, MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformOpenAI, UpstreamModel: model, Endpoint: service.CompositeRouteEndpointImages, Enabled: true}
 			var targets compositeTargetRepoStub
-			if scenario == "target_group" {
-				// 目标分组自身开关全部关闭：请求能否成功只取决于 composite 分组的开关。
+			if scenario == "target_group" || scenario == "target_group_disabled" {
+				// target_group：聚合与独立分组两边开关都开，必须放行；
+				// target_group_disabled：独立分组关闭，聚合分组开着也必须 403（布尔串联规则）。
 				targetID := int64(202)
 				route.TargetGroupID = &targetID
 				targets = compositeTargetRepoStub{targets: []service.CompositeGroupTarget{{
 					ID: 1, CompositeGroupID: groupID, TargetGroupID: targetID, Priority: 1, Enabled: true,
-					TargetGroup: &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true},
+					TargetGroup: &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, AllowImageGeneration: scenario == "target_group"},
 				}}}
 			}
 			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{route}})
@@ -156,9 +157,9 @@ func TestCompositeCompatibleImagesEndToEnd(t *testing.T) {
 			req.Header.Set("Content-Type", contentType)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
-			if scenario == "disabled" || scenario == "native_only" || scenario == "restricted" {
-				if scenario == "disabled" {
-					require.Equal(t, http.StatusForbidden, rec.Code)
+			if scenario == "disabled" || scenario == "target_group_disabled" || scenario == "native_only" || scenario == "restricted" {
+				if scenario == "disabled" || scenario == "target_group_disabled" {
+					require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
 				} else {
 					require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
 				}

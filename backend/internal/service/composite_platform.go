@@ -90,11 +90,11 @@ func EffectiveCompositeAPIKey(apiKey *APIKey, decision CompositeRouteDecision) (
 	targetID := *decision.TargetGroupID
 	targetGroup := *decision.TargetGroup
 	if apiKey.Group != nil && apiKey.Group.Platform == PlatformComposite {
-		// 生图/生视频开关是 composite 分组的客户面向策略（与计费倍率同源），
-		// 目标分组只决定提供方与账号策略。复制目标分组再覆盖这两个开关，既不
-		// 就地改写共享的路由决策对象，也不让客户在 composite 分组上的开关失效。
-		targetGroup.AllowImageGeneration = apiKey.Group.AllowImageGeneration
-		targetGroup.AllowVideoGeneration = apiKey.Group.AllowVideoGeneration
+		// 生图/生视频是布尔串联规则：composite 分组与独立（目标）分组都必须
+		// 打开，任一关闭即不放行。复制目标分组后再取与，避免就地改写共享的
+		// 路由决策对象。
+		targetGroup.AllowImageGeneration = targetGroup.AllowImageGeneration && apiKey.Group.AllowImageGeneration
+		targetGroup.AllowVideoGeneration = targetGroup.AllowVideoGeneration && apiKey.Group.AllowVideoGeneration
 	}
 	copy.GroupID = &targetID
 	copy.Group = &targetGroup

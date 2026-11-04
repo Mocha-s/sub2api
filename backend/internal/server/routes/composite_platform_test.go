@@ -603,47 +603,60 @@ func TestCompositeLiveRouteDispatchesBySessionModelNotTopLevelAlias(t *testing.T
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 
-// Scenario: composite 请求安装目标分组的有效键后，生图/生视频开关必须来自
-// composite 分组（客户面向策略），而不是目标分组自身的开关。
-func TestCompositeTargetPlatformMiddlewareCarriesCompositeGenerationFlags(t *testing.T) {
+// Scenario: 聚合分组请求安装目标分组的有效键后，生图/生视频开关是布尔串联结果：
+// composite 分组与独立（目标）分组都打开才为 true，任一关闭即 false；
+// 共享的目标分组对象不得被就地改写。
+func TestCompositeTargetPlatformMiddlewareRequiresBothGenerationSwitches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	groupID, targetID := int64(1), int64(20)
-	targetGroup := &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true}
-	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{
-		ID: 1, GroupID: groupID, PublicModel: "image-alias", MatchType: service.CompositeRouteMatchExact,
-		TargetPlatform: service.PlatformOpenAI, TargetGroupID: &targetID, Endpoint: service.CompositeRouteEndpointImages, Enabled: true,
-	}}})
-	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []service.CompositeGroupTarget{{
-		ID: 10, CompositeGroupID: groupID, TargetGroupID: targetID, Priority: 1, Enabled: true, TargetGroup: targetGroup,
-	}}})
-	router := gin.New()
-	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
-		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
-			ID:      99,
-			GroupID: &groupID,
-			Group:   &service.Group{ID: groupID, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true, AllowImageGeneration: true, AllowVideoGeneration: true},
-			User:    &service.User{ID: 7, Balance: 5},
-		})
-		c.Next()
-	})))
-	router.Use(compositeTargetPlatformMiddleware(resolver))
-	router.POST("/v1/images/generations", func(c *gin.Context) {
-		apiKey, ok := servermiddleware.GetAPIKeyFromContext(c)
-		require.True(t, ok)
-		require.Equal(t, targetID, *apiKey.GroupID)
-		require.Equal(t, service.PlatformOpenAI, apiKey.Group.Platform)
-		require.True(t, service.GroupAllowsImageGeneration(apiKey.Group), "composite 分组的生图开关必须随有效键生效")
-		require.True(t, service.GroupAllowsVideoGeneration(apiKey.Group), "composite 分组的生视频开关必须随有效键生效")
-		c.Status(http.StatusNoContent)
-	})
+	for _, tc := range []struct {
+		name             string
+		compositeEnabled bool
+		targetEnabled    bool
+	}{
+		{name: "both on", compositeEnabled: true, targetEnabled: true},
+		{name: "composite on target off", compositeEnabled: true, targetEnabled: false},
+		{name: "composite off target on", compositeEnabled: false, targetEnabled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			groupID, targetID := int64(1), int64(20)
+			targetGroup := &service.Group{ID: targetID, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, AllowImageGeneration: tc.targetEnabled, AllowVideoGeneration: tc.targetEnabled}
+			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{
+				ID: 1, GroupID: groupID, PublicModel: "image-alias", MatchType: service.CompositeRouteMatchExact,
+				TargetPlatform: service.PlatformOpenAI, TargetGroupID: &targetID, Endpoint: service.CompositeRouteEndpointImages, Enabled: true,
+			}}})
+			resolver.SetTargetRepository(compositeTargetRepoStub{targets: []service.CompositeGroupTarget{{
+				ID: 10, CompositeGroupID: groupID, TargetGroupID: targetID, Priority: 1, Enabled: true, TargetGroup: targetGroup,
+			}}})
+			router := gin.New()
+			router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+				c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+					ID:      99,
+					GroupID: &groupID,
+					Group:   &service.Group{ID: groupID, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true, AllowImageGeneration: tc.compositeEnabled, AllowVideoGeneration: tc.compositeEnabled},
+					User:    &service.User{ID: 7, Balance: 5},
+				})
+				c.Next()
+			})))
+			router.Use(compositeTargetPlatformMiddleware(resolver))
+			router.POST("/v1/images/generations", func(c *gin.Context) {
+				apiKey, ok := servermiddleware.GetAPIKeyFromContext(c)
+				require.True(t, ok)
+				require.Equal(t, targetID, *apiKey.GroupID)
+				require.Equal(t, service.PlatformOpenAI, apiKey.Group.Platform)
+				require.Equal(t, tc.compositeEnabled && tc.targetEnabled, service.GroupAllowsImageGeneration(apiKey.Group))
+				require.Equal(t, tc.compositeEnabled && tc.targetEnabled, service.GroupAllowsVideoGeneration(apiKey.Group))
+				c.Status(http.StatusNoContent)
+			})
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"image-alias","prompt":"draw"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
-	require.False(t, targetGroup.AllowImageGeneration, "共享目标分组对象不得被就地改写")
-	require.False(t, targetGroup.AllowVideoGeneration, "共享目标分组对象不得被就地改写")
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"image-alias","prompt":"draw"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusNoContent, w.Code, w.Body.String())
+			require.Equal(t, tc.targetEnabled, targetGroup.AllowImageGeneration, "共享目标分组对象不得被就地改写")
+			require.Equal(t, tc.targetEnabled, targetGroup.AllowVideoGeneration, "共享目标分组对象不得被就地改写")
+		})
+	}
 }
 
 // Scenario: composite 请求未解析到具体目标分组时（仍在 composite 分组上），

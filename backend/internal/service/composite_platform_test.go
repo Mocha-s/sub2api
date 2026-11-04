@@ -297,26 +297,39 @@ func TestCompositeConcretePlatformsIncludeCNProviders(t *testing.T) {
 	}
 }
 
-// Scenario: composite 分组解析到目标分组时，客户面向的生图/生视频开关随有效键生效，
-// 且共享的目标分组对象不被就地改写。
-func TestEffectiveCompositeAPIKeyCarriesCompositeGenerationFlags(t *testing.T) {
-	compositeID, targetID := int64(10), int64(20)
-	target := &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true}
-	apiKey := &APIKey{ID: 1, GroupID: &compositeID, Group: &Group{ID: compositeID, Platform: PlatformComposite, AllowImageGeneration: true, AllowVideoGeneration: true}}
+// Scenario: 生图/生视频是布尔串联规则，composite 分组与独立（目标）分组都必须
+// 打开才放行；任一关闭即拒绝。有效键不得就地改写共享的目标分组对象。
+func TestEffectiveCompositeAPIKeyRequiresBothCompositeAndTargetSwitches(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		compositeEnabled     bool
+		targetEnabled        bool
+		wantImage, wantVideo bool
+	}{
+		{name: "both on", compositeEnabled: true, targetEnabled: true, wantImage: true, wantVideo: true},
+		{name: "composite on target off", compositeEnabled: true, targetEnabled: false},
+		{name: "composite off target on", compositeEnabled: false, targetEnabled: true},
+		{name: "both off", compositeEnabled: false, targetEnabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			compositeID, targetID := int64(10), int64(20)
+			target := &Group{ID: targetID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, AllowImageGeneration: tc.targetEnabled, AllowVideoGeneration: tc.targetEnabled}
+			apiKey := &APIKey{ID: 1, GroupID: &compositeID, Group: &Group{ID: compositeID, Platform: PlatformComposite, AllowImageGeneration: tc.compositeEnabled, AllowVideoGeneration: tc.compositeEnabled}}
 
-	effective, ok := EffectiveCompositeAPIKey(apiKey, CompositeRouteDecision{
-		Matched:        true,
-		GroupID:        compositeID,
-		TargetPlatform: PlatformOpenAI,
-		TargetGroupID:  &targetID,
-		TargetGroup:    target,
-	})
-	require.True(t, ok)
-	require.Equal(t, targetID, *effective.GroupID)
-	require.Equal(t, PlatformOpenAI, effective.Group.Platform)
-	require.True(t, effective.Group.AllowImageGeneration)
-	require.True(t, effective.Group.AllowVideoGeneration)
-	require.False(t, target.AllowImageGeneration, "共享目标分组对象不得被就地改写")
-	require.False(t, target.AllowVideoGeneration, "共享目标分组对象不得被就地改写")
-	require.True(t, apiKey.Group.AllowImageGeneration)
+			effective, ok := EffectiveCompositeAPIKey(apiKey, CompositeRouteDecision{
+				Matched:        true,
+				GroupID:        compositeID,
+				TargetPlatform: PlatformOpenAI,
+				TargetGroupID:  &targetID,
+				TargetGroup:    target,
+			})
+			require.True(t, ok)
+			require.Equal(t, targetID, *effective.GroupID)
+			require.Equal(t, PlatformOpenAI, effective.Group.Platform)
+			require.Equal(t, tc.wantImage, effective.Group.AllowImageGeneration)
+			require.Equal(t, tc.wantVideo, effective.Group.AllowVideoGeneration)
+			require.Equal(t, tc.targetEnabled, target.AllowImageGeneration, "共享目标分组对象不得被就地改写")
+			require.Equal(t, tc.targetEnabled, target.AllowVideoGeneration, "共享目标分组对象不得被就地改写")
+		})
+	}
 }

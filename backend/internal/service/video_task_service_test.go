@@ -1325,6 +1325,61 @@ func TestVideoTaskServiceCreateResolvedCompositeStillRequiresVideoPermission(t *
 	require.Zero(t, provider.createCalls)
 }
 
+// Scenario: 布尔串联规则 —— composite 分组开着时，独立（目标）分组关闭也必须拒绝；
+// 两边都打开才允许提交。有效键来自 EffectiveCompositeAPIKey（换键路径）。
+func TestVideoTaskServiceCreateCompositeRequiresTargetGroupVideoSwitch(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		targetEnabled bool
+		wantAllowed   bool
+	}{
+		{name: "both on", targetEnabled: true, wantAllowed: true},
+		{name: "composite on target off", targetEnabled: false, wantAllowed: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := WithResolvedTargetPlatform(context.Background(), PlatformOpenAI)
+			events := &videoTaskServiceTestEvents{}
+			repo := newFakeVideoTaskRepository(events)
+			provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{
+				ProviderTaskID: "upstream_composite_and",
+				Status:         VideoTaskStatusQueued,
+				ProviderStatus: "queued",
+				RawBody:        []byte(`{"id":"upstream_composite_and","status":"queued"}`),
+			}}
+			selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+			svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+
+			compositeKey := videoTaskCompositeTestAPIKey(true)
+			targetID := int64(99)
+			effectiveKey, installed := EffectiveCompositeAPIKey(compositeKey, CompositeRouteDecision{
+				Matched:        true,
+				GroupID:        *compositeKey.GroupID,
+				TargetPlatform: PlatformOpenAI,
+				TargetGroupID:  &targetID,
+				TargetGroup:    &Group{ID: targetID, Platform: PlatformOpenAI, AllowVideoGeneration: tc.targetEnabled},
+			})
+			require.True(t, installed)
+
+			result, err := svc.Create(ctx, VideoTaskCreateParams{
+				APIKey: effectiveKey,
+				User:   &User{ID: 7},
+				Body:   []byte(`{"model":"sora-upstream","prompt":"waves"}`),
+			})
+			if !tc.wantAllowed {
+				require.Nil(t, result)
+				require.ErrorIs(t, err, ErrVideoGenerationPermissionDenied)
+				require.Zero(t, selector.selectCalls)
+				require.Zero(t, provider.createCalls)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, 1, selector.selectCalls)
+			require.Equal(t, 1, provider.createCalls)
+		})
+	}
+}
+
 func TestVideoTaskServiceCreateNoAvailableAccountsUsesStableAccountUnavailableError(t *testing.T) {
 	ctx := context.Background()
 	events := &videoTaskServiceTestEvents{}
