@@ -607,3 +607,81 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 		})
 	}
 }
+
+// Scenario: 生图/生视频端点按能力准入择组——同平台候选中跳过未开启对应开关的目标。
+func TestCompositeRouteResolverEndpointCapabilitySelectsEligibleTarget(t *testing.T) {
+	blockedID, imageID, videoID := int64(2), int64(16), int64(19)
+	newResolver := func() *CompositeRouteResolver {
+		resolver := NewCompositeRouteResolver(nil)
+		resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+			{ID: 1, CompositeGroupID: 7, TargetGroupID: blockedID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: blockedID, Platform: PlatformOpenAI, Status: StatusActive}},
+			{ID: 2, CompositeGroupID: 7, TargetGroupID: imageID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: imageID, Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: true}},
+			{ID: 3, CompositeGroupID: 7, TargetGroupID: videoID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: videoID, Platform: PlatformOpenAI, Status: StatusActive, AllowVideoGeneration: true}},
+		}})
+		return resolver
+	}
+
+	imageDecision, err := newResolver().Resolve(context.Background(), 7, "gpt-image-2", CompositeRouteEndpointImages)
+	require.NoError(t, err)
+	require.True(t, imageDecision.Matched)
+	require.NotNil(t, imageDecision.TargetGroupID)
+	require.Equal(t, imageID, *imageDecision.TargetGroupID)
+
+	videoDecision, err := newResolver().Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointVideo)
+	require.NoError(t, err)
+	require.True(t, videoDecision.Matched)
+	require.NotNil(t, videoDecision.TargetGroupID)
+	require.Equal(t, videoID, *videoDecision.TargetGroupID)
+}
+
+// Scenario: 没有任何合格目标时，端点能力准入退回原有选择顺序，既有拒绝行为不变。
+func TestCompositeRouteResolverEndpointCapabilityFallsBackWithoutEligibleTarget(t *testing.T) {
+	firstID := int64(2)
+	resolver := NewCompositeRouteResolver(nil)
+	resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+		{ID: 1, CompositeGroupID: 7, TargetGroupID: firstID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: firstID, Platform: PlatformOpenAI, Status: StatusActive}},
+		{ID: 2, CompositeGroupID: 7, TargetGroupID: 16, Priority: 100, Enabled: true, TargetGroup: &Group{ID: 16, Platform: PlatformOpenAI, Status: StatusActive}},
+	}})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-image-2", CompositeRouteEndpointImages)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.NotNil(t, decision.TargetGroupID)
+	require.Equal(t, firstID, *decision.TargetGroupID)
+
+	responsesDecision, err := resolver.Resolve(context.Background(), 7, "gpt-5", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.True(t, responsesDecision.Matched)
+	require.NotNil(t, responsesDecision.TargetGroupID)
+	require.Equal(t, firstID, *responsesDecision.TargetGroupID)
+}
+
+// Scenario: 归属命中的目标没开该端点开关时改选合格目标；没有合格目标则保留原命中。
+func TestCompositeRouteResolverEndpointCapabilityOverridesIneligibleOwnershipTarget(t *testing.T) {
+	ownerID, imageID := int64(2), int64(16)
+	for _, tc := range []struct {
+		name       string
+		imageOn    bool
+		wantTarget int64
+	}{
+		{name: "eligible target takes over", imageOn: true, wantTarget: imageID},
+		{name: "no eligible target keeps ownership pick", imageOn: false, wantTarget: ownerID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := NewCompositeRouteResolver(nil)
+			resolver.SetTargetRepository(compositeTargetRepoStub{targets: []CompositeGroupTarget{
+				{ID: 1, CompositeGroupID: 7, TargetGroupID: ownerID, Priority: 1, Enabled: true, TargetGroup: &Group{ID: ownerID, Platform: PlatformOpenAI, Status: StatusActive}},
+				{ID: 2, CompositeGroupID: 7, TargetGroupID: imageID, Priority: 100, Enabled: true, TargetGroup: &Group{ID: imageID, Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: tc.imageOn}},
+			}})
+			resolver.SetModelOwnershipResolver(func(context.Context, int64, string) (CompositeModelOwnership, error) {
+				return CompositeModelOwnership{TargetPlatform: PlatformOpenAI, TargetGroupID: &ownerID, Matched: true}, nil
+			})
+
+			decision, err := resolver.Resolve(context.Background(), 7, "gpt-image-2", CompositeRouteEndpointImages)
+			require.NoError(t, err)
+			require.True(t, decision.Matched)
+			require.NotNil(t, decision.TargetGroupID)
+			require.Equal(t, tc.wantTarget, *decision.TargetGroupID)
+		})
+	}
+}

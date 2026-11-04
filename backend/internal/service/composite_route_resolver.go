@@ -193,6 +193,9 @@ func (r *CompositeRouteResolver) Resolve(ctx context.Context, groupID int64, mod
 			selected := false
 			if ownership.TargetGroupID != nil {
 				selected = applyCompositeTarget(&decision, targets, *ownership.TargetGroupID)
+				if selected {
+					preferEligibleCompositeTarget(&decision, targets, platform)
+				}
 			}
 			if len(targets) > 0 && !selected && (ownership.TargetGroupID != nil || !applyDetectedCompositeTarget(&decision, targets, platform)) {
 				decision.Matched = false
@@ -244,7 +247,26 @@ func applyCompositeTarget(decision *CompositeRouteDecision, targets []CompositeG
 	return false
 }
 
-func applyDetectedCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, platform string) bool {
+// compositeEndpointTargetAllows reports whether a target group may serve the
+// request endpoint's capability: 生图/生视频是布尔串联的第二道门，目标分组没开
+// 对应开关时不该被选中。
+func compositeEndpointTargetAllows(endpoint string, group *Group) bool {
+	if group == nil {
+		return false
+	}
+	switch endpoint {
+	case CompositeRouteEndpointImages:
+		return group.AllowImageGeneration
+	case CompositeRouteEndpointVideo:
+		return group.AllowVideoGeneration
+	default:
+		return true
+	}
+}
+
+// orderedCompositeTargets copies targets sorted by (priority, target_group_id),
+// matching the legacy detector order.
+func orderedCompositeTargets(targets []CompositeGroupTarget) []CompositeGroupTarget {
 	ordered := append([]CompositeGroupTarget(nil), targets...)
 	sort.SliceStable(ordered, func(i, j int) bool {
 		if ordered[i].Priority != ordered[j].Priority {
@@ -252,8 +274,57 @@ func applyDetectedCompositeTarget(decision *CompositeRouteDecision, targets []Co
 		}
 		return ordered[i].TargetGroupID < ordered[j].TargetGroupID
 	})
+	return ordered
+}
+
+func selectableCompositeTarget(target CompositeGroupTarget, platform string) bool {
+	return target.DeletedAt == nil && target.Enabled && target.TargetGroup != nil &&
+		target.TargetGroup.IsActive() && target.TargetGroup.Platform == platform
+}
+
+// applyEligibleCompositeTarget selects the first target that satisfies the
+// endpoint capability; returns false when no target qualifies.
+func applyEligibleCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, platform string) bool {
+	for _, target := range orderedCompositeTargets(targets) {
+		if !selectableCompositeTarget(target, platform) || !compositeEndpointTargetAllows(decision.Endpoint, target.TargetGroup) {
+			continue
+		}
+		decision.TargetGroupID = &target.TargetGroupID
+		decision.TargetGroup = target.TargetGroup
+		return true
+	}
+	return false
+}
+
+// preferEligibleCompositeTarget keeps the current selection when it can serve
+// the endpoint capability; otherwise it switches to an eligible target of the
+// same platform and falls back to the previous selection when none exists, so
+// today's rejection behaviour is preserved.
+func preferEligibleCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, platform string) {
+	if decision == nil || compositeEndpointTargetAllows(decision.Endpoint, decision.TargetGroup) {
+		return
+	}
+	prevID, prevGroup := decision.TargetGroupID, decision.TargetGroup
+	if applyEligibleCompositeTarget(decision, targets, platform) {
+		return
+	}
+	decision.TargetGroupID, decision.TargetGroup = prevID, prevGroup
+}
+
+func applyDetectedCompositeTarget(decision *CompositeRouteDecision, targets []CompositeGroupTarget, platform string) bool {
+	ordered := orderedCompositeTargets(targets)
+	// 端点能力准入：生图/生视频端点优先选已开启对应开关的同平台目标；
+	// 没有任何合格目标时退回原有顺序，既有拒绝行为不变。
 	for _, target := range ordered {
-		if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || target.TargetGroup.Platform != platform {
+		if !selectableCompositeTarget(target, platform) || !compositeEndpointTargetAllows(decision.Endpoint, target.TargetGroup) {
+			continue
+		}
+		decision.TargetGroupID = &target.TargetGroupID
+		decision.TargetGroup = target.TargetGroup
+		return true
+	}
+	for _, target := range ordered {
+		if !selectableCompositeTarget(target, platform) {
 			continue
 		}
 		decision.TargetGroupID = &target.TargetGroupID
