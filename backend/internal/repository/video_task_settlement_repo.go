@@ -1160,9 +1160,14 @@ func nullIntEqual(a, b sql.NullInt64) bool {
 
 func validateCaptureSettlementIdentity(ctx context.Context, tx *sql.Tx, task *settlementTaskRow) error {
 	var valid bool
+	// 与 validateSettlementTaskRelations 同步：composite 路由下 task.group_id 是目标组，
+	// api_keys.group_id 仍是 key 的 composite 组，必须放宽为接受 composite 动态目标/显式路由。
 	err := tx.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.deleted_at IS NULL)
-		AND EXISTS(SELECT 1 FROM api_keys k WHERE k.id=$2 AND k.user_id=$1 AND k.group_id=$3 AND k.deleted_at IS NULL)
+		AND EXISTS(SELECT 1 FROM api_keys k WHERE k.id=$2 AND k.user_id=$1 AND k.deleted_at IS NULL
+			AND (k.group_id=$3
+				OR EXISTS(SELECT 1 FROM composite_group_targets cgt WHERE cgt.composite_group_id=k.group_id AND cgt.target_group_id=$3 AND cgt.deleted_at IS NULL)
+				OR EXISTS(SELECT 1 FROM composite_model_routes cmr WHERE cmr.group_id=k.group_id AND cmr.target_group_id=$3 AND cmr.deleted_at IS NULL)))
 		AND EXISTS(SELECT 1 FROM groups g WHERE g.id=$3 AND g.deleted_at IS NULL)
 		AND EXISTS(SELECT 1 FROM accounts a WHERE a.id=$4 AND a.deleted_at IS NULL)
 		AND ($5::bigint IS NULL OR EXISTS(SELECT 1 FROM channels c WHERE c.id=$5))

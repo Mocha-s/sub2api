@@ -3125,3 +3125,65 @@ func TestVideoTaskSettlementRepository_ReserveAcceptsCompositeTargetGroupTask(t 
 		assertUserMoney(t, f.userID, 20, 0)
 	})
 }
+
+// Capture 路径走 validateCaptureSettlementIdentity，与 Reserve 路径的
+// validateSettlementTaskRelations 是同一份 group_id 等值检查，composite 路由下
+// 必须同样放宽，否则 Reserve 成功后余额永久冻结在 reserved，reconciler 无限重试。
+func TestVideoTaskSettlementRepository_CaptureAcceptsCompositeTargetGroupTask(t *testing.T) {
+	ctx := context.Background()
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+
+	attachCompositeKey := func(t *testing.T, keyID, targetGroupID int64, relation string) int64 {
+		t.Helper()
+		composite := mustCreateGroup(t, testEntClient(t), &service.Group{Name: "composite-" + uuid.NewString(), Platform: service.PlatformComposite})
+		_, err := integrationDB.ExecContext(ctx, `UPDATE api_keys SET group_id=$1 WHERE id=$2`, composite.ID, keyID)
+		require.NoError(t, err)
+		if relation == "dynamic" {
+			_, err = integrationDB.ExecContext(ctx, `INSERT INTO composite_group_targets (composite_group_id,target_group_id,priority,enabled,created_at,updated_at) VALUES ($1,$2,1,true,NOW(),NOW())`, composite.ID, targetGroupID)
+			require.NoError(t, err)
+		}
+		if relation == "route" {
+			_, err = integrationDB.ExecContext(ctx, `INSERT INTO composite_model_routes (group_id,target_group_id,public_model,match_type,target_platform,upstream_model,endpoint,priority,enabled,notes,created_at,updated_at) VALUES ($1,$2,'video','exact','openai','video','video',1,true,'',NOW(),NOW())`, composite.ID, targetGroupID)
+			require.NoError(t, err)
+		}
+		return composite.ID
+	}
+
+	reserveAndCapture := func(t *testing.T, f videoSettlementFixture) {
+		t.Helper()
+		effects := service.VideoTaskBillingEffects{BalanceCost: 2, APIKeyQuotaCost: 2, APIKeyRateLimitCost: 2, AccountQuotaCost: 2, PlatformQuotaCost: 2, AccountStatsCost: 2, ChargedAt: time.Now().UTC().Truncate(time.Microsecond)}
+		_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 2, AccountCostUSD: 1, PricingSnapshot: map[string]any{"unit": "second"}, Effects: effects})
+		require.NoError(t, err)
+		assertUserMoney(t, f.userID, 18, 2)
+		markVideoTaskProviderAccepted(t, f.publicID)
+		cap, err := repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID, ActualCostUSD: 2})
+		require.NoError(t, err)
+		require.True(t, cap.Applied, "composite Capture must apply on reserved state")
+		require.NotNil(t, cap.Settlement.ChargedAt)
+		assertUserMoney(t, f.userID, 18, 0)
+	}
+
+	t.Run("dynamic composite target capture accepted", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, true)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "dynamic")
+		reserveAndCapture(t, f)
+	})
+
+	t.Run("explicit composite route capture accepted", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, true)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "route")
+		reserveAndCapture(t, f)
+	})
+
+	t.Run("key moved to unrelated group before capture rejected", func(t *testing.T) {
+		f := newVideoSettlementFixture(t, false, true)
+		effects := service.VideoTaskBillingEffects{BalanceCost: 2, APIKeyQuotaCost: 2, APIKeyRateLimitCost: 2, AccountQuotaCost: 2, PlatformQuotaCost: 2, AccountStatsCost: 2, ChargedAt: time.Now().UTC().Truncate(time.Microsecond)}
+		_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 2, AccountCostUSD: 1, PricingSnapshot: map[string]any{"unit": "second"}, Effects: effects})
+		require.NoError(t, err)
+		markVideoTaskProviderAccepted(t, f.publicID)
+		attachCompositeKey(t, f.apiKeyID, f.groupID, "none")
+		_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID, ActualCostUSD: 2})
+		require.ErrorIs(t, err, service.ErrVideoTaskSettlementIntegrity)
+		assertUserMoney(t, f.userID, 18, 2)
+	})
+}
