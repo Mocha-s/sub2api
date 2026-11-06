@@ -63,6 +63,25 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return filtered
 	}
 
+	// Composite 分组自身不挂账号：列表请求不带模型名，无法解析到目标组，
+	// 在 composite 组上选 Gemini 账号必然失败（503）。配置了动态目标时直接
+	// 返回指向 gemini 目标组的模型目录。
+	if !hasForcePlatform && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite && h.gatewayService != nil {
+		models, configured, err := h.gatewayService.GetCompositeTargetModels(c.Request.Context(), apiKey.Group.ID, service.PlatformGemini)
+		if err != nil {
+			googleError(c, http.StatusServiceUnavailable, "Unable to list Composite Gemini models")
+			return
+		}
+		if configured {
+			list := make([]gemini.Model, 0, len(models))
+			for _, id := range models {
+				list = append(list, gemini.FallbackModel(id))
+			}
+			c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(list)})
+			return
+		}
+	}
+
 	agModelIDs, err := h.geminiCompatService.AntigravityGeminiModelIDs(c.Request.Context(), apiKey.GroupID, forcePlatform != service.PlatformAntigravity)
 	if err != nil {
 		googleError(c, http.StatusServiceUnavailable, "Unable to list Antigravity models")

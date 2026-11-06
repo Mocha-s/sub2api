@@ -1522,8 +1522,17 @@ func (s *GatewayService) compositeTargetModels(ctx context.Context, groupID *int
 		if target.DeletedAt != nil || !target.Enabled || target.TargetGroup == nil || !target.TargetGroup.IsActive() || (platform != "" && target.TargetGroup.Platform != platform) {
 			continue
 		}
+		// 调用方不限定平台时按目标组自身平台查询：账号查询把空平台当作字面量
+		// 过滤（platform IN ('')），会让每个目标组都查不到账号、整个目录为空。
+		targetPlatform := platform
+		if targetPlatform == "" {
+			targetPlatform = target.TargetGroup.Platform
+			if !isConcreteRequestPlatform(targetPlatform) {
+				continue
+			}
+		}
 		targetID := target.TargetGroupID
-		for _, model := range s.GetAvailableModels(ctx, &targetID, platform) {
+		for _, model := range s.GetAvailableModels(ctx, &targetID, targetPlatform) {
 			key := strings.ToLower(strings.TrimSpace(model))
 			if key == "" {
 				continue
