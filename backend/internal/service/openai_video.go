@@ -265,6 +265,7 @@ func (p *openAICompatibleVideoProvider) Fetch(ctx context.Context, account *Acco
 		ProviderTaskID: parsed.providerTaskID,
 		Status:         parsed.status,
 		ProviderStatus: parsed.providerStatus,
+		ErrorMessage:   parsed.errorMessage,
 		RawBody:        rawBody,
 		Metadata:       parsed.metadata,
 	}, nil
@@ -315,6 +316,7 @@ type parsedOpenAIVideoResponse struct {
 	providerTaskID string
 	status         VideoTaskStatus
 	providerStatus string
+	errorMessage   string
 	metadata       map[string]any
 }
 
@@ -342,6 +344,7 @@ func parseOpenAIVideoResponse(rawBody []byte, requestID string) (*parsedOpenAIVi
 		providerTaskID: openAIVideoFirstString(response, "id", "task_id"),
 		status:         NormalizeOpenAIVideoStatus(providerStatus),
 		providerStatus: providerStatus,
+		errorMessage:   strings.TrimSpace(openAIVideoFirstString(response, "message", "error_message")),
 		metadata:       metadata,
 	}, nil
 }

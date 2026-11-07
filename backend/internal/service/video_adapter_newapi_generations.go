@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -125,10 +126,20 @@ func (a *newAPIVideoGenerationsAdapter) Fetch(ctx context.Context, account *Acco
 	if result.ProviderTaskID == "" {
 		result.ProviderTaskID = providerTaskID
 	}
+	var rawMsg struct {
+		Message string `json:"message"`
+		ErrMsg  string `json:"error_message"`
+	}
+	_ = json.Unmarshal(raw, &rawMsg)
+	errorMessage := strings.TrimSpace(rawMsg.Message)
+	if errorMessage == "" {
+		errorMessage = strings.TrimSpace(rawMsg.ErrMsg)
+	}
 	return &VideoProviderFetchResult{
 		ProviderTaskID: result.ProviderTaskID,
 		Status:         result.Status,
 		ProviderStatus: result.ProviderStatus,
+		ErrorMessage:   errorMessage,
 		RawBody:        result.RawBody,
 		Metadata:       result.Metadata,
 		ExpiresAt:      result.ExpiresAt,

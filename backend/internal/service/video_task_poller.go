@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -377,6 +378,16 @@ func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, 
 	if status == "" {
 		status = task.Status
 	}
+
+	// If the provider reports failed but the error looks like a transient infrastructure
+	// issue (e.g. internal connection failure on the provider side), treat it as a poll
+	// error and reschedule rather than permanently terminating the task. The ExpiresAt
+	// timeout is the backstop if the issue never resolves.
+	if status == VideoTaskStatusFailed && isTransientVideoProviderPollError(result.ErrorMessage) {
+		return p.rescheduleAfterPollError(ctx, task, leaseToken, completedAt,
+			fmt.Errorf("transient provider error: %s", result.ErrorMessage))
+	}
+
 	providerCompletedAt := result.CompletedAt
 	if providerCompletedAt == nil && status.Terminal() {
 		providerCompletedAt = &completedAt
@@ -528,4 +539,16 @@ func defaultVideoTaskPollerWorkerID() string {
 		hostname = "unknown-host"
 	}
 	return fmt.Sprintf("video-task-poller-%s-%d-%d", hostname, os.Getpid(), time.Now().UnixNano())
+}
+
+// isTransientVideoProviderPollError reports whether a provider-reported failure message
+// indicates a transient infrastructure error (e.g. the provider's internal connection
+// failed) that may resolve on the next poll, rather than a permanent task failure.
+func isTransientVideoProviderPollError(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "cannot connect to host") ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "ssl:default [none]") ||
+		strings.Contains(lower, "connectionerror") ||
+		strings.Contains(lower, "connect: connection refused")
 }
