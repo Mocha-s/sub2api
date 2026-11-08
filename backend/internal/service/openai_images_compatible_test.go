@@ -4,7 +4,6 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -140,25 +139,20 @@ func TestCompatibleImagesForwardGemini(t *testing.T) {
 	}
 }
 
-func TestCompatibleImagesNativeAccountsRejectGeminiBeforeForwarding(t *testing.T) {
+// TestCompatibleImagesNativeAccountsCapabilityFence 验证 OAuth/SetupToken 账号通过
+// SupportsOpenAIImageCapability 拒绝 Gemini 兼容模型。调度器通过此检查保证 Gemini
+// 模型（RequiredCapability=APIKey）不会被调度到 OAuth/SetupToken 账号，而不是在
+// Forward 阶段再次校验模型字符串。
+func TestCompatibleImagesNativeAccountsCapabilityFence(t *testing.T) {
 	for _, typ := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
-		for _, mapping := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/mapping=%t", typ, mapping), func(t *testing.T) {
-				model := "gemini-3-pro-image"
-				account := &Account{Platform: PlatformOpenAI, Type: typ, Credentials: map[string]any{"access_token": "unused"}}
-				if mapping {
-					account.Credentials["model_mapping"] = map[string]any{"gpt-image-2": model}
-					model = "gpt-image-2"
-				}
-				c, _ := gin.CreateTestContext(httptest.NewRecorder())
-				c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, nil)
-				upstream := &httpUpstreamRecorder{}
-				svc := &OpenAIGatewayService{httpUpstream: upstream}
-				_, err := svc.ForwardImages(context.Background(), c, account, nil, &OpenAIImagesRequest{Model: model}, "")
-				require.ErrorContains(t, err, "images endpoint requires an image model")
-				require.Empty(t, upstream.requests)
-			})
-		}
+		t.Run(typ, func(t *testing.T) {
+			account := &Account{Platform: PlatformOpenAI, Type: typ}
+			// Gemini 兼容模型的 capability 是 APIKey；OAuth/SetupToken 不能服务该 capability。
+			require.False(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityAPIKey),
+				"OAuth/SetupToken account must not serve images-apikey capability (Gemini/Seedream/Flux)")
+			// 原生 OpenAI 模型（Native/Basic）仍然允许。
+			require.True(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+		})
 	}
 }
 
@@ -222,6 +216,47 @@ func TestCompatibleImagesForwardThirdPartyModel(t *testing.T) {
 			require.Equal(t, "preserved", gjson.GetBytes(upstream.lastBody, "custom_field").String())
 			require.Equal(t, "https://compatible.example"+endpoint, upstream.lastReq.URL.String())
 			require.Equal(t, "Bearer image-key", upstream.lastReq.Header.Get("Authorization"))
+		})
+	}
+}
+
+// TestCompatibleImagesForwardAccountAlias 验证账号 model_mapping 映射出的 alias（如
+// mj2-midjourney）不被 Forward 阶段的白名单拒绝。公开模型在 Parse 阶段已通过校验；
+// 账号级 alias 属于管理员配置的信任输入，不应在 Forward 阶段再次字符串校验。
+func TestCompatibleImagesForwardAccountAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// 公开模型 "midjourney" 在 Parse 阶段通过；账号将其映射为 "mj2-midjourney"。
+	for _, tc := range []struct {
+		publicModel  string
+		accountAlias string
+	}{
+		{"midjourney", "mj2-midjourney"},
+		{"seedream-5.0-pro", "seedream-custom-v2"},
+		{"flux-3-image", "flux-internal-alias"},
+	} {
+		t.Run(tc.publicModel+"->"+tc.accountAlias, func(t *testing.T) {
+			endpoint := openAIImagesGenerationsEndpoint
+			body := []byte(fmt.Sprintf(`{"model":%q,"prompt":"draw","size":"1024x1024"}`, tc.publicModel))
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(string(body)))
+			c.Request.Header.Set("Content-Type", "application/json")
+			upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"aW1hZ2U="}]}`))}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			account := &Account{
+				ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"api_key":       "image-key",
+					"base_url":      "https://compatible.example/v1",
+					"model_mapping": map[string]any{tc.publicModel: tc.accountAlias},
+				},
+			}
+			result, err := svc.ForwardImages(c.Request.Context(), c, account, body, parsed, "")
+			require.NoError(t, err, "account alias %q must not be rejected at Forward stage", tc.accountAlias)
+			require.Equal(t, tc.accountAlias, result.UpstreamModel)
+			require.Equal(t, tc.accountAlias, gjson.GetBytes(upstream.lastBody, "model").String())
 		})
 	}
 }

@@ -709,15 +709,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKeyRaw(
 	if IsGeminiBananaBridgeModel(requestModel) {
 		requestModel = NormalizeGeminiModelID(requestModel)
 	}
-	if err := validateOpenAIImagesModel(requestModel); err != nil {
-		return nil, err
-	}
 	upstreamModel := account.GetMappedModel(requestModel)
 	if IsGeminiBananaBridgeModel(requestModel) {
 		upstreamModel = NormalizeGeminiModelID(upstreamModel)
-	}
-	if err := validateOpenAIImagesModel(upstreamModel); err != nil {
-		return nil, err
 	}
 	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
 	if err != nil {
@@ -818,15 +812,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if IsGeminiBananaBridgeModel(requestModel) {
 		requestModel = NormalizeGeminiModelID(requestModel)
 	}
-	if err := validateCompatibleImagesModel(requestModel); err != nil {
-		return nil, err
-	}
 	upstreamModel := account.GetMappedModel(requestModel)
 	if IsGeminiBananaBridgeModel(requestModel) {
 		upstreamModel = NormalizeGeminiModelID(upstreamModel)
-	}
-	if err := validateCompatibleImagesModel(upstreamModel); err != nil {
-		return nil, err
 	}
 	SetOpsUpstreamModel(c, upstreamModel)
 	logger.LegacyPrintf(
