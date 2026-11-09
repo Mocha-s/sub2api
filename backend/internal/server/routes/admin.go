@@ -130,6 +130,9 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+
+		// 视频任务结算管理
+		registerVideoTaskSettlementRoutes(admin, h)
 	}
 }
 
@@ -901,4 +904,11 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 		}
 		c.Next()
 	}
+}
+
+func registerVideoTaskSettlementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	g := admin.Group("/video-task-settlements")
+	g.GET("/by-usage/:usage_log_id", h.Admin.VideoTaskSettlement.GetByUsageLogID)
+	g.POST("/:task_id/refund", h.Admin.VideoTaskSettlement.Refund)
+	g.POST("/:task_id/confirm", h.Admin.VideoTaskSettlement.Confirm)
 }

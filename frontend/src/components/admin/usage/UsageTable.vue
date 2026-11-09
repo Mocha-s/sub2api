@@ -212,6 +212,12 @@
               <span v-if="row.refund_status && row.refund_status !== 'none'" class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" :title="row.refund_reason || undefined">
                 {{ row.refund_status === 'refunded' ? t('usage.refunded') : t('usage.refundPending') }}
               </span>
+              <button
+                v-if="isVideoUsage(row)"
+                class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-500/30"
+                :title="t('admin.usage.videoSettlement')"
+                @click.stop="showSettlementModal(row.id)"
+              >{{ t('admin.usage.videoSettlement') }}</button>
               <span
                 v-if="row.long_context_billing_applied"
                 data-testid="long-context-billing-marker"
@@ -540,6 +546,11 @@
       </div>
     </div>
   </Teleport>
+  <VideoSettlementModal
+    :usage-log-id="settlementUsageLogId"
+    :visible="settlementModalVisible"
+    @close="settlementModalVisible = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -565,6 +576,7 @@ import {
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
+  isVideoUsage,
   getDisplayBillingMode,
   imageUnitPrice,
 } from '@/utils/billingMode'
@@ -594,6 +606,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import VideoSettlementModal from './VideoSettlementModal.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
 import type { AdminUsageLog } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -774,5 +787,14 @@ const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {
 const hideTokenTooltip = () => {
   tokenTooltipVisible.value = false
   tokenTooltipData.value = null
+}
+
+// --- Video settlement modal ---
+const settlementUsageLogId = ref<number | null>(null)
+const settlementModalVisible = ref(false)
+
+function showSettlementModal(usageLogId: number) {
+  settlementUsageLogId.value = usageLogId
+  settlementModalVisible.value = true
 }
 </script>

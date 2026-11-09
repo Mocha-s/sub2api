@@ -154,7 +154,7 @@ func TestVideoTaskPollerExpiresTaskPastLocalDeadlineWithoutProviderFetch(t *test
 
 	update, ok := repo.updates["task_expired"]
 	require.True(t, ok)
-	require.Equal(t, VideoTaskStatusFailed, update.Status)
+	require.Equal(t, VideoTaskStatusExpired, update.Status)
 	require.True(t, update.ClearNextPollAt)
 	require.Empty(t, provider.fetchAccountIDs)
 	require.Equal(t, 1, hook.calls)

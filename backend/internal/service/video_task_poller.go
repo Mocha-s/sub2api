@@ -313,7 +313,10 @@ func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, 
 		if !now.Before(*task.ExpiresAt) {
 			completedAt := now
 			applied, err := p.persistProviderUpdate(ctx, task.PublicTaskID, leaseToken, completedAt, VideoTaskProviderUpdate{
-				Status:          VideoTaskStatusFailed,
+				// local_timeout means our polling window expired, not that the upstream
+				// actually failed; use Expired so a charged settlement is not refunded
+				// (the provider has already incurred the cost).
+				Status:          VideoTaskStatusExpired,
 				ProviderStatus:  "local_timeout",
 				ErrorMessage:    "video task polling deadline exceeded",
 				CompletedAt:     &completedAt,

@@ -648,7 +648,9 @@ type VideoTaskSettlementRepository interface {
 	ReleaseFailed(context.Context, *VideoTaskSettlementReleaseCommand) (*VideoTaskSettlementResult, error)
 	FailSubmission(context.Context, *VideoTaskSettlementFailCommand) (*VideoTaskSettlementResult, error)
 	RefundFailed(context.Context, *VideoTaskSettlementRefundCommand) (*VideoTaskSettlementResult, error)
+	AdminRefundCharged(context.Context, *VideoTaskSettlementRefundCommand) (*VideoTaskSettlementResult, error)
 	GetByPublicTaskID(context.Context, string) (*VideoTaskSettlementSnapshot, error)
+	GetByUsageLogID(context.Context, int64) (*VideoTaskSettlementSnapshot, error)
 	ClaimDueReconciliation(context.Context, time.Time, int, string, time.Duration) ([]VideoTaskSettlementReconcileClaim, error)
 	CompleteReconciliation(context.Context, string, string) (bool, error)
 	RetryReconciliation(context.Context, string, string, string, time.Time) (bool, error)
@@ -663,6 +665,59 @@ type VideoTaskSettlementRepository interface {
 	DeadLetterCacheInvalidation(context.Context, int64, string, string) (bool, error)
 	ClaimDueAdmissionOrphans(context.Context, time.Time, time.Duration, int, string, time.Duration) ([]VideoTaskAdmissionOrphanClaim, error)
 	FailAdmissionOrphan(context.Context, string, string, string, string) (bool, error)
+}
+
+// adminVideoTaskSettlementService is the subset of VideoTaskSettlementService used by the admin handler.
+type adminVideoTaskSettlementService interface {
+	GetPersistedSettlement(ctx context.Context, publicTaskID string) (*VideoTaskSettlementSnapshot, error)
+	GetSettlementByUsageLogID(ctx context.Context, usageLogID int64) (*VideoTaskSettlementSnapshot, error)
+	AdminRefundTask(ctx context.Context, publicTaskID string, reason string) (*VideoTaskSettlementResult, error)
+	AdminConfirmTask(ctx context.Context, publicTaskID string) (*VideoTaskSettlementResult, error)
+}
+
+// GetSettlementByUsageLogID returns the settlement linked to the given usage log.
+// Used by admin UI to avoid a JOIN in the hot usage-log query.
+func (s *VideoTaskSettlementService) GetSettlementByUsageLogID(ctx context.Context, usageLogID int64) (*VideoTaskSettlementSnapshot, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("video task settlement service is not configured")
+	}
+	snap, err := s.repo.GetByUsageLogID(ctx, usageLogID)
+	if errors.Is(err, ErrVideoTaskSettlementNotFound) {
+		return nil, nil
+	}
+	return snap, err
+}
+
+// AdminRefundTask refunds a charged settlement regardless of whether the task is in
+// Failed or Expired state. Used by admin operators after a local-timeout expiry where
+// the upstream may never complete.
+func (s *VideoTaskSettlementService) AdminRefundTask(ctx context.Context, publicTaskID string, reason string) (*VideoTaskSettlementResult, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("video task settlement service is not configured")
+	}
+	result, err := s.repo.AdminRefundCharged(ctx, &VideoTaskSettlementRefundCommand{
+		PublicTaskID: strings.TrimSpace(publicTaskID),
+		Reason:       strings.TrimSpace(reason),
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.afterCommit(ctx, result)
+	return result, nil
+}
+
+// AdminConfirmTask ensures a charged settlement's usage log is correct and marks it
+// as definitively charged. Delegates to the existing RepairChargedUsage path.
+func (s *VideoTaskSettlementService) AdminConfirmTask(ctx context.Context, publicTaskID string) (*VideoTaskSettlementResult, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("video task settlement service is not configured")
+	}
+	result, err := s.repo.RepairChargedUsage(ctx, strings.TrimSpace(publicTaskID))
+	if err != nil {
+		return nil, err
+	}
+	s.afterCommit(ctx, result)
+	return result, nil
 }
 
 func ValidateVideoTaskSettlementAmount(amount float64) error {
