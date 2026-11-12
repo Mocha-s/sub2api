@@ -268,3 +268,13 @@ func TestVideoTaskSettlementProcessRefundReporting_OrdersAndPropagatesFailures(t
 		require.Equal(t, []string{"recompute", "invalidate"}, events)
 	})
 }
+
+func TestVideoTaskSettlementServiceAdminReleaseTaskUsesRelease(t *testing.T) {
+	repo := &videoTaskSettlementRepoStub{}
+	svc := &VideoTaskSettlementService{repo: repo}
+
+	_, err := svc.AdminReleaseTask(t.Context(), " task_x ")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.releaseCalls)
+}

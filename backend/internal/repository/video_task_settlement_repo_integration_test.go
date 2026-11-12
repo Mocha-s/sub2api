@@ -3187,3 +3187,25 @@ func TestVideoTaskSettlementRepository_CaptureAcceptsCompositeTargetGroupTask(t 
 		assertUserMoney(t, f.userID, 18, 2)
 	})
 }
+
+func TestVideoTaskSettlementRepository_ReleaseIsNoopOnceCharged(t *testing.T) {
+	ctx := context.Background()
+	f := newVideoSettlementFixture(t, false, true)
+	repo := NewVideoTaskSettlementRepository(testEntClient(t), integrationDB)
+	_, err := repo.Reserve(ctx, &service.VideoTaskSettlementReserveCommand{
+		PublicTaskID: f.publicID, BillingType: service.BillingTypeBalance, GrossCostUSD: 3, AccountCostUSD: 1.75,
+		PricingSnapshot: map[string]any{"unit": "second"}, Effects: settlementEffects(time.Now().UTC().Truncate(time.Microsecond)),
+	})
+	require.NoError(t, err)
+	markVideoTaskProviderAccepted(t, f.publicID)
+	_, err = repo.Capture(ctx, &service.VideoTaskSettlementCaptureCommand{PublicTaskID: f.publicID, ActualCostUSD: 3})
+	require.NoError(t, err)
+
+	result, err := repo.Release(ctx, &service.VideoTaskSettlementReleaseCommand{PublicTaskID: f.publicID})
+
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	var state string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT s.state FROM video_task_settlements s JOIN video_tasks t ON t.id=s.video_task_id WHERE t.public_task_id=$1`, f.publicID).Scan(&state))
+	require.Equal(t, string(service.VideoTaskSettlementCharged), state)
+}

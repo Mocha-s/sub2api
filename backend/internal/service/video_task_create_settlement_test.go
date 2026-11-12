@@ -769,10 +769,6 @@ func (r *videoTaskSettlementRepoStub) GetByPublicTaskID(context.Context, string)
 	return r.snapshot, r.getErr
 }
 
-func (r *videoTaskSettlementRepoStub) GetByUsageLogID(context.Context, int64) (*VideoTaskSettlementSnapshot, error) {
-	return r.snapshot, r.getErr
-}
-
 func (r *videoTaskSettlementRepoStub) AdminRefundCharged(_ context.Context, cmd *VideoTaskSettlementRefundCommand) (*VideoTaskSettlementResult, error) {
 	return &VideoTaskSettlementResult{}, nil
 }

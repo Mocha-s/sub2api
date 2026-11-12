@@ -908,7 +908,7 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 
 func registerVideoTaskSettlementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	g := admin.Group("/video-task-settlements")
-	g.GET("/by-usage/:usage_log_id", h.Admin.VideoTaskSettlement.GetByUsageLogID)
 	g.POST("/:task_id/refund", h.Admin.VideoTaskSettlement.Refund)
 	g.POST("/:task_id/confirm", h.Admin.VideoTaskSettlement.Confirm)
+	g.POST("/:task_id/release", h.Admin.VideoTaskSettlement.Release)
 }

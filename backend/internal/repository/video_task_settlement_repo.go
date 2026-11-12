@@ -526,28 +526,6 @@ func (r *videoTaskSettlementRepository) GetByPublicTaskID(ctx context.Context, p
 	return snapshotFromRow(service.NormalizeVideoTaskPublicID(publicID), row)
 }
 
-// GetByUsageLogID looks up the settlement linked to the given usage log.
-// Admin lazy-load — avoids a JOIN in the hot usage-log query.
-func (r *videoTaskSettlementRepository) GetByUsageLogID(ctx context.Context, usageLogID int64) (*service.VideoTaskSettlementSnapshot, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("video task settlement repository db is nil")
-	}
-	row := &settlementRow{}
-	var publicTaskID string
-	err := r.db.QueryRowContext(ctx, `SELECT t.public_task_id,s.id,s.user_id,s.api_key_id,s.group_id,s.account_id,s.platform,s.channel_id,s.subscription_id,s.usage_log_id,
-		s.charge_request_id,s.state,s.billing_type,s.gross_cost_usd,s.actual_cost_usd,s.account_cost_usd,s.refunded_cost_usd,s.pricing_snapshot,s.effect_snapshot,s.applied_snapshot,
-		s.reserved_at,s.charged_at,s.released_at,s.refunded_at,s.created_at,s.updated_at
-		FROM video_task_settlements s JOIN video_tasks t ON t.id=s.video_task_id WHERE s.usage_log_id=$1`, usageLogID).Scan(
-		append([]any{&publicTaskID}, settlementScanArgs(row)...)...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, service.ErrVideoTaskSettlementNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return snapshotFromRow(service.NormalizeVideoTaskPublicID(publicTaskID), row)
-}
-
 // AdminRefundCharged refunds a charged settlement regardless of the task's terminal status.
 // Used by admin operators; bypasses the Failed-only guard in RefundFailed.
 func (r *videoTaskSettlementRepository) AdminRefundCharged(ctx context.Context, cmd *service.VideoTaskSettlementRefundCommand) (*service.VideoTaskSettlementResult, error) {

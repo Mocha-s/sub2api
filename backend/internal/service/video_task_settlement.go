@@ -650,7 +650,6 @@ type VideoTaskSettlementRepository interface {
 	RefundFailed(context.Context, *VideoTaskSettlementRefundCommand) (*VideoTaskSettlementResult, error)
 	AdminRefundCharged(context.Context, *VideoTaskSettlementRefundCommand) (*VideoTaskSettlementResult, error)
 	GetByPublicTaskID(context.Context, string) (*VideoTaskSettlementSnapshot, error)
-	GetByUsageLogID(context.Context, int64) (*VideoTaskSettlementSnapshot, error)
 	ClaimDueReconciliation(context.Context, time.Time, int, string, time.Duration) ([]VideoTaskSettlementReconcileClaim, error)
 	CompleteReconciliation(context.Context, string, string) (bool, error)
 	RetryReconciliation(context.Context, string, string, string, time.Time) (bool, error)
@@ -670,22 +669,9 @@ type VideoTaskSettlementRepository interface {
 // adminVideoTaskSettlementService is the subset of VideoTaskSettlementService used by the admin handler.
 type adminVideoTaskSettlementService interface {
 	GetPersistedSettlement(ctx context.Context, publicTaskID string) (*VideoTaskSettlementSnapshot, error)
-	GetSettlementByUsageLogID(ctx context.Context, usageLogID int64) (*VideoTaskSettlementSnapshot, error)
+	AdminReleaseTask(ctx context.Context, publicTaskID string) (*VideoTaskSettlementResult, error)
 	AdminRefundTask(ctx context.Context, publicTaskID string, reason string) (*VideoTaskSettlementResult, error)
 	AdminConfirmTask(ctx context.Context, publicTaskID string) (*VideoTaskSettlementResult, error)
-}
-
-// GetSettlementByUsageLogID returns the settlement linked to the given usage log.
-// Used by admin UI to avoid a JOIN in the hot usage-log query.
-func (s *VideoTaskSettlementService) GetSettlementByUsageLogID(ctx context.Context, usageLogID int64) (*VideoTaskSettlementSnapshot, error) {
-	if s == nil || s.repo == nil {
-		return nil, errors.New("video task settlement service is not configured")
-	}
-	snap, err := s.repo.GetByUsageLogID(ctx, usageLogID)
-	if errors.Is(err, ErrVideoTaskSettlementNotFound) {
-		return nil, nil
-	}
-	return snap, err
 }
 
 // AdminRefundTask refunds a charged settlement regardless of whether the task is in
@@ -713,6 +699,20 @@ func (s *VideoTaskSettlementService) AdminConfirmTask(ctx context.Context, publi
 		return nil, errors.New("video task settlement service is not configured")
 	}
 	result, err := s.repo.RepairChargedUsage(ctx, strings.TrimSpace(publicTaskID))
+	if err != nil {
+		return nil, err
+	}
+	s.afterCommit(ctx, result)
+	return result, nil
+}
+
+// AdminReleaseTask 把仍在冻结中的金额归还给用户。只动结算：任务继续运行，
+// 之后即使被上游接受也不会再扣费。
+func (s *VideoTaskSettlementService) AdminReleaseTask(ctx context.Context, publicTaskID string) (*VideoTaskSettlementResult, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("video task settlement service is not configured")
+	}
+	result, err := s.repo.Release(ctx, &VideoTaskSettlementReleaseCommand{PublicTaskID: strings.TrimSpace(publicTaskID)})
 	if err != nil {
 		return nil, err
 	}
