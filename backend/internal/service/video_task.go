@@ -29,7 +29,7 @@ const (
 	VideoTaskEndpointVideos           = "videos"
 	VideoTaskEndpointVideoGenerations = "video_generations"
 	VideoTaskEndpointMetadataKey      = "video_task_endpoint"
-	videoTaskDefaultLifetime          = 30 * time.Minute
+	videoTaskDefaultLifetime          = 24 * time.Hour
 )
 
 var (

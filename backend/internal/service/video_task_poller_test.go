@@ -136,13 +136,13 @@ func TestVideoTaskPollerPollOnceSchedulesNonTerminalTask(t *testing.T) {
 
 func TestVideoTaskPollerExpiresTaskPastLocalDeadlineWithoutProviderFetch(t *testing.T) {
 	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
-	expiredAt := now.Add(-time.Second)
+	submittedAt := now.Add(-24 * time.Hour)
 	repo := &pollerVideoTaskRepositoryFake{claimed: []*VideoTask{{
 		PublicTaskID:   "task_expired",
 		ProviderTaskID: "upstream_task",
 		AccountID:      99,
 		Status:         VideoTaskStatusInProgress,
-		ExpiresAt:      &expiredAt,
+		SubmittedAt:    &submittedAt,
 	}}}
 	provider := &pollerVideoTaskProviderFake{results: map[string]*VideoProviderFetchResult{
 		"task_expired": {Status: VideoTaskStatusCompleted},
@@ -150,6 +150,7 @@ func TestVideoTaskPollerExpiresTaskPastLocalDeadlineWithoutProviderFetch(t *test
 	hook := &reconcileHookFake{}
 
 	poller := newVideoTaskPoller(repo, &pollerAccountRepositoryFake{accounts: map[int64]*Account{99: {ID: 99}}}, provider, hook)
+	poller.now = func() time.Time { return now }
 	require.NoError(t, poller.PollOnce(context.Background(), "worker-1", now))
 
 	update, ok := repo.updates["task_expired"]
@@ -1934,4 +1935,38 @@ func runUngatedPollerPersistenceForTest(ctx context.Context, persist func(contex
 	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), videoTaskPersistenceTimeout)
 	defer cancel()
 	return persist(updateCtx)
+}
+
+func TestNextVideoPollDelayIsFixedTenSeconds(t *testing.T) {
+	for _, attempts := range []int{-1, 0, 1, 5, 100} {
+		require.Equal(t, 10*time.Second, nextVideoPollDelay(attempts))
+	}
+}
+
+func TestVideoTaskPollerKeepsPollingUntil24HoursAfterSubmission(t *testing.T) {
+	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
+	submittedAt := now.Add(-24*time.Hour + time.Minute)
+	upstreamExpired := now.Add(-time.Hour) // 上游自带的过期时间不再让轮询提前停止
+	repo := &pollerVideoTaskRepositoryFake{claimed: []*VideoTask{{
+		PublicTaskID:   "task_slow_24h",
+		ProviderTaskID: "upstream_task",
+		AccountID:      99,
+		Status:         VideoTaskStatusInProgress,
+		SubmittedAt:    &submittedAt,
+		ExpiresAt:      &upstreamExpired,
+	}}}
+	provider := &pollerVideoTaskProviderFake{results: map[string]*VideoProviderFetchResult{
+		"task_slow_24h": {Status: VideoTaskStatusInProgress, ProviderStatus: "processing"},
+	}}
+
+	poller := newVideoTaskPoller(repo, &pollerAccountRepositoryFake{accounts: map[int64]*Account{99: {ID: 99}}}, provider)
+	poller.now = func() time.Time { return now }
+	require.NoError(t, poller.PollOnce(context.Background(), "worker-1", now))
+
+	update, ok := repo.updates["task_slow_24h"]
+	require.True(t, ok)
+	require.Equal(t, VideoTaskStatusInProgress, update.Status)
+	require.NotNil(t, update.NextPollAt)
+	require.Equal(t, now.Add(10*time.Second), *update.NextPollAt)
+	require.Contains(t, provider.fetchAccountIDs, "task_slow_24h")
 }

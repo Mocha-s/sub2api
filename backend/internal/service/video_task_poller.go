@@ -304,13 +304,25 @@ func (p *VideoTaskPoller) run(ctx context.Context, done chan struct{}, workerID 
 	}
 }
 
+// videoTaskPollDeadline 是轮询器放弃的时刻：提交后 24 小时，不看上游自带的 expires_at。
+func videoTaskPollDeadline(task *VideoTask) time.Time {
+	start := task.CreatedAt
+	if task.SubmittedAt != nil {
+		start = *task.SubmittedAt
+	}
+	if start.IsZero() {
+		return time.Time{}
+	}
+	return start.Add(videoTaskDefaultLifetime)
+}
+
 func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, leaseToken string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if task.ExpiresAt != nil {
+	if deadline := videoTaskPollDeadline(task); !deadline.IsZero() {
 		now := p.currentTime()
-		if !now.Before(*task.ExpiresAt) {
+		if !now.Before(deadline) {
 			completedAt := now
 			applied, err := p.persistProviderUpdate(ctx, task.PublicTaskID, leaseToken, completedAt, VideoTaskProviderUpdate{
 				// local_timeout means our polling window expired, not that the upstream
@@ -384,8 +396,8 @@ func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, 
 
 	// If the provider reports failed but the error looks like a transient infrastructure
 	// issue (e.g. internal connection failure on the provider side), treat it as a poll
-	// error and reschedule rather than permanently terminating the task. The ExpiresAt
-	// timeout is the backstop if the issue never resolves.
+	// error and reschedule rather than permanently terminating the task. The 24h
+	// poll deadline is the backstop if the issue never resolves.
 	if status == VideoTaskStatusFailed && isTransientVideoProviderPollError(result.ErrorMessage) {
 		return p.rescheduleAfterPollError(ctx, task, leaseToken, completedAt,
 			fmt.Errorf("transient provider error: %s", result.ErrorMessage))

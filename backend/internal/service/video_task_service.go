@@ -1478,20 +1478,7 @@ func videoTaskMetadataString(metadata map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func nextVideoPollDelay(attempts int) time.Duration {
-	delays := []time.Duration{
-		5 * time.Second,
-		10 * time.Second,
-		20 * time.Second,
-		30 * time.Second,
-		1 * time.Minute,
-		2 * time.Minute,
-	}
-	if attempts < 0 {
-		attempts = 0
-	}
-	if attempts >= len(delays) {
-		return delays[len(delays)-1]
-	}
-	return delays[attempts]
-}
+// 固定间隔、不退避：任务日志要求近实时地跟上游同步。
+const videoTaskPollDelay = 10 * time.Second
+
+func nextVideoPollDelay(int) time.Duration { return videoTaskPollDelay }
