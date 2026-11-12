@@ -241,6 +241,19 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/task-logs',
+    name: 'TaskLogs',
+    component: () => import('@/views/TaskLogsView.vue'),
+    props: { admin: false },
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Task Logs',
+      titleKey: 'taskLogs.title',
+      descriptionKey: 'taskLogs.description'
+    }
+  },
+  {
     path: '/redeem',
     name: 'Redeem',
     component: () => import('@/views/user/RedeemView.vue'),
@@ -633,6 +646,19 @@ const routes: RouteRecordRaw[] = [
       title: 'Usage Records',
       titleKey: 'admin.usage.title',
       descriptionKey: 'admin.usage.description'
+    }
+  },
+  {
+    path: '/admin/task-logs',
+    name: 'AdminTaskLogs',
+    component: () => import('@/views/TaskLogsView.vue'),
+    props: { admin: true },
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Task Logs',
+      titleKey: 'taskLogs.title',
+      descriptionKey: 'taskLogs.description'
     }
   },
   {

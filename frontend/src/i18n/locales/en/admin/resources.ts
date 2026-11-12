@@ -570,7 +570,10 @@ export default {
       videoSettlementRefundReason: 'Refund Reason',
       videoSettlementRefundSuccess: 'Refund successful',
       videoSettlementConfirmSuccess: 'Charge confirmed',
-      videoSettlementNotFound: 'Settlement not found',
+      videoSettlementRelease: 'Release Hold',
+      videoSettlementReleaseConfirm: 'The held amount will be returned to the user. If the task is still being submitted and the upstream accepts it later, it will not be charged and cannot be charged afterwards. Release the hold?',
+      videoSettlementReleaseSuccess: 'Hold released',
+      videoSettlementNotApplied: 'The settlement state has changed; nothing was applied',
       tokenRanking: {
         subtitle: 'Per-user token usage for the current filters and time range',
         rowHint: "Click to view this user's usage details",
