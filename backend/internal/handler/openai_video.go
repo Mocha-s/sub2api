@@ -455,6 +455,10 @@ func (h *VideoTaskHandler) Content(c *gin.Context) {
 		videoTaskServiceError(c, err)
 		return
 	}
+	writeVideoTaskContentStream(c, stream)
+}
+
+func writeVideoTaskContentStream(c *gin.Context, stream *service.VideoContentStream) {
 	if stream == nil || stream.Body == nil {
 		videoTaskErrorResponse(c, http.StatusInternalServerError, "server_error", "Video task service returned empty stream")
 		return

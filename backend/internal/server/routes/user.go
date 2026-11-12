@@ -112,6 +112,14 @@ func RegisterUserRoutes(
 			usage.POST("/dashboard/api-keys-usage", h.Usage.DashboardAPIKeysUsage)
 		}
 
+		// 任务日志（视频 + 批量图片）
+		taskLogs := authenticated.Group("/task-logs")
+		{
+			taskLogs.GET("", h.TaskLog.List)
+			taskLogs.GET("/video/:task_id/content", h.TaskLog.VideoContent)
+			taskLogs.GET("/batch-image/:batch_id/download", h.TaskLog.BatchImageDownload)
+		}
+
 		// 公告（用户可见）
 		announcements := authenticated.Group("/announcements")
 		{

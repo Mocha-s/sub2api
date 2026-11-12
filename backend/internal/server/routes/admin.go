@@ -133,6 +133,9 @@ func RegisterAdminRoutes(
 
 		// 视频任务结算管理
 		registerVideoTaskSettlementRoutes(admin, h)
+
+		// 任务日志
+		registerTaskLogRoutes(admin, h)
 	}
 }
 
@@ -911,4 +914,10 @@ func registerVideoTaskSettlementRoutes(admin *gin.RouterGroup, h *handler.Handle
 	g.POST("/:task_id/refund", h.Admin.VideoTaskSettlement.Refund)
 	g.POST("/:task_id/confirm", h.Admin.VideoTaskSettlement.Confirm)
 	g.POST("/:task_id/release", h.Admin.VideoTaskSettlement.Release)
+}
+
+func registerTaskLogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	g := admin.Group("/task-logs")
+	g.GET("", h.TaskLog.AdminList)
+	g.GET("/batch-image/:batch_id/download", h.TaskLog.AdminBatchImageDownload)
 }
