@@ -7,7 +7,10 @@ export default {
     userId: '用户 ID',
     empty: '暂无任务',
     batchItems: '{total} 张（{success} 成功）',
+    imageItems: '{total} 张（{success} 成功）',
+    requestModes: { sync: '同步', async: '异步' },
     preview: '预览',
+    previousImage: '上一张',
     download: '下载',
     view: '查看',
     copyTaskId: '点击复制任务 ID',
@@ -33,6 +36,7 @@ export default {
     },
     types: {
       video: '视频',
+      image: '图片',
       batch_image: '批量图片'
     },
     status: {

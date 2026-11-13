@@ -11,6 +11,7 @@ import (
 const (
 	TaskLogTypeVideo      = "video"
 	TaskLogTypeBatchImage = "batch_image"
+	TaskLogTypeImage      = "image"
 
 	TaskLogStatusQueued    = "queued"
 	TaskLogStatusRunning   = "running"
@@ -23,6 +24,7 @@ const (
 // TaskLog 是任务日志的一行：一个视频任务或一个批量图片任务。
 type TaskLog struct {
 	Type         string     `json:"type"`
+	RequestMode  string     `json:"request_mode,omitempty"`
 	TaskID       string     `json:"task_id"`
 	Platform     string     `json:"platform"`
 	Model        string     `json:"model"`
@@ -37,6 +39,7 @@ type TaskLog struct {
 	SuccessCount int        `json:"success_count,omitempty"`
 	FailCount    int        `json:"fail_count,omitempty"`
 	CostUSD      float64    `json:"cost_usd"`
+	CostKnown    *bool      `json:"cost_known,omitempty"`
 	Prompt       string     `json:"prompt"`
 	ErrorCode    string     `json:"error_code,omitempty"`
 	ErrorMessage string     `json:"error_message,omitempty"`
@@ -72,6 +75,12 @@ type TaskLogRepository interface {
 }
 
 var taskLogRawStatuses = map[string]map[string][]string{
+	TaskLogTypeImage: {
+		TaskLogStatusRunning:   {ImageTaskStatusProcessing},
+		TaskLogStatusSucceeded: {ImageTaskStatusCompleted},
+		TaskLogStatusFailed:    {ImageTaskStatusFailed},
+		TaskLogStatusExpired:   {"expired"},
+	},
 	TaskLogTypeVideo: {
 		TaskLogStatusQueued:    {string(VideoTaskStatusSubmitting), string(VideoTaskStatusQueued)},
 		TaskLogStatusRunning:   {string(VideoTaskStatusInProgress), string(VideoTaskStatusUnknown)},

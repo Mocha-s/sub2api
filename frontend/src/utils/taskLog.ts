@@ -19,10 +19,13 @@ export function taskSummary(row: TaskLog, t: Translate): string {
   if (row.type === 'video') {
     if (row.resolution) parts.push(row.resolution)
     if (row.seconds) parts.push(`${row.seconds}s`)
-  } else {
+  } else if (row.type === 'batch_image') {
     parts.push(t('taskLogs.batchItems', { total: row.item_count ?? 0, success: row.success_count ?? 0 }))
+  } else {
+    if (row.request_mode) parts.push(t(`taskLogs.requestModes.${row.request_mode}`))
+    parts.push(t('taskLogs.imageItems', { total: row.item_count ?? 0, success: row.success_count ?? 0 }))
   }
-  parts.push(`$${row.cost_usd.toFixed(4)}`)
+  parts.push(row.cost_known === false ? '—' : `$${row.cost_usd.toFixed(4)}`)
   return parts.join(' · ')
 }
 
@@ -31,12 +34,8 @@ export const isTaskActive = (row: TaskLog): boolean => row.status === 'queued' |
 export const canSettle = (row: TaskLog, admin: boolean): boolean =>
   admin && row.type === 'video' && !!row.settlement_state
 
-// 管理端视频直接打开上游地址，只接受 http(s)，避免上游返回 javascript: 之类的地址。
-export function hasResultLink(row: TaskLog, admin: boolean): boolean {
-  if (!row.has_result) return false
-  if (admin && row.type === 'video') return /^https?:\/\//i.test(row.result_url ?? '')
-  return true
-}
+// Both roles retrieve results through authenticated content endpoints.
+export const hasResultLink = (row: TaskLog): boolean => row.has_result
 
 export const settlementLabelKey: Record<string, string> = {
   reserved: 'admin.usage.videoSettlementReserved',

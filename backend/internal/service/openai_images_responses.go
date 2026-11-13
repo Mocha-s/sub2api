@@ -1153,6 +1153,7 @@ func (s *OpenAIGatewayService) tryWriteOpenAIImagesStreamEvent(
 	eventName string,
 	payload []byte,
 ) bool {
+	observeImageTaskLogEvent(c, payload)
 	if clientDisconnected != nil && *clientDisconnected {
 		return false
 	}
@@ -1401,6 +1402,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	streamPrefix string,
 	fallbackModel string,
 ) (OpenAIUsage, int, []string, *int, error) {
+	beginImageTaskLogUpstream(c)
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")

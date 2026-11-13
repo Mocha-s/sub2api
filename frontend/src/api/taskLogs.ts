@@ -5,7 +5,7 @@
 import { apiClient } from './client'
 import type { PaginatedResponse } from '@/types'
 
-export type TaskLogType = 'video' | 'batch_image'
+export type TaskLogType = 'video' | 'batch_image' | 'image'
 export type TaskLogStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired'
 
 export interface TaskLog {
@@ -24,10 +24,12 @@ export interface TaskLog {
   success_count?: number
   fail_count?: number
   cost_usd: number
+  cost_known?: boolean
   prompt: string
   error_code?: string
   error_message?: string
   has_result: boolean
+  request_mode?: 'sync' | 'async'
   // 以下仅管理端返回
   result_url?: string
   settlement_state?: string
@@ -51,16 +53,27 @@ export interface TaskLogQuery {
 
 const base = (admin: boolean) => (admin ? '/admin/task-logs' : '/task-logs')
 
-export async function listTaskLogs(admin: boolean, params: TaskLogQuery): Promise<PaginatedResponse<TaskLog>> {
-  const { data } = await apiClient.get(base(admin), { params })
+export async function listTaskLogs(admin: boolean, params: TaskLogQuery, signal?: AbortSignal): Promise<PaginatedResponse<TaskLog>> {
+  const { data } = await apiClient.get(base(admin), { params, signal })
   return data
 }
 
 // 视频和压缩包可能很大，不套用默认的 30 秒超时。
-export async function fetchVideoContent(taskId: string): Promise<Blob> {
-  const { data } = await apiClient.get(`/task-logs/video/${encodeURIComponent(taskId)}/content`, {
+export async function fetchVideoContent(admin: boolean, taskId: string, signal?: AbortSignal): Promise<Blob> {
+  const { data } = await apiClient.get(`${base(admin)}/video/${encodeURIComponent(taskId)}/content`, {
     responseType: 'blob',
-    timeout: 0
+    timeout: 0,
+    signal
+  })
+  return data
+}
+
+export async function fetchImageContent(admin: boolean, taskId: string, index: number, signal?: AbortSignal): Promise<Blob> {
+  const { data } = await apiClient.get(`${base(admin)}/image/${encodeURIComponent(taskId)}/content`, {
+    params: { index },
+    responseType: 'blob',
+    timeout: 0,
+    signal
   })
   return data
 }

@@ -50,6 +50,12 @@ describe('taskLog utils', () => {
     expect(taskSummary(batch, t)).toBe('imagen · taskLogs.batchItems:{"total":20,"success":18} · $1.5000')
   })
 
+  it('图片费用尚未关联账单时不显示为免费', () => {
+    const image = row({ type: 'image', model: 'imagen', request_mode: 'async', item_count: 2, success_count: 2, cost_usd: 0, cost_known: false })
+    expect(taskSummary(image, t)).toBe('imagen · taskLogs.requestModes.async:{} · taskLogs.imageItems:{"total":2,"success":2} · —')
+    expect(taskSummary({ ...image, cost_known: true }, t)).toContain('$0.0000')
+  })
+
   it('只有排队中和进行中的任务触发自动刷新', () => {
     expect(isTaskActive(row({ status: 'queued' }))).toBe(true)
     expect(isTaskActive(row({ status: 'running' }))).toBe(true)
@@ -65,12 +71,10 @@ describe('taskLog utils', () => {
     expect(canSettle(row({ type: 'batch_image', settlement_state: 'charged' }), true)).toBe(false)
   })
 
-  it('结果入口：管理端视频要求 http(s) 的 result_url', () => {
-    expect(hasResultLink(row(), false)).toBe(true)
-    expect(hasResultLink(row({ has_result: false }), false)).toBe(false)
-    expect(hasResultLink(row(), true)).toBe(false)
-    expect(hasResultLink(row({ result_url: 'javascript:alert(1)' }), true)).toBe(false)
-    expect(hasResultLink(row({ result_url: 'https://cdn.example/x.mp4' }), true)).toBe(true)
-    expect(hasResultLink(row({ type: 'batch_image' }), true)).toBe(true)
+  it('结果入口使用内容代理，不依赖上游地址', () => {
+    expect(hasResultLink(row())).toBe(true)
+    expect(hasResultLink(row({ has_result: false }))).toBe(false)
+    expect(hasResultLink(row({ type: 'batch_image' }))).toBe(true)
+    expect(hasResultLink(row({ type: 'image' }))).toBe(true)
   })
 })

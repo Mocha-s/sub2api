@@ -117,6 +117,7 @@ func RegisterUserRoutes(
 		{
 			taskLogs.GET("", h.TaskLog.List)
 			taskLogs.GET("/video/:task_id/content", h.TaskLog.VideoContent)
+			taskLogs.GET("/image/:task_id/content", h.TaskLog.ImageContent)
 			taskLogs.GET("/batch-image/:batch_id/download", h.TaskLog.BatchImageDownload)
 		}
 

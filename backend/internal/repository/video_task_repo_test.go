@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -20,6 +22,80 @@ import (
 
 func TestVideoTaskRepositoryImplementsServiceInterface(t *testing.T) {
 	var _ service.VideoTaskRepository = (*videoTaskRepository)(nil)
+}
+
+func TestVideoTaskRepositoryProjectsProviderResults(t *testing.T) {
+	for _, path := range []string{"submit", "fetch", "poll"} {
+		t.Run(path, func(t *testing.T) {
+			repo, client := newVideoTaskRepoSQLite(t)
+			ctx := context.Background()
+			now := time.Now().UTC()
+			id := mustCreateDueVideoTask(t, ctx, client, "task_projection", now)
+			_, err := repo.ClaimDuePollTasks(ctx, now, 1, "lease", time.Minute)
+			require.NoError(t, err)
+			apply := func(status service.VideoTaskStatus, metadata map[string]any) {
+				t.Helper()
+				if path == "submit" {
+					require.NoError(t, repo.AttachUpstream(ctx, "task_projection", service.VideoTaskSubmitUpdate{Status: status, Metadata: metadata}))
+					return
+				}
+				update := service.VideoTaskProviderUpdate{Status: status, Metadata: metadata}
+				var applied bool
+				var err error
+				if path == "poll" {
+					applied, err = repo.UpdateFromProviderWithPollLease(ctx, "task_projection", "lease", now, update)
+				} else {
+					applied, err = repo.UpdateFromProvider(ctx, "task_projection", update)
+				}
+				require.NoError(t, err)
+				require.True(t, applied)
+			}
+			for _, progress := range []float64{25, 63} {
+				apply(service.VideoTaskStatusInProgress, map[string]any{"progress": progress})
+				row, err := client.VideoTask.Get(ctx, id)
+				require.NoError(t, err)
+				require.Equal(t, int(progress), row.Progress)
+			}
+			apply(service.VideoTaskStatusInProgress, nil)
+			row, err := client.VideoTask.Get(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, 63, row.Progress, "missing progress must not reset the last observation")
+			apply(service.VideoTaskStatusCompleted, map[string]any{"result_url": " https://cdn.example/video.mp4 "})
+			row, err = client.VideoTask.Get(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, 100, row.Progress)
+			require.Equal(t, "https://cdn.example/video.mp4", stringValue(row.ResultURL))
+			require.NotNil(t, row.CompletedAt)
+		})
+	}
+}
+
+func TestVideoTaskRepositoryNormalizesProgress(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+		want  int
+	}{
+		{"decimal", 42.9, 42},
+		{"integer", 31, 31},
+		{"int64", int64(32), 32},
+		{"json number", json.Number("33"), 33},
+		{"negative", float64(-4), 0},
+		{"over 100", 1e30, 100},
+		{"invalid", "not a number", 18},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, client := newVideoTaskRepoSQLite(t)
+			ctx := context.Background()
+			id := mustCreateDueVideoTask(t, ctx, client, "task_progress", time.Now())
+			require.NoError(t, client.VideoTask.UpdateOneID(id).SetProgress(18).Exec(ctx))
+			_, err := repo.UpdateFromProvider(ctx, "task_progress", service.VideoTaskProviderUpdate{Metadata: map[string]any{"progress": tc.value}})
+			require.NoError(t, err)
+			row, err := client.VideoTask.Get(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, row.Progress)
+		})
+	}
 }
 
 func TestVideoTaskRepositoryGetByPublicTaskIDForUserEnforcesOwnership(t *testing.T) {

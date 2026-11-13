@@ -10,6 +10,9 @@ import (
 
 func TestTaskLogStatusMapping(t *testing.T) {
 	cases := []struct{ taskType, raw, want string }{
+		{"image", "processing", TaskLogStatusRunning},
+		{"image", "completed", TaskLogStatusSucceeded},
+		{"image", "failed", TaskLogStatusFailed},
 		{TaskLogTypeVideo, "submitting", TaskLogStatusQueued},
 		{TaskLogTypeVideo, "queued", TaskLogStatusQueued},
 		{TaskLogTypeVideo, "in_progress", TaskLogStatusRunning},

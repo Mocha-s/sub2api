@@ -58,6 +58,7 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		imageTaskError(c, service.ErrImageTaskForbidden)
 		return
 	}
+	defer h.openAI.rejectedAsyncImageTaskLog(c)()
 	// composite 分组按解析后的目标平台判定，与同步 images 端点一致；
 	// 未解析时回退到分组平台本身。
 	platform := effectiveAPIKeyPlatform(c, apiKey)
@@ -86,6 +87,10 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if len(body) == 0 {
 		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return
+	}
+	if h.openAI != nil {
+		info := service.ParseGrokMediaRequest(c.GetHeader("Content-Type"), body)
+		h.openAI.imageTaskLogMetadata(c, info.Model, info.Prompt, info.N)
 	}
 	if asyncImageRequestStreams(c.GetHeader("Content-Type"), body) {
 		imageTaskJSONError(c, http.StatusBadRequest, "invalid_request_error", "streaming image requests cannot be submitted as asynchronous tasks")
@@ -116,6 +121,16 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		cancel()
 		imageTaskError(c, err)
 		return
+	}
+	taskCtx.Set(asyncImageExecutionKey, true)
+	if h.openAI != nil && h.openAI.imageLogs != nil {
+		info := service.ParseGrokMediaRequest(c.GetHeader("Content-Type"), body)
+		entry := &service.ImageTaskLogEntry{TaskID: task.ID, UserID: apiKey.UserID, APIKeyID: apiKey.ID,
+			RequestMode: "async", Platform: platform, Model: info.Model, Prompt: info.Prompt, ItemCount: info.N,
+			RequestID:  service.ResolveUsageBillingRequestID(taskCtx.Request.Context(), ""),
+			DeadlineAt: time.Now().Add(h.tasks.ExecutionTimeout())}
+		h.openAI.imageLogs.Start(c.Request.Context(), entry)
+		taskCtx.Set(imageTaskLogEntryKey, entry)
 	}
 
 	pollURL := imageTaskPollURL(c.Request.URL.Path, task.ID)
@@ -232,8 +247,34 @@ func (h *AsyncImageHandler) executeWithGateway(platform string, c *gin.Context) 
 
 func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, recorder *httptest.ResponseRecorder, cancel context.CancelFunc) {
 	defer cancel()
+	logFailed := false
+	defer func() {
+		if h.openAI == nil || h.openAI.imageLogs == nil {
+			return
+		}
+		if raw, ok := taskCtx.Get(imageTaskLogEntryKey); ok {
+			entry := raw.(*service.ImageTaskLogEntry)
+			body := recorder.Body.Bytes()
+			failed := logFailed || !json.Valid(body)
+			status := recorder.Code
+			// Preserve existing async task failures (including mandatory object-storage offload failure).
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			task, err := h.tasks.Get(ctx, service.ImageTaskOwner{UserID: entry.UserID, APIKeyID: entry.APIKeyID}, taskID)
+			cancel()
+			if err == nil && task.Status == service.ImageTaskStatusFailed {
+				status = task.HTTPStatus
+				failed = true
+				body, _ = json.Marshal(map[string]json.RawMessage{"error": task.Error})
+			}
+			if len(body) > service.ImageTaskLogMaxResultBytes {
+				body = nil
+			}
+			h.openAI.imageLogs.Finish(taskCtx.Request.Context(), entry, status, body, failed)
+		}
+	}()
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			logFailed = true
 			logger.L().Error("image_task.execution_panicked", zap.String("task_id", taskID), zap.Any("panic", recovered))
 			h.failTask(taskID, http.StatusInternalServerError, imageTaskErrorPayload("api_error", "image generation task panicked"))
 		}

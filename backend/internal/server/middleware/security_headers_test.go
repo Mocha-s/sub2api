@@ -132,6 +132,20 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, 1, countDirectiveValue(csp, "worker-src", TencentCaptchaWorkerSource))
 	})
 
+	t.Run("task_log_blob_previews_allowed_with_default_and_legacy_policy", func(t *testing.T) {
+		for _, policy := range []string{config.DefaultCSPPolicy, "default-src 'self'; media-src 'self'; img-src 'self'"} {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodGet, "/task-logs", nil)
+			SecurityHeaders(config.CSPConfig{Enabled: true, Policy: policy}, nil)(c)
+			csp := w.Header().Get("Content-Security-Policy")
+			assert.Equal(t, 1, countDirectiveValue(csp, "media-src", "blob:"))
+			assert.Equal(t, 1, countDirectiveValue(csp, "img-src", "blob:"))
+			assert.Zero(t, countDirectiveValue(csp, "media-src", "*"))
+			assert.Contains(t, csp, "default-src 'self'")
+		}
+	})
+
 	t.Run("old_custom_policy_dynamically_allows_same_origin_frames", func(t *testing.T) {
 		cfg := config.CSPConfig{
 			Enabled: true,

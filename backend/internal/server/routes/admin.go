@@ -919,5 +919,7 @@ func registerVideoTaskSettlementRoutes(admin *gin.RouterGroup, h *handler.Handle
 func registerTaskLogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	g := admin.Group("/task-logs")
 	g.GET("", h.TaskLog.AdminList)
+	g.GET("/video/:task_id/content", h.TaskLog.AdminVideoContent)
+	g.GET("/image/:task_id/content", h.TaskLog.AdminImageContent)
 	g.GET("/batch-image/:batch_id/download", h.TaskLog.AdminBatchImageDownload)
 }

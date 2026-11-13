@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -149,6 +151,10 @@ func (r *videoTaskRepository) AttachUpstream(ctx context.Context, publicTaskID s
 	}
 	if update.Metadata != nil {
 		updater.SetResultMetadata(cloneAnyMap(update.Metadata))
+	}
+	applyVideoTaskResultSummary(updater, update.Status, update.Metadata)
+	if update.Status.Terminal() {
+		updater.SetCompletedAt(time.Now())
 	}
 	if update.ErrorMessage != "" {
 		updater.SetErrorMessage(update.ErrorMessage)
@@ -324,6 +330,7 @@ func (r *videoTaskRepository) UpdateFromProviderWithPollLease(ctx context.Contex
 }
 
 func applyVideoTaskProviderUpdate(updater *dbent.VideoTaskUpdate, update service.VideoTaskProviderUpdate) {
+	applyVideoTaskResultSummary(updater, update.Status, update.Metadata)
 	if update.Status != "" {
 		updater.SetStatus(string(update.Status))
 	}
@@ -354,6 +361,37 @@ func applyVideoTaskProviderUpdate(updater *dbent.VideoTaskUpdate, update service
 		updater.ClearNextPollAt()
 	} else if update.NextPollAt != nil {
 		updater.SetNextPollAt(*update.NextPollAt)
+	}
+}
+
+// Task logs read these columns, while adapters return normalized result metadata.
+func applyVideoTaskResultSummary(updater *dbent.VideoTaskUpdate, status service.VideoTaskStatus, metadata map[string]any) {
+	if resultURL := strings.TrimSpace(metadataString(metadata, "result_url")); resultURL != "" {
+		updater.SetResultURL(resultURL)
+	}
+	if status == service.VideoTaskStatusCompleted {
+		updater.SetProgress(100)
+		return
+	}
+	var progress float64
+	switch value := metadata["progress"].(type) {
+	case float64:
+		progress = value
+	case int:
+		progress = float64(value)
+	case int64:
+		progress = float64(value)
+	case json.Number:
+		var err error
+		progress, err = value.Float64()
+		if err != nil {
+			return
+		}
+	default:
+		return
+	}
+	if !math.IsNaN(progress) && !math.IsInf(progress, 0) {
+		updater.SetProgress(int(math.Max(0, math.Min(100, progress))))
 	}
 }
 

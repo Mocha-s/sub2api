@@ -17,6 +17,7 @@ import (
 
 type taskLogVideoContent interface {
 	Content(ctx context.Context, params service.VideoTaskContentParams) (*service.VideoContentStream, error)
+	AdminContent(ctx context.Context, params service.VideoTaskContentParams) (*service.VideoContentStream, error)
 }
 
 // TaskLogHandler 提供任务日志（视频 + 批量图片）的用户端与管理端接口。
@@ -25,10 +26,11 @@ type TaskLogHandler struct {
 	videos   taskLogVideoContent
 	batches  service.BatchImageRepository
 	download *service.BatchImageDownloadService
+	images   *service.ImageTaskLogService
 }
 
-func NewTaskLogHandler(repo service.TaskLogRepository, videos *service.VideoTaskService, batches service.BatchImageRepository, download *service.BatchImageDownloadService) *TaskLogHandler {
-	return &TaskLogHandler{repo: repo, videos: videos, batches: batches, download: download}
+func NewTaskLogHandler(repo service.TaskLogRepository, videos *service.VideoTaskService, batches service.BatchImageRepository, download *service.BatchImageDownloadService, images *service.ImageTaskLogService) *TaskLogHandler {
+	return &TaskLogHandler{repo: repo, videos: videos, batches: batches, download: download, images: images}
 }
 
 // List 返回当前用户自己的任务。
@@ -104,6 +106,42 @@ func (h *TaskLogHandler) VideoContent(c *gin.Context) {
 		return
 	}
 	writeVideoTaskContentStream(c, stream)
+}
+
+func (h *TaskLogHandler) AdminVideoContent(c *gin.Context) {
+	stream, err := h.videos.AdminContent(c.Request.Context(), service.VideoTaskContentParams{
+		PublicTaskID: strings.TrimSpace(c.Param("task_id")), Header: http.Header{"Range": c.Request.Header.Values("Range")}, Method: c.Request.Method,
+	})
+	if err != nil {
+		videoTaskServiceError(c, err)
+		return
+	}
+	writeVideoTaskContentStream(c, stream)
+}
+
+func (h *TaskLogHandler) ImageContent(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	h.imageContent(c, subject.UserID)
+}
+func (h *TaskLogHandler) AdminImageContent(c *gin.Context) { h.imageContent(c, 0) }
+func (h *TaskLogHandler) imageContent(c *gin.Context, userID int64) {
+	index, err := strconv.Atoi(c.DefaultQuery("index", "0"))
+	if err != nil || index < 0 {
+		response.BadRequest(c, "invalid image index")
+		return
+	}
+	data, contentType, err := h.images.Content(c.Request.Context(), userID, strings.TrimSpace(c.Param("task_id")), index)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // BatchImageDownload 打包下载本人的批量图片结果。

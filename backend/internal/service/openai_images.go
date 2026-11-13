@@ -1185,6 +1185,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 	startTime time.Time,
 	direct *OpenAIImagesRequest,
 ) (OpenAIUsage, int, []string, *int, error) {
+	beginImageTaskLogUpstream(c)
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
@@ -1237,6 +1238,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesStreamingResponse(
 		}
 		mergeOpenAIUsage(&usage, dataBytes)
 		imageCounter.AddSSEData(dataBytes)
+		observeImageTaskLogEvent(c, dataBytes)
 		if direct == nil || string(dataBytes) == "[DONE]" {
 			return
 		}

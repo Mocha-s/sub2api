@@ -7,7 +7,10 @@ export default {
     userId: 'User ID',
     empty: 'No tasks yet',
     batchItems: '{total} images ({success} succeeded)',
+    imageItems: '{total} images ({success} succeeded)',
+    requestModes: { sync: 'Synchronous', async: 'Asynchronous' },
     preview: 'Preview',
+    previousImage: 'Previous image',
     download: 'Download',
     view: 'View',
     copyTaskId: 'Click to copy task ID',
@@ -33,6 +36,7 @@ export default {
     },
     types: {
       video: 'Video',
+      image: 'Image',
       batch_image: 'Batch image'
     },
     status: {

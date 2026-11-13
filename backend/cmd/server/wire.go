@@ -112,6 +112,7 @@ func provideCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	imageTaskLogs *service.ImageTaskLogService,
 	subscriptionService *service.SubscriptionService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
@@ -147,6 +148,7 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
+			{"ImageTaskLogService", func() error { imageTaskLogs.Stop(); return nil }},
 			{"MediaUsageRefundWorker", func() error {
 				if mediaUsageRefundWorker != nil {
 					mediaUsageRefundWorker.Stop()

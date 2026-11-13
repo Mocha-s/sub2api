@@ -36,6 +36,9 @@ func (f *taskLogVideoFake) Content(_ context.Context, p service.VideoTaskContent
 	f.params = p
 	return nil, service.ErrVideoTaskNotFound
 }
+func (f *taskLogVideoFake) AdminContent(ctx context.Context, p service.VideoTaskContentParams) (*service.VideoContentStream, error) {
+	return f.Content(ctx, p)
+}
 
 type taskLogBatchRepoFake struct {
 	service.BatchImageRepository
@@ -55,6 +58,9 @@ func taskLogRequest(h *TaskLogHandler, userID int64, target string, headers map[
 	r.GET("/task-logs", h.List)
 	r.GET("/admin/task-logs", h.AdminList)
 	r.GET("/task-logs/video/:task_id/content", h.VideoContent)
+	r.GET("/admin/task-logs/video/:task_id/content", h.AdminVideoContent)
+	r.GET("/task-logs/image/:task_id/content", h.ImageContent)
+	r.GET("/admin/task-logs/image/:task_id/content", h.AdminImageContent)
 	r.GET("/task-logs/batch-image/:batch_id/download", h.BatchImageDownload)
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, target, nil)
@@ -130,4 +136,32 @@ func TestTaskLogHandlerBatchImageDownloadRejectsOtherUsersJob(t *testing.T) {
 	w := taskLogRequest(h, 7, "/task-logs/batch-image/batch_1/download", nil)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestTaskLogAdminVideoContentOnlyForwardsRange(t *testing.T) {
+	videos := &taskLogVideoFake{}
+	w := taskLogRequest(&TaskLogHandler{videos: videos}, 1, "/admin/task-logs/video/task_1/content", map[string]string{"Authorization": "Bearer jwt", "Cookie": "secret", "Range": "bytes=0-5"})
+	require.Equal(t, 404, w.Code)
+	require.Equal(t, "task_1", videos.params.PublicTaskID)
+	require.Equal(t, http.Header{"Range": []string{"bytes=0-5"}}, videos.params.Header)
+}
+func TestTaskLogImageContentOwnerIndexAndBinary(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	repo := &handlerImageLogRepo{rows: map[string]service.ImageTaskLogEntry{"image1": {TaskID: "image1", UserID: 7, Status: "completed", Results: []service.ImageTaskLogResult{{Data: png}}}}}
+	h := &TaskLogHandler{images: service.NewImageTaskLogService(repo, nil)}
+	w := taskLogRequest(h, 8, "/task-logs/image/image1/content", nil)
+	require.Equal(t, 404, w.Code)
+	w = taskLogRequest(h, 7, "/task-logs/image/image1/content?index=0", nil)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, png, w.Body.Bytes())
+	require.Equal(t, "image/png", w.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+	w = taskLogRequest(h, 1, "/admin/task-logs/image/image1/content?index=0", nil)
+	require.Equal(t, 200, w.Code)
+	w = taskLogRequest(h, 7, "/task-logs/image/image1/content?index=-1", nil)
+	require.Equal(t, 400, w.Code)
+	w = taskLogRequest(h, 7, "/task-logs/image/image1/content?index=no", nil)
+	require.Equal(t, 400, w.Code)
+	w = taskLogRequest(h, 7, "/task-logs/image/image1/content?index=1", nil)
+	require.Equal(t, 404, w.Code)
 }

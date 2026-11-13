@@ -72,6 +72,7 @@
               <div
                 class="h-1.5 w-20 overflow-hidden rounded bg-gray-200 dark:bg-dark-600"
                 role="progressbar"
+                :aria-label="t('taskLogs.columns.progress')"
                 aria-valuemin="0"
                 aria-valuemax="100"
                 :aria-valuenow="row.progress"
@@ -102,14 +103,21 @@
           <template #cell-detail="{ row }">
             <div class="flex items-center gap-2 whitespace-nowrap">
               <button
-                v-if="hasResultLink(row, admin)"
+                v-if="hasResultLink(row)"
                 type="button"
                 class="font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 dark:text-primary-400"
-                :disabled="busyId === row.task_id"
+                :disabled="busyId === row.task_id || previewLoading && detailRow?.task_id === row.task_id"
                 @click="openResult(row)"
               >
-                {{ t(row.type === 'video' ? 'taskLogs.preview' : 'taskLogs.download') }}
+                {{ t(row.type === 'batch_image' ? 'taskLogs.download' : 'taskLogs.preview') }}
               </button>
+              <button
+                v-if="row.type !== 'batch_image' && hasResultLink(row)"
+                type="button"
+                class="font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 dark:text-primary-400"
+                :disabled="!!busyId"
+                @click="downloadResult(row)"
+              >{{ t('taskLogs.download') }}</button>
               <span
                 v-else-if="row.error_message"
                 class="max-w-[200px] truncate text-red-600 dark:text-red-400"
@@ -117,7 +125,7 @@
               >
                 {{ row.error_message }}
               </span>
-              <button type="button" class="text-gray-500 hover:text-gray-700 dark:text-gray-400" @click="detailRow = row">
+              <button type="button" class="text-gray-500 hover:text-gray-700 dark:text-gray-400" @click="openDetail(row)">
                 {{ t('taskLogs.view') }}
               </button>
               <button
@@ -151,14 +159,21 @@
 
     <BaseDialog :show="!!detailRow" :title="t('taskLogs.detailTitle')" width="wide" @close="closeDetail">
       <div v-if="detailRow" class="space-y-4 text-sm">
-        <video v-if="videoUrl" :src="videoUrl" controls class="max-h-[60vh] w-full rounded bg-black"></video>
+        <p v-if="previewLoading" role="status">{{ t('common.loading') }}</p>
+        <video v-if="resultUrl && detailRow.type === 'video'" :src="resultUrl" controls class="max-h-[60vh] w-full rounded bg-black"></video>
+        <img v-if="resultUrl && detailRow.type === 'image'" :src="resultUrl" :alt="detailRow.prompt || t('taskLogs.types.image')" class="max-h-[60vh] w-full rounded object-contain" />
+        <div v-if="detailRow.type === 'image' && hasResultLink(detailRow) && (detailRow.success_count ?? 0) > 1" class="flex items-center justify-center gap-3">
+          <button type="button" class="btn btn-secondary" :disabled="previewLoading || imageIndex === 0" @click="loadPreview(detailRow, imageIndex - 1)">{{ t('taskLogs.previousImage') }}</button>
+          <span>{{ imageIndex + 1 }} / {{ detailRow.success_count }}</span>
+          <button type="button" class="btn btn-secondary" :disabled="previewLoading || imageIndex + 1 >= (detailRow.success_count ?? 0)" @click="loadPreview(detailRow, imageIndex + 1)">{{ t('common.next') }}</button>
+        </div>
         <div>
           <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t('taskLogs.columns.taskId') }}</div>
           <div class="font-mono text-xs">{{ detailRow.task_id }}</div>
         </div>
         <div>
           <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t(detailRow.type === 'video' ? 'taskLogs.prompt' : 'taskLogs.taskName') }}
+            {{ t(detailRow.type === 'batch_image' ? 'taskLogs.taskName' : 'taskLogs.prompt') }}
           </div>
           <div class="whitespace-pre-wrap break-words">{{ detailRow.prompt || '-' }}</div>
         </div>
@@ -174,6 +189,8 @@
         </div>
       </div>
       <template #footer>
+        <button v-if="detailRow && hasResultLink(detailRow) && !resultUrl && !previewLoading && detailRow.type !== 'batch_image'" type="button" class="btn btn-secondary" @click="loadPreview(detailRow, imageIndex)">{{ t('taskLogs.preview') }}</button>
+        <button v-if="detailRow && hasResultLink(detailRow)" type="button" class="btn btn-primary" :disabled="!!busyId || previewLoading" @click="downloadResult(detailRow, imageIndex)">{{ t('taskLogs.download') }}</button>
         <button type="button" class="btn btn-ghost" @click="closeDetail">{{ t('common.close') }}</button>
       </template>
     </BaseDialog>
@@ -183,8 +200,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { saveAs } from 'file-saver'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -198,7 +216,7 @@ import VideoSettlementModal from '@/components/taskLogs/VideoSettlementModal.vue
 import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { formatDateTime } from '@/utils/format'
-import { downloadBatchImages, fetchVideoContent, listTaskLogs, type TaskLog, type TaskLogStatus } from '@/api/taskLogs'
+import { downloadBatchImages, fetchImageContent, fetchVideoContent, listTaskLogs, type TaskLog, type TaskLogStatus } from '@/api/taskLogs'
 import {
   canSettle,
   formatTaskDuration,
@@ -232,7 +250,12 @@ const filters = reactive({ type: '', status: '', platform: '', task_id: '', user
 
 const detailRow = ref<TaskLog | null>(null)
 const settleRow = ref<TaskLog | null>(null)
-const videoUrl = ref('')
+const resultUrl = ref('')
+const previewLoading = ref(false)
+const imageIndex = ref(0)
+let previewRequest: AbortController | undefined
+let listRequest: AbortController | undefined
+let previewBlob: Blob | undefined
 const busyId = ref('')
 
 const statusVariant: Record<TaskLogStatus, string> = {
@@ -247,6 +270,7 @@ const statusVariant: Record<TaskLogStatus, string> = {
 const typeOptions = computed(() => [
   { value: '', label: t('taskLogs.allTypes') },
   { value: 'video', label: t('taskLogs.types.video') },
+  { value: 'image', label: t('taskLogs.types.image') },
   { value: 'batch_image', label: t('taskLogs.types.batch_image') }
 ])
 const statusOptions = computed(() => [
@@ -271,6 +295,10 @@ const columns = computed<Column[]>(() => [
 const errorText = (e: unknown, fallback: string) => (e as { message?: string })?.message || fallback
 
 async function load(silent = false) {
+  if (silent && listRequest) return
+  listRequest?.abort()
+  const request = new AbortController()
+  listRequest = request
   if (!silent) loading.value = true
   try {
     const res = await listTaskLogs(!!props.admin, {
@@ -283,18 +311,26 @@ async function load(silent = false) {
       user_id: props.admin && filters.user_id ? filters.user_id : undefined,
       start: new Date(`${startDate.value}T00:00:00`).toISOString(),
       end: new Date(new Date(`${endDate.value}T00:00:00`).getTime() + DAY_MS).toISOString()
-    })
+    }, request.signal)
+    if (request.signal.aborted) return
     rows.value = res.items
     total.value = res.total
     now.value = Date.now()
+    if (detailRow.value) {
+      detailRow.value = rows.value.find(row => row.type === detailRow.value?.type && row.task_id === detailRow.value?.task_id) ?? detailRow.value
+    }
   } catch (e) {
-    if (!silent) appStore.showError(errorText(e, t('taskLogs.loadFailed')))
+    if (!silent && !request.signal.aborted) appStore.showError(errorText(e, t('taskLogs.loadFailed')))
   } finally {
-    loading.value = false
+    if (listRequest === request) {
+      listRequest = undefined
+      loading.value = false
+    }
   }
 }
 
 function reload() {
+  closeDetail()
   page.value = 1
   void load()
 }
@@ -307,33 +343,65 @@ function onPageSizeChange(size: number) {
   reload()
 }
 
-function revokeVideo() {
-  if (videoUrl.value) URL.revokeObjectURL(videoUrl.value)
-  videoUrl.value = ''
+function clearPreview() {
+  previewRequest?.abort()
+  previewRequest = undefined
+  previewLoading.value = false
+  if (resultUrl.value) URL.revokeObjectURL(resultUrl.value)
+  resultUrl.value = ''
+  previewBlob = undefined
 }
 function closeDetail() {
   detailRow.value = null
-  revokeVideo()
+  clearPreview()
 }
-
-async function openResult(row: TaskLog) {
-  if (row.type === 'video' && props.admin) {
-    window.open(row.result_url, '_blank', 'noopener,noreferrer')
-    return
+function openDetail(row: TaskLog) {
+  clearPreview()
+  imageIndex.value = 0
+  detailRow.value = row
+}
+function openResult(row: TaskLog) {
+  if (row.type === 'batch_image') {
+    void downloadResult(row)
+  } else {
+    openDetail(row)
+    void loadPreview(row, 0)
   }
+}
+async function loadPreview(row: TaskLog, index: number) {
+  clearPreview()
+  imageIndex.value = index
+  const request = new AbortController()
+  previewRequest = request
+  previewLoading.value = true
+  try {
+    const blob = row.type === 'video'
+      ? await fetchVideoContent(props.admin, row.task_id, request.signal)
+      : await fetchImageContent(props.admin, row.task_id, index, request.signal)
+    if (request.signal.aborted) return
+    previewBlob = blob
+    resultUrl.value = URL.createObjectURL(blob)
+  } catch (e) {
+    if (!request.signal.aborted) appStore.showError(errorText(e, t('taskLogs.resultFailed')))
+  } finally {
+    if (previewRequest === request) previewLoading.value = false
+  }
+}
+async function downloadResult(row: TaskLog, index = 0) {
+  if (busyId.value) return
   busyId.value = row.task_id
   try {
-    if (row.type === 'video') {
-      revokeVideo()
-      videoUrl.value = URL.createObjectURL(await fetchVideoContent(row.task_id))
-      detailRow.value = row
+    if (row.type === 'batch_image') {
+      saveAs(await downloadBatchImages(props.admin, row.task_id), `${row.task_id}.zip`)
     } else {
-      const url = URL.createObjectURL(await downloadBatchImages(!!props.admin, row.task_id))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${row.task_id}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
+      const blob = detailRow.value?.task_id === row.task_id && detailRow.value.type === row.type && imageIndex.value === index && previewBlob
+        ? previewBlob
+        : row.type === 'video'
+          ? await fetchVideoContent(props.admin, row.task_id)
+          : await fetchImageContent(props.admin, row.task_id, index)
+      const extensions: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'video/mp4': 'mp4', 'video/webm': 'webm' }
+      const extension = extensions[blob.type.split(';')[0]] ?? (row.type === 'video' ? 'mp4' : 'bin')
+      saveAs(blob, `${row.task_id}${row.type === 'image' ? `-${index + 1}` : ''}.${extension}`)
     }
   } catch (e) {
     appStore.showError(errorText(e, t('taskLogs.resultFailed')))
@@ -341,6 +409,13 @@ async function openResult(row: TaskLog) {
     busyId.value = ''
   }
 }
+
+watch(() => props.admin, () => {
+  closeDetail()
+  settleRow.value = null
+  rows.value = []
+  reload()
+})
 
 // 有未完成任务且页面可见时，每 10 秒静默刷新当前页（与后端轮询间隔一致）。
 let timer: number | undefined
@@ -353,6 +428,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.clearInterval(timer)
-  revokeVideo()
+  listRequest?.abort()
+  clearPreview()
 })
 </script>

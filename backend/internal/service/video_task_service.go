@@ -666,6 +666,26 @@ func (s *VideoTaskService) Content(ctx context.Context, params VideoTaskContentP
 		}
 		return nil, err
 	}
+	return s.contentFromTask(ctx, task, params)
+}
+
+// AdminContent is only exposed through admin-authenticated routes. User Content
+// keeps the owner/deletion-scoped lookup above.
+func (s *VideoTaskService) AdminContent(ctx context.Context, params VideoTaskContentParams) (*VideoContentStream, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("video task repository is required")
+	}
+	task, err := s.repo.GetByPublicTaskID(ctx, params.PublicTaskID)
+	if err != nil {
+		if isVideoTaskNotFound(err) {
+			return nil, ErrVideoTaskNotFound.WithCause(err)
+		}
+		return nil, err
+	}
+	return s.contentFromTask(ctx, task, params)
+}
+
+func (s *VideoTaskService) contentFromTask(ctx context.Context, task *VideoTask, params VideoTaskContentParams) (*VideoContentStream, error) {
 	if task == nil {
 		return nil, ErrVideoTaskNotFound
 	}

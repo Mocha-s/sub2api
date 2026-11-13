@@ -21,6 +21,7 @@ import (
 // POST /v1/images/generations
 // POST /v1/images/edits
 func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
+	defer h.startImageTaskLog(c)()
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
 
@@ -80,6 +81,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 	ensureCompositeTargetPlatform(c, apiKey, requestModel)
 	clientRequestModel := clientRequestedModel(c, requestModel)
+	h.imageTaskLogMetadata(c, clientRequestModel, parsed.Prompt, parsed.N)
 	routingModel := requestModel
 	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok {
 		routingModel = resolvedModel
@@ -398,6 +400,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 
 		userAgent := c.GetHeader("User-Agent")
+		imageTaskLogUsage(c, result)
 		clientIP := ip.GetClientIP(c)
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		if parsed.Multipart {

@@ -1049,6 +1049,24 @@ func TestVideoTaskServiceContentRejectsIncompleteTask(t *testing.T) {
 	require.Zero(t, provider.contentCalls)
 }
 
+func TestVideoTaskServiceAdminContentIncludesUserDeletedTasks(t *testing.T) {
+	ctx := context.Background()
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	deletedAt := time.Now()
+	repo.seedTask(&VideoTask{PublicTaskID: "deleted", UserID: 7, AccountID: 99, Status: VideoTaskStatusCompleted, UserDeletedAt: &deletedAt})
+	provider := &fakeVideoTaskProvider{events: events}
+	svc := newVideoTaskServiceForTest(repo, &fakeVideoTaskAccountStore{events: events, accounts: map[int64]*Account{99: {ID: 99}}}, nil, provider, nil)
+	_, err := svc.Content(ctx, VideoTaskContentParams{UserID: 7, PublicTaskID: "deleted"})
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
+	require.Zero(t, provider.contentCalls)
+	stream, err := svc.AdminContent(ctx, VideoTaskContentParams{PublicTaskID: "deleted"})
+	require.NoError(t, err)
+	require.NotNil(t, stream)
+	defer stream.Body.Close()
+	require.Equal(t, 1, provider.contentCalls)
+}
+
 func TestVideoTaskServiceCrossUserActionsReturnNotFoundBeforeAccountOrAdapterAccess(t *testing.T) {
 	const (
 		ownerUserID  = int64(7)

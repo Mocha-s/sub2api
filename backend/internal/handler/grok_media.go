@@ -19,6 +19,7 @@ import (
 
 // GrokImages handles xAI image generation/editing through Grok groups.
 func (h *OpenAIGatewayHandler) GrokImages(c *gin.Context) {
+	defer h.startImageTaskLog(c)()
 	endpoint := service.GrokMediaEndpointImagesGenerations
 	if strings.Contains(c.Request.URL.Path, "/images/edits") {
 		endpoint = service.GrokMediaEndpointImagesEdits
@@ -113,6 +114,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 	}
 	requestModel := requestInfo.Model
+	h.imageTaskLogMetadata(c, clientRequestedModel(c, requestModel), requestInfo.Prompt, requestInfo.N)
 	routingModel := service.NormalizeGrokMediaModelForEndpoint(endpoint, requestModel, requestInfo.HasInputImage())
 	if endpoint.IsGenerationRequest() && strings.TrimSpace(requestModel) == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
@@ -476,6 +478,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
+		imageTaskLogUsage(c, result)
 		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
 			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
 				requestCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
