@@ -18,6 +18,7 @@ func TestToUserPricingExposesVideoPricingWhitelist(t *testing.T) {
 		BillingMode:         service.BillingModeVideo,
 		VideoPricePerSecond: &price,
 		VideoDefaultSeconds: &defaultSeconds,
+		VideoExtraSeconds:   2,
 		VideoAllowedSeconds: []int{5, 10},
 		Intervals: []service.PricingInterval{{
 			TierLabel:           "hd",
@@ -32,6 +33,7 @@ func TestToUserPricingExposesVideoPricingWhitelist(t *testing.T) {
 	require.Equal(t, "video", decoded["billing_mode"])
 	require.Equal(t, 0.03, decoded["video_price_per_second"])
 	require.Equal(t, float64(10), decoded["video_default_seconds"])
+	require.Equal(t, float64(2), decoded["video_extra_seconds"])
 	require.Equal(t, []any{float64(5), float64(10)}, decoded["video_allowed_seconds"])
 	interval := decoded["intervals"].([]any)[0].(map[string]any)
 	require.Equal(t, 0.05, interval["video_price_per_second"])

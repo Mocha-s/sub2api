@@ -1692,16 +1692,9 @@ func validateReserveLedger(ctx context.Context, tx *sql.Tx, task *settlementTask
 		return service.ErrVideoTaskSettlementIntegrity
 	}
 	var quote service.VideoTaskQuote
-	if err := json.Unmarshal(row.pricingJSON, &quote); err == nil && quote.BillingMode == service.BillingModeVideo {
+	if err := json.Unmarshal(row.pricingJSON, &quote); err == nil && (quote.BillingMode == service.BillingModeVideo || quote.BillingMode == service.BillingModeVideoReference) {
 		if !sameDecimalAtScale(quote.GrossCostUSD, row.gross, 10) || !sameDecimalAtScale(quote.ActualCostUSD, planned, 8) || !sameDecimalAtScale(quote.AccountCostUSD, row.accountCost, 8) ||
-			validateVideoTaskPricingAmount(quote.GrossCostUSD) != nil || service.ValidateVideoTaskSettlementAmount(quote.ActualCostUSD) != nil || service.ValidateVideoTaskSettlementAmount(quote.AccountCostUSD) != nil || quote.RateMultiplier < 0 || quote.AccountRateMultiplier < 0 {
-			return service.ErrVideoTaskSettlementIntegrity
-		}
-		expectedGross := decimal.NewFromFloat(quote.UnitPriceUSD).Mul(decimal.NewFromInt(int64(quote.Effective.Seconds))).Mul(decimal.NewFromInt(int64(quote.Effective.VideoCount))).Round(10)
-		expectedAccountBase := decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(decimal.NewFromInt(int64(quote.Effective.Seconds))).Mul(decimal.NewFromInt(int64(quote.Effective.VideoCount))).Round(10)
-		expectedActual := decimal.NewFromFloat(quote.GrossCostUSD).Mul(decimal.NewFromFloat(quote.RateMultiplier)).Round(8)
-		expectedAccount := decimal.NewFromFloat(quote.AccountBaseCostUSD).Mul(decimal.NewFromFloat(quote.AccountRateMultiplier)).Round(8)
-		if quote.Effective.Seconds <= 0 || quote.Effective.VideoCount <= 0 || quote.Effective.VideoCount > service.VideoTaskMaxOutputs || quote.UnitPriceUSD < 0 || quote.AccountUnitPriceUSD < 0 || quote.AccountBaseCostUSD < 0 || !decimal.NewFromFloat(quote.GrossCostUSD).Equal(expectedGross) || !decimal.NewFromFloat(quote.AccountBaseCostUSD).Equal(expectedAccountBase) || !decimal.NewFromFloat(quote.ActualCostUSD).Equal(expectedActual) || !decimal.NewFromFloat(quote.AccountCostUSD).Equal(expectedAccount) {
+			validateVideoTaskPricingAmount(quote.GrossCostUSD) != nil || service.ValidateVideoTaskSettlementAmount(quote.ActualCostUSD) != nil || service.ValidateVideoTaskSettlementAmount(quote.AccountCostUSD) != nil || !service.ValidVideoTaskQuote(&quote) {
 			return service.ErrVideoTaskSettlementIntegrity
 		}
 	}

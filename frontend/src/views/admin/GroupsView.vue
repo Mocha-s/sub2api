@@ -4529,6 +4529,7 @@ const groupPricingFromAPI = (
     per_request_price: entry.per_request_price,
     video_price_per_second: entry.video_price_per_second,
     video_reference_price_per_second: entry.video_reference_price_per_second,
+    video_extra_seconds: entry.video_extra_seconds ?? 0,
     video_default_seconds: entry.video_default_seconds,
     video_allowed_seconds: entry.video_allowed_seconds || [],
     intervals: apiIntervalsToForm(entry.intervals || []),
@@ -4560,6 +4561,7 @@ const groupPricingToAPI = (
       video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
       video_reference_price_per_second: entry.video_reference_price_per_second != null && entry.video_reference_price_per_second !== '' ? Number(entry.video_reference_price_per_second) : null,
       video_default_seconds: entry.video_default_seconds ?? null,
+      video_extra_seconds: toNullableNumber(entry.video_extra_seconds) ?? 0,
       video_allowed_seconds: entry.video_allowed_seconds || [],
       intervals:
         entry.billing_mode === "token"

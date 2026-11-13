@@ -28,6 +28,7 @@ func TestVideoPricingDTOConversions(t *testing.T) {
 		BillingMode:         "video",
 		VideoPricePerSecond: float64Ptr(0.03),
 		VideoDefaultSeconds: intPtr(10),
+		VideoExtraSeconds:   2,
 		VideoAllowedSeconds: []int{5, 10},
 		Intervals: []pricingIntervalRequest{{
 			TierLabel:           "hd",
@@ -39,6 +40,7 @@ func TestVideoPricingDTOConversions(t *testing.T) {
 	require.Equal(t, service.BillingModeVideo, pricing.BillingMode)
 	require.Equal(t, float64Ptr(0.03), pricing.VideoPricePerSecond)
 	require.Equal(t, intPtr(10), pricing.VideoDefaultSeconds)
+	require.Equal(t, 2, pricing.VideoExtraSeconds)
 	require.Equal(t, []int{5, 10}, pricing.VideoAllowedSeconds)
 	require.Equal(t, float64Ptr(0.05), pricing.Intervals[0].VideoPricePerSecond)
 
@@ -49,6 +51,7 @@ func TestVideoPricingDTOConversions(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 	require.Equal(t, 0.03, decoded["video_price_per_second"])
 	require.Equal(t, float64(10), decoded["video_default_seconds"])
+	require.Equal(t, float64(2), decoded["video_extra_seconds"])
 	require.Equal(t, []any{float64(5), float64(10)}, decoded["video_allowed_seconds"])
 
 	intervals := decoded["intervals"].([]any)

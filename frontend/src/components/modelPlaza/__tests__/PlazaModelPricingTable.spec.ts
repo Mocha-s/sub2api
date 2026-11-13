@@ -8,7 +8,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string, params?: Record<string, unknown>) => params?.seconds != null ? `${key}:${params.seconds}` : key
     })
   }
 })
@@ -58,6 +58,21 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('discloses extra seconds only for no-reference pricing in reference mode', async () => {
+    const model = tokenModel({ name: 'reference-video', official_pricing: null })
+    model.pricing!.billing_mode = 'video_reference'
+    model.pricing!.video_price_per_second = 0.2
+    model.pricing!.video_reference_price_per_second = 0.34
+    model.pricing!.video_extra_seconds = 2
+    const wrapper = mountTable([model], 1)
+    expect(wrapper.text()).toContain('admin.channels.form.videoExtraSecondsNotice:2')
+    expect(wrapper.text()).toContain('$0.20')
+    expect(wrapper.text()).toContain('$0.34')
+    model.pricing!.billing_mode = 'video'
+    await wrapper.setProps({ models: [{ ...model }] })
+    expect(wrapper.text()).not.toContain('videoExtraSecondsNotice')
+    wrapper.unmount()
+  })
   it('shows independent reference video prices using the video multiplier', () => {
     const model = tokenModel({ name: 'reference-video', official_pricing: null })
     model.pricing!.billing_mode = 'video_reference'

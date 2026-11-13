@@ -84,6 +84,7 @@ type userSupportedModelPricing struct {
 	VideoPricePerSecond          *float64                 `json:"video_price_per_second,omitempty"`
 	VideoReferencePricePerSecond *float64                 `json:"video_reference_price_per_second,omitempty"`
 	VideoDefaultSeconds          *int                     `json:"video_default_seconds,omitempty"`
+	VideoExtraSeconds            int                      `json:"video_extra_seconds,omitempty"`
 	VideoAllowedSeconds          []int                    `json:"video_allowed_seconds,omitempty"`
 	Intervals                    []userPricingIntervalDTO `json:"intervals"`
 }
@@ -369,6 +370,7 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		VideoPricePerSecond:          p.VideoPricePerSecond,
 		VideoReferencePricePerSecond: p.VideoReferencePricePerSecond,
 		VideoDefaultSeconds:          p.VideoDefaultSeconds,
+		VideoExtraSeconds:            p.VideoExtraSeconds,
 		VideoAllowedSeconds:          p.VideoAllowedSeconds,
 		Intervals:                    intervals,
 	}

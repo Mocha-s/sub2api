@@ -172,6 +172,10 @@
               :unit="t(prefixKey('unitPerSecond'))"
               :scale="1"
             />
+            <p v-if="model.pricing.billing_mode === 'video_reference' && (model.pricing.video_extra_seconds ?? 0) > 0"
+              class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.videoExtraSecondsNotice', { seconds: model.pricing.video_extra_seconds }) }}
+            </p>
           </div>
         </div>
       </div>

@@ -35,6 +35,7 @@ type ResolvedPricing struct {
 	VideoPricePerSecond          float64
 	VideoReferencePricePerSecond float64
 	VideoDefaultSeconds          int
+	VideoExtraSeconds            int
 	VideoAllowedSeconds          []int
 
 	// 来源标识
@@ -323,6 +324,7 @@ func (r *ModelPricingResolver) applyVideoOverrides(chPricing *ChannelModelPricin
 	if chPricing.VideoDefaultSeconds != nil {
 		resolved.VideoDefaultSeconds = *chPricing.VideoDefaultSeconds
 	}
+	resolved.VideoExtraSeconds = chPricing.VideoExtraSeconds
 	resolved.VideoAllowedSeconds = append([]int(nil), chPricing.VideoAllowedSeconds...)
 }
 

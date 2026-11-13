@@ -812,6 +812,9 @@ func checkBillingModeRequirements(p ChannelModelPricing) error {
 }
 
 func checkPricesNotNegative(p ChannelModelPricing) error {
+	if p.VideoExtraSeconds < 0 || p.VideoExtraSeconds > videoTaskMaxSeconds {
+		return infraerrors.BadRequest("INVALID_VIDEO_EXTRA_SECONDS", "video_extra_seconds must be between 0 and 3600")
+	}
 	checks := []struct {
 		field string
 		val   *float64

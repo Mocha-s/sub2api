@@ -65,6 +65,35 @@ function mountCard(entry = makeEntry()) {
 }
 
 describe('PricingEntryCard video billing', () => {
+  it('gives extra duration labels and hints unique targets without an explicit prefix', () => {
+    const Harness = defineComponent({
+      components: { PricingEntryCard },
+      setup: () => ({ entry: makeEntry({ billing_mode: 'video_reference' }) }),
+      template: '<div><PricingEntryCard :entry="entry" /><PricingEntryCard :entry="entry" /></div>',
+    })
+    const wrapper = mount(Harness, { global: { stubs: { Icon: true, ModelTagInput: true, Select: true } } })
+    const inputs = wrapper.findAll('input[aria-describedby$="-video-extra-seconds-hint"]')
+    expect(inputs).toHaveLength(2)
+    const ids = inputs.map(input => input.attributes('id'))
+    expect(new Set(ids).size).toBe(2)
+    for (const input of inputs) {
+      expect(wrapper.find(`label[for="${input.attributes('id')}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[id="${input.attributes('aria-describedby')}"]`).exists()).toBe(true)
+    }
+  })
+  it('edits extra billed seconds only in reference mode without changing generation duration', async () => {
+    const wrapper = mountCard(makeEntry({ billing_mode: 'video_reference', video_default_seconds: 5, video_extra_seconds: 0 }))
+    const input = wrapper.get('#test-entry-video-extra-seconds')
+    expect(input.attributes('min')).toBe('0')
+    expect(input.attributes('max')).toBe('3600')
+    expect(input.attributes('aria-describedby')).toBe('test-entry-video-extra-seconds-hint')
+    await input.setValue('2')
+    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ video_extra_seconds: '2', video_default_seconds: 5 })
+    await input.setValue('0')
+    expect(wrapper.emitted('update')?.at(-1)?.[0]).toMatchObject({ video_extra_seconds: '0' })
+    await wrapper.setProps({ entry: makeEntry({ billing_mode: 'video' }) })
+    expect(wrapper.find('#test-entry-video-extra-seconds').exists()).toBe(false)
+  })
   it('edits a separate reference price without replacing the base price', async () => {
     const wrapper = mountCard(makeEntry({ billing_mode: 'video_reference', video_price_per_second: 0.2, video_reference_price_per_second: 0.34 }))
     await wrapper.get('#test-entry-video-reference-default-price').setValue('1.2')

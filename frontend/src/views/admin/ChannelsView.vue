@@ -880,6 +880,7 @@ function addPricingEntry(sectionIdx: number) {
     video_price_per_second: null,
     video_reference_price_per_second: null,
     video_default_seconds: null,
+    video_extra_seconds: 0,
     video_allowed_seconds: [],
     intervals: [],
     time_pricing: createDefaultTimePricingForm()
@@ -924,6 +925,7 @@ async function syncLatestModels(sectionIdx: number) {
       video_price_per_second: null,
       video_reference_price_per_second: null,
       video_default_seconds: null,
+      video_extra_seconds: 0,
       video_allowed_seconds: [],
       intervals: [],
       time_pricing: createDefaultTimePricingForm()
@@ -996,6 +998,7 @@ function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
     video_price_per_second: null,
     video_reference_price_per_second: null,
     video_default_seconds: null,
+    video_extra_seconds: 0,
     video_allowed_seconds: [],
     intervals: [],
     time_pricing: createDefaultTimePricingForm()
@@ -1119,6 +1122,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
             video_price_per_second: p.video_price_per_second != null && p.video_price_per_second !== '' ? Number(p.video_price_per_second) : null,
             video_reference_price_per_second: p.video_reference_price_per_second != null && p.video_reference_price_per_second !== '' ? Number(p.video_reference_price_per_second) : null,
             video_default_seconds: toNullableNumber(p.video_default_seconds),
+            video_extra_seconds: toNullableNumber(p.video_extra_seconds) ?? 0,
             video_allowed_seconds: normalizeVideoAllowedSeconds(p.video_allowed_seconds || []),
             intervals: formIntervalsToAPI(p.intervals || [], p.billing_mode),
             time_pricing: null
@@ -1170,6 +1174,7 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
          video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
          video_reference_price_per_second: entry.video_reference_price_per_second != null && entry.video_reference_price_per_second !== '' ? Number(entry.video_reference_price_per_second) : null,
          video_default_seconds: toNullableNumber(entry.video_default_seconds),
+         video_extra_seconds: toNullableNumber(entry.video_extra_seconds) ?? 0,
          video_allowed_seconds: normalizeVideoAllowedSeconds(entry.video_allowed_seconds || []),
          intervals: formIntervalsToAPI(entry.intervals || [], entry.billing_mode),
         time_pricing: formTimePricingToAPI(entry.time_pricing)
@@ -1276,7 +1281,8 @@ function apiToForm(channel: Channel): PlatformSection[] {
          image_output_price: perTokenToMTok(p.image_output_price),
          per_request_price: p.per_request_price,
           video_price_per_second: p.video_price_per_second,
-          video_reference_price_per_second: p.video_reference_price_per_second,
+            video_reference_price_per_second: p.video_reference_price_per_second,
+            video_extra_seconds: p.video_extra_seconds ?? 0,
          video_default_seconds: p.video_default_seconds,
          video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
          intervals: apiIntervalsToForm(p.intervals || []),
@@ -1474,6 +1480,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
          per_request_price: p.per_request_price,
          video_price_per_second: p.video_price_per_second,
          video_reference_price_per_second: p.video_reference_price_per_second,
+         video_extra_seconds: p.video_extra_seconds ?? 0,
          video_default_seconds: p.video_default_seconds,
          video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
          intervals: apiIntervalsToForm(p.intervals || []),

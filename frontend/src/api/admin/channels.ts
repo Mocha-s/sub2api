@@ -60,6 +60,7 @@ export interface ChannelModelPricing {
   video_price_per_second: number | null
   video_reference_price_per_second?: number | null
   video_default_seconds: number | null
+  video_extra_seconds?: number | null
   video_allowed_seconds: number[]
   intervals: PricingInterval[]
   time_pricing: ChannelTimePricing | null

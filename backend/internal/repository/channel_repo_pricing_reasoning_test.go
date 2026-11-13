@@ -36,7 +36,7 @@ func reasoningPricingRow(multipliers any) *sqlmock.Rows {
 	return sqlmock.NewRows(channelModelPricingTimePricingColumns).AddRow(
 		int64(11), int64(7), "openai", `["custom-model"]`, service.BillingModeToken,
 		nil, nil, nil, nil, nil, nil, nil, multipliers, nil, nil, nil, nil, nil, nil, nil, nil, "", nil,
-		time.Time{}, time.Time{},
+		time.Time{}, time.Time{}, 0,
 	)
 }
 
@@ -61,10 +61,10 @@ func TestChannelReasoningEffortMultipliersRoundTrip(t *testing.T) {
 				}
 				stored := &capturedReasoningMultipliersJSON{}
 				if operation == "update" {
-					mock.ExpectExec(`(?s)UPDATE channel_model_pricing.*reasoning_effort_multipliers = \$10.*WHERE id = \$22`).
+					mock.ExpectExec(`(?s)UPDATE channel_model_pricing.*reasoning_effort_multipliers = \$10.*WHERE id = \$23`).
 						WithArgs([]byte(`["custom-model"]`), service.BillingModeToken,
 							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), stored,
-							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), 0, int64(11)).
 						WillReturnResult(sqlmock.NewResult(0, 1))
 					require.NoError(t, repo.UpdateModelPricing(ctx, pricing))
 				} else {
@@ -76,7 +76,7 @@ func TestChannelReasoningEffortMultipliersRoundTrip(t *testing.T) {
 					mock.ExpectQuery(`INSERT INTO channel_model_pricing .*reasoning_effort_multipliers`).
 						WithArgs(int64(7), "openai", []byte(`["custom-model"]`), service.BillingModeToken,
 							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), stored,
-							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+							sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), 0).
 						WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(int64(11), time.Time{}, time.Time{}))
 					if operation == "replace" {
 						mock.ExpectCommit()
@@ -155,7 +155,7 @@ func TestAccountStatsReasoningEffortMultipliersRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	mock.ExpectQuery(`INSERT INTO channel_account_stats_model_pricing .*reasoning_effort_multipliers`).
 		WithArgs(int64(9), "anthropic", []byte(`["custom-model"]`), service.BillingModeToken,
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), stored, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), stored, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(int64(11), time.Time{}, time.Time{}))
 	require.NoError(t, createAccountStatsModelPricingTx(ctx, tx, 9, pricing))
 	mock.ExpectCommit()
@@ -165,12 +165,12 @@ func TestAccountStatsReasoningEffortMultipliersRoundTrip(t *testing.T) {
 	columns := []string{
 		"id", "rule_id", "platform", "models", "billing_mode", "input_price", "output_price",
 		"cache_write_price", "cache_write_1h_price", "cache_read_price", "reasoning_effort_multipliers",
-		"image_input_price", "image_output_price", "per_request_price", "video_price_per_second", "video_reference_price_per_second", "video_default_seconds", "video_allowed_seconds", "created_at", "updated_at",
+		"image_input_price", "image_output_price", "per_request_price", "video_price_per_second", "video_reference_price_per_second", "video_default_seconds", "video_allowed_seconds", "created_at", "updated_at", "video_extra_seconds",
 	}
 	mock.ExpectQuery(`(?s)SELECT .*reasoning_effort_multipliers.*FROM channel_account_stats_model_pricing`).
 		WithArgs(pq.Array([]int64{9})).WillReturnRows(sqlmock.NewRows(columns).AddRow(
 		int64(11), int64(9), "anthropic", `["custom-model"]`, service.BillingModeToken,
-		nil, nil, nil, nil, nil, stored.value, nil, nil, nil, nil, nil, nil, nil, time.Time{}, time.Time{},
+		nil, nil, nil, nil, nil, stored.value, nil, nil, nil, nil, nil, nil, nil, time.Time{}, time.Time{}, 0,
 	))
 	mock.ExpectQuery(`(?s)SELECT .*FROM channel_account_stats_pricing_intervals`).
 		WithArgs(pq.Array([]int64{11})).WillReturnRows(sqlmock.NewRows([]string{"id"}))

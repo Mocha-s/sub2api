@@ -76,6 +76,7 @@ type channelModelPricingRequest struct {
 	VideoPricePerSecond          *float64                   `json:"video_price_per_second" binding:"omitempty,min=0"`
 	VideoReferencePricePerSecond *float64                   `json:"video_reference_price_per_second" binding:"omitempty,min=0"`
 	VideoDefaultSeconds          *int                       `json:"video_default_seconds" binding:"omitempty,min=1,max=3600"`
+	VideoExtraSeconds            int                        `json:"video_extra_seconds" binding:"min=0,max=3600"`
 	VideoAllowedSeconds          []int                      `json:"video_allowed_seconds" binding:"omitempty,dive,min=1,max=3600"`
 	Intervals                    []pricingIntervalRequest   `json:"intervals"`
 	TimePricing                  *channelTimePricingRequest `json:"time_pricing"`
@@ -157,6 +158,7 @@ type channelModelPricingResponse struct {
 	VideoPricePerSecond          *float64                    `json:"video_price_per_second"`
 	VideoReferencePricePerSecond *float64                    `json:"video_reference_price_per_second"`
 	VideoDefaultSeconds          *int                        `json:"video_default_seconds"`
+	VideoExtraSeconds            int                         `json:"video_extra_seconds"`
 	VideoAllowedSeconds          []int                       `json:"video_allowed_seconds"`
 	Intervals                    []pricingIntervalResponse   `json:"intervals"`
 	TimePricing                  *channelTimePricingResponse `json:"time_pricing"`
@@ -305,6 +307,7 @@ func pricingToResponse(p *service.ChannelModelPricing, scopes ...pricingScope) c
 		VideoPricePerSecond:          p.VideoPricePerSecond,
 		VideoReferencePricePerSecond: p.VideoReferencePricePerSecond,
 		VideoDefaultSeconds:          p.VideoDefaultSeconds,
+		VideoExtraSeconds:            p.VideoExtraSeconds,
 		VideoAllowedSeconds:          p.VideoAllowedSeconds,
 		Intervals:                    intervals,
 		TimePricing:                  timePricingToResponse(p.TimePricing),
@@ -422,6 +425,7 @@ func pricingRequestToService(reqs []channelModelPricingRequest, scope any) []ser
 			VideoPricePerSecond:          r.VideoPricePerSecond,
 			VideoReferencePricePerSecond: r.VideoReferencePricePerSecond,
 			VideoDefaultSeconds:          r.VideoDefaultSeconds,
+			VideoExtraSeconds:            r.VideoExtraSeconds,
 			VideoAllowedSeconds:          r.VideoAllowedSeconds,
 			Intervals:                    intervals,
 			TimePricing:                  timePricingRequestToService(r.TimePricing),

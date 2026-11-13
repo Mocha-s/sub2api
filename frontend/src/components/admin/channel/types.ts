@@ -40,6 +40,7 @@ export interface PricingFormEntry {
   video_price_per_second?: number | string | null
   video_reference_price_per_second?: number | string | null
   video_default_seconds?: number | null
+  video_extra_seconds?: number | string | null
   video_allowed_seconds?: number[]
   intervals: IntervalFormEntry[]
   time_pricing: TimePricingFormEntry
@@ -253,6 +254,11 @@ export function normalizeVideoTierLabel(value: string): string {
 }
 
 export function validateVideoPricing(entry: PricingFormEntry, t: TranslateFn): string | null {
+  const extraSeconds = Number(entry.video_extra_seconds ?? 0)
+  if (entry.billing_mode === 'video_reference' &&
+    (!Number.isInteger(extraSeconds) || extraSeconds < 0 || extraSeconds > 3600)) {
+    return t('admin.channels.videoValidation.extraSeconds')
+  }
   const defaultSeconds = toNullableNumber(entry.video_default_seconds)
   if (
     defaultSeconds == null ||

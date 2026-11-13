@@ -43,6 +43,8 @@ type VideoTaskQuote struct {
 	BillingMode           BillingMode              `json:"billing_mode"`
 	BillingModel          string                   `json:"billing_model"`
 	Effective             VideoTaskEffectiveParams `json:"effective"`
+	BillingSeconds        int                      `json:"billing_seconds,omitempty"`
+	AccountBillingSeconds int                      `json:"account_billing_seconds,omitempty"`
 	UnitPriceUSD          float64                  `json:"unit_price_usd"`
 	GrossCostUSD          float64                  `json:"gross_cost_usd"`
 	ActualCostUSD         float64                  `json:"actual_cost_usd"`
@@ -154,7 +156,7 @@ func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *Ch
 	}, nil
 }
 
-// resolveVideoReferenceTaskQuote 按 referenceVideos 是否非空选择独立的参考视频单价。
+// resolveVideoReferenceTaskQuote 无参考视频时加收配置秒数，生成时长不变。
 func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
 	if pricing.VideoDefaultSeconds == nil || *pricing.VideoDefaultSeconds <= 0 || *pricing.VideoDefaultSeconds > videoTaskMaxSeconds {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video_default_seconds must be between 1 and 3600")
@@ -172,12 +174,17 @@ func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *C
 		return VideoTaskQuote{}, err
 	}
 	resolution := resolveVideoTaskResolution(payload, billingModel)
-	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution, hasReferenceVideos(payload))
+	referenceVideo := hasReferenceVideos(payload)
+	billingSeconds, err := videoTaskBillingSeconds(pricing, seconds, referenceVideo)
+	if err != nil {
+		return VideoTaskQuote{}, err
+	}
+	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution, referenceVideo)
 	if err != nil {
 		return VideoTaskQuote{}, err
 	}
 
-	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice * float64(seconds))
+	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice * float64(billingSeconds))
 	if err != nil {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video gross cost must be finite")
 	}
@@ -186,7 +193,7 @@ func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *C
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video actual cost must be finite")
 	}
 	accountUnitPrice, _ := decimal.NewFromFloat(unitPrice).Round(10).Float64()
-	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice * float64(seconds))
+	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice * float64(billingSeconds))
 	if err != nil {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video account base cost is outside pricing precision")
 	}
@@ -202,7 +209,7 @@ func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *C
 	if err != nil {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video account cost is outside applied precision")
 	}
-	return VideoTaskQuote{
+	quote := VideoTaskQuote{
 		BillingMode:           BillingModeVideoReference,
 		BillingModel:          strings.TrimSpace(billingModel),
 		Effective:             VideoTaskEffectiveParams{Seconds: seconds, Resolution: resolution, VideoCount: 1},
@@ -214,7 +221,22 @@ func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *C
 		AccountCostUSD:        accountCost,
 		RateMultiplier:        rateMultiplier,
 		AccountRateMultiplier: accountRateMultiplier,
-	}, nil
+	}
+	if billingSeconds != seconds {
+		quote.BillingSeconds = billingSeconds
+		quote.AccountBillingSeconds = billingSeconds
+	}
+	return quote, nil
+}
+
+func videoTaskBillingSeconds(pricing *ChannelModelPricing, seconds int, referenceVideo bool) (int, error) {
+	if pricing.VideoExtraSeconds < 0 || pricing.VideoExtraSeconds > videoTaskMaxSeconds {
+		return 0, invalidVideoPricingConfig("video_extra_seconds must be between 0 and 3600")
+	}
+	if pricing.BillingMode == BillingModeVideoReference && !referenceVideo {
+		return seconds + pricing.VideoExtraSeconds, nil
+	}
+	return seconds, nil
 }
 
 // hasReferenceVideos 检测请求体是否携带了 referenceVideos 且不为空。
@@ -555,14 +577,14 @@ func videoTaskQuoteFromMetadata(metadata map[string]any) (VideoTaskQuote, bool) 
 		return VideoTaskQuote{}, false
 	}
 	if quote, ok := value.(VideoTaskQuote); ok {
-		return quote, validVideoTaskQuote(&quote)
+		return quote, ValidVideoTaskQuote(&quote)
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return VideoTaskQuote{}, false
 	}
 	var quote VideoTaskQuote
-	if err := json.Unmarshal(raw, &quote); err != nil || !validVideoTaskQuote(&quote) {
+	if err := json.Unmarshal(raw, &quote); err != nil || !ValidVideoTaskQuote(&quote) {
 		return VideoTaskQuote{}, false
 	}
 	return quote, true
@@ -583,7 +605,8 @@ func videoTaskMetadataMap(value any) (map[string]any, bool) {
 	return metadata, true
 }
 
-func validVideoTaskQuote(quote *VideoTaskQuote) bool {
+// ValidVideoTaskQuote checks immutable quote amounts against user and account billed durations.
+func ValidVideoTaskQuote(quote *VideoTaskQuote) bool {
 	if quote == nil || quote.Effective.VideoCount <= 0 || quote.Effective.VideoCount > VideoTaskMaxOutputs ||
 		!validVideoPriceMultiplier(quote.UnitPriceUSD) || !validVideoPriceMultiplier(quote.GrossCostUSD) ||
 		!validVideoPriceMultiplier(quote.ActualCostUSD) || !validVideoPriceMultiplier(quote.AccountUnitPriceUSD) ||
@@ -598,11 +621,23 @@ func validVideoTaskQuote(quote *VideoTaskQuote) bool {
 		if quote.Effective.Seconds <= 0 || quote.Effective.Seconds > videoTaskMaxSeconds || strings.TrimSpace(quote.Effective.Resolution) == "" {
 			return false
 		}
-		seconds := decimal.NewFromInt(int64(quote.Effective.Seconds))
-		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(seconds).Mul(count).Round(10)
-		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(seconds).Mul(count).Round(10)
+		billingSeconds, accountSeconds := quote.BillingSeconds, quote.AccountBillingSeconds
+		// 旧快照没有独立计费时长，按原生成时长回放。
+		if billingSeconds == 0 {
+			billingSeconds = quote.Effective.Seconds
+		}
+		if accountSeconds == 0 {
+			accountSeconds = quote.Effective.Seconds
+		}
+		if billingSeconds < quote.Effective.Seconds || billingSeconds > quote.Effective.Seconds+videoTaskMaxSeconds ||
+			accountSeconds < quote.Effective.Seconds || accountSeconds > quote.Effective.Seconds+videoTaskMaxSeconds ||
+			(quote.BillingMode == BillingModeVideo && billingSeconds != quote.Effective.Seconds) {
+			return false
+		}
+		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(decimal.NewFromInt(int64(billingSeconds))).Mul(count).Round(10)
+		accountBase = decimal.NewFromFloat(quote.AccountUnitPriceUSD).Mul(decimal.NewFromInt(int64(accountSeconds))).Mul(count).Round(10)
 	case BillingModePerRequest:
-		if quote.Effective.Seconds < 0 || quote.Effective.Seconds > videoTaskMaxSeconds {
+		if quote.Effective.Seconds < 0 || quote.Effective.Seconds > videoTaskMaxSeconds || quote.BillingSeconds != 0 || quote.AccountBillingSeconds != 0 {
 			return false
 		}
 		gross = decimal.NewFromFloat(quote.UnitPriceUSD).Mul(count).Round(10)

@@ -225,6 +225,10 @@
                 {{ t('admin.channels.form.videoReferencePricePerSecond') }}:
                 {{ paidRequestPrice(m, m.pricing?.video_reference_price_per_second ?? videoUnitPrice(m)) }}{{ t('modelPlaza.table.perUnitSecond') }}
               </div>
+              <p v-if="billingMode(m) === 'video_reference' && (m.pricing?.video_extra_seconds ?? 0) > 0"
+                class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.videoExtraSecondsNotice', { seconds: m.pricing?.video_extra_seconds }) }}
+              </p>
             </td>
           </template>
 

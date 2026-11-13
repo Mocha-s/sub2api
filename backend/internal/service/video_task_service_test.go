@@ -429,6 +429,33 @@ func TestVideoTaskServiceCreateVideoPricingStoresQuoteAndNormalizesOnlyForwarded
 	require.Equal(t, 1, pricing.calls)
 }
 
+func TestVideoTaskServiceCreateExtraSecondsPreservesUpstreamDurationAndSnapshot(t *testing.T) {
+	events := &videoTaskServiceTestEvents{}
+	repo := newFakeVideoTaskRepository(events)
+	provider := &fakeVideoTaskProvider{events: events, createResult: &VideoProviderCreateResult{
+		ProviderTaskID: "extra_seconds", Status: VideoTaskStatusQueued, ProviderStatus: "queued",
+		RawBody: []byte(`{"id":"extra_seconds","status":"queued"}`),
+	}}
+	selector := &fakeVideoTaskSelector{events: events, selection: &AccountSelectionResult{Account: &Account{ID: 99, Platform: PlatformOpenAI}}}
+	svc := newVideoTaskServiceForTest(repo, nil, selector, provider, nil)
+	svc.pricingResolver = &fakeVideoTaskPricingResolver{selection: VideoTaskPricingSelection{
+		Pricing:      &ChannelModelPricing{BillingMode: BillingModeVideoReference, VideoPricePerSecond: testPtrFloat64(0.2), VideoDefaultSeconds: testPtrInt(5), VideoExtraSeconds: 2},
+		BillingModel: "video-720p", RateMultiplier: 1, AccountRateMultiplier: 1,
+	}}
+	svc.settlement = &fakeVideoTaskSettlementOrchestrator{events: events, state: VideoTaskSettlementCharged}
+	body := []byte(`{"model":"video-720p","prompt":"city","seconds":5}`)
+	result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, ContentType: "application/json"})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.JSONEq(t, `{"model":"video-720p","prompt":"city","seconds":"5"}`, string(provider.createBody))
+	require.Equal(t, body, repo.lastCreate.RequestBody)
+	quote, ok := videoTaskQuoteFromMetadata(repo.lastCreate.Metadata)
+	require.True(t, ok)
+	require.Equal(t, 5, quote.Effective.Seconds)
+	require.Equal(t, 7, quote.BillingSeconds)
+	require.Equal(t, 1.4, quote.ActualCostUSD)
+}
+
 func TestVideoTaskServiceCreateProviderFailureReleasesReservedCharge(t *testing.T) {
 	events := &videoTaskServiceTestEvents{}
 	repo := newFakeVideoTaskRepository(events)

@@ -104,6 +104,7 @@ export default {
         invalidPrice: '{field} must be a finite number greater than or equal to 0'
       },
       videoValidation: {
+        extraSeconds: 'Extra billed duration must be an integer between 0 and 3600 seconds',
         defaultSeconds: 'Default video duration must be an integer between 1 and 3600 seconds',
         allowedSecondsBounds: 'Allowed video durations must be integers between 1 and 3600 seconds',
         allowedSecondsUnique: 'Allowed video durations must not contain duplicates',
@@ -220,6 +221,9 @@ export default {
         videoPricePerSecond: 'Price per second',
         videoReferencePricePerSecond: 'Price per second with reference video',
         videoDefaultSeconds: 'Default duration (seconds)',
+        videoExtraSeconds: 'Extra billed duration (seconds)',
+        videoExtraSecondsHint: 'Adds billed seconds only without reference videos; generated duration stays unchanged. Leave blank or set 0 to disable.',
+        videoExtraSecondsNotice: 'Without reference videos: {seconds} extra billed seconds (generated duration unchanged)',
         videoAllowedSeconds: 'Allowed durations (seconds, optional)',
         videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',
         platformConfig: 'Platform Configuration',

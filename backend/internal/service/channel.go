@@ -114,6 +114,7 @@ type ChannelModelPricing struct {
 	VideoPricePerSecond          *float64            `json:"video_price_per_second"`
 	VideoReferencePricePerSecond *float64            `json:"video_reference_price_per_second"`
 	VideoDefaultSeconds          *int                `json:"video_default_seconds"`
+	VideoExtraSeconds            int                 `json:"video_extra_seconds"`
 	VideoAllowedSeconds          []int               `json:"video_allowed_seconds"`
 	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier,omitempty"`
 	Intervals                    []PricingInterval   `json:"intervals"`

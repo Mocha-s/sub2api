@@ -249,8 +249,12 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	if base == nil {
 		return
 	}
+	billingSeconds, err := videoTaskBillingSeconds(pricing, duration, referenceVideo)
+	if err != nil {
+		return
+	}
 	unitPrice, _ := decimal.NewFromFloat(*base).
-		Div(decimal.NewFromInt(int64(max(quote.Effective.Seconds, 1)))).
+		Div(decimal.NewFromInt(int64(max(billingSeconds, 1)))).
 		Div(decimal.NewFromInt(int64(max(quote.Effective.VideoCount, 1)))).Round(10).Float64()
 	accountBase, err := NormalizeVideoTaskPricingAmount(*base)
 	if err != nil {
@@ -263,6 +267,7 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 		return
 	}
 	quote.AccountUnitPriceUSD = unitPrice
+	quote.AccountBillingSeconds = billingSeconds
 	quote.AccountBaseCostUSD = accountBase
 	quote.AccountCostUSD = accountCost
 }
@@ -286,7 +291,11 @@ func calculateVideoStatsCostVariant(pricing *ChannelModelPricing, usage *UsageLo
 	if count > VideoTaskMaxOutputs {
 		return nil
 	}
-	cost, _ := decimal.NewFromFloat(unitPrice).Mul(decimal.NewFromInt(int64(*usage.VideoDurationSeconds))).Mul(decimal.NewFromInt(int64(count))).Round(10).Float64()
+	billingSeconds, err := videoTaskBillingSeconds(pricing, *usage.VideoDurationSeconds, referenceVideo)
+	if err != nil {
+		return nil
+	}
+	cost, _ := decimal.NewFromFloat(unitPrice).Mul(decimal.NewFromInt(int64(billingSeconds))).Mul(decimal.NewFromInt(int64(count))).Round(10).Float64()
 	if cost <= 0 || !validVideoPriceMultiplier(cost) {
 		return nil
 	}

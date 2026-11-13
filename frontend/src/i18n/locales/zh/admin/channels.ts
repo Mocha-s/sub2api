@@ -104,6 +104,7 @@ export default {
         invalidPrice: '{field}必须为大于等于 0 的有限数字'
       },
       videoValidation: {
+        extraSeconds: '额外计费时长必须是 0 到 3600 秒之间的整数',
         defaultSeconds: '默认视频时长必须是 1 到 3600 秒之间的整数',
         allowedSecondsBounds: '允许的视频时长必须是 1 到 3600 秒之间的整数',
         allowedSecondsUnique: '允许的视频时长不能重复',
@@ -220,6 +221,9 @@ export default {
         videoPricePerSecond: '每秒价格',
         videoReferencePricePerSecond: '带参考视频每秒价格',
         videoDefaultSeconds: '默认时长（秒）',
+        videoExtraSeconds: '额外计费时长（秒）',
+        videoExtraSecondsHint: '仅未携带参考视频时增加计费秒数，不增加生成时长。留空或 0 表示不加时。',
+        videoExtraSecondsNotice: '无参考视频时额外计费 {seconds} 秒（不增加生成时长）',
         videoAllowedSeconds: '允许时长（秒，可选）',
         videoAllowedSecondsPlaceholder: '例如：5, 10, 15',
         platformConfig: '平台配置',

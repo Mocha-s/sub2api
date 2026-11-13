@@ -316,6 +316,19 @@
             </div>
           </div>
 
+          <div v-if="entry.billing_mode === 'video_reference'" class="mt-3">
+            <label :for="videoExtraSecondsId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.videoExtraSeconds') }}
+            </label>
+            <input :id="videoExtraSecondsId" :value="entry.video_extra_seconds ?? 0"
+              @input="emitField('video_extra_seconds', ($event.target as HTMLInputElement).value)"
+              :aria-describedby="`${videoExtraSecondsId}-hint`"
+              type="number" step="1" min="0" max="3600" class="input mt-0.5 text-sm sm:max-w-xs" />
+            <p :id="`${videoExtraSecondsId}-hint`" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.channels.form.videoExtraSecondsHint') }}
+            </p>
+          </div>
+
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('admin.channels.form.videoTiers') }}
@@ -444,6 +457,8 @@ const descriptionLength = computed(() => (props.entry.description || '').length)
 const descriptionInputId = computed(() => `${props.inputIdPrefix || `pricing-entry-${getCurrentInstance()?.uid ?? 0}`}-description`)
 const videoDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-default-price`)
 const videoReferenceDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-reference-default-price`)
+const videoExtraSecondsFallbackId = `pricing-entry-${getCurrentInstance()?.uid ?? 0}`
+const videoExtraSecondsId = computed(() => `${props.inputIdPrefix || videoExtraSecondsFallbackId}-video-extra-seconds`)
 const videoDefaultSecondsId = computed(() => `${props.inputIdPrefix}-video-default-seconds`)
 const videoAllowedSecondsId = computed(() => `${props.inputIdPrefix}-video-allowed-seconds`)
 

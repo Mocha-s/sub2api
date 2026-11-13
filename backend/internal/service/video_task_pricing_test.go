@@ -234,6 +234,105 @@ func TestResolveVideoReferenceTaskQuoteUsesReferenceTierPriceWithoutDurationSurc
 	require.Equal(t, baseTierPrice, quote.UnitPriceUSD)
 }
 
+func TestVideoExtraSecondsOnlyWithoutReferenceVideo(t *testing.T) {
+	pricing := &ChannelModelPricing{
+		BillingMode: BillingModeVideoReference, VideoDefaultSeconds: testPtrInt(5), VideoAllowedSeconds: []int{5},
+		VideoExtraSeconds: 2, VideoPricePerSecond: testPtrFloat64(0.2), VideoReferencePricePerSecond: testPtrFloat64(0.6),
+		Intervals: []PricingInterval{{TierLabel: "720p", VideoPricePerSecond: testPtrFloat64(0.3), VideoReferencePricePerSecond: testPtrFloat64(0.7)}},
+	}
+	for _, tt := range []struct {
+		body  string
+		gross float64
+	}{
+		{`{"seconds":5,"resolution":"720p"}`, 2.1},
+		{`{"seconds":5,"resolution":"720p","referenceVideos":[]}`, 2.1},
+		{`{"seconds":5,"resolution":"720p","referenceVideos":null}`, 2.1},
+		{`{"seconds":5,"resolution":"720p","referenceVideos":["v.mp4"]}`, 3.5},
+	} {
+		quote, err := ResolveVideoTaskQuote([]byte(tt.body), "video", pricing, 0.5, 2)
+		require.NoError(t, err)
+		require.Equal(t, 5, quote.Effective.Seconds)
+		require.Equal(t, tt.gross, quote.GrossCostUSD)
+		require.Equal(t, tt.gross*0.5, quote.ActualCostUSD)
+		require.Equal(t, tt.gross*2, quote.AccountCostUSD)
+		require.True(t, ValidVideoTaskQuote(&quote))
+		body, err := applyEffectiveVideoDuration([]byte(tt.body), quote.Effective.Seconds)
+		require.NoError(t, err)
+		payload, err := decodeVideoPricingPayload(body)
+		require.NoError(t, err)
+		require.Equal(t, "5", payload["seconds"])
+	}
+	for _, mode := range []BillingMode{BillingModeVideo, BillingModePerRequest} {
+		pricing.BillingMode = mode
+		pricing.PerRequestPrice = testPtrFloat64(1)
+		quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":5,"resolution":"720p"}`), "video", pricing, 1, 1)
+		require.NoError(t, err)
+		if mode == BillingModeVideo {
+			require.Equal(t, 1.5, quote.GrossCostUSD)
+		} else {
+			require.Equal(t, 1.0, quote.GrossCostUSD)
+		}
+	}
+}
+
+func TestVideoExtraSecondsMaximumAndInvalidBounds(t *testing.T) {
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideoReference, VideoDefaultSeconds: testPtrInt(3600), VideoPricePerSecond: testPtrFloat64(0.2), VideoExtraSeconds: 3600}
+	quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":3600}`), "video", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1440.0, quote.GrossCostUSD)
+	require.Equal(t, 3600, quote.Effective.Seconds)
+	require.True(t, ValidVideoTaskQuote(&quote))
+	for _, extra := range []int{-1, 3601} {
+		pricing.VideoExtraSeconds = extra
+		_, err := ResolveVideoTaskQuote([]byte(`{"seconds":5}`), "video", pricing, 1, 1)
+		require.ErrorContains(t, err, "video_extra_seconds")
+	}
+}
+
+func TestVideoExtraSecondsIndependentAccountCost(t *testing.T) {
+	pricing := &ChannelModelPricing{BillingMode: BillingModeVideoReference, VideoDefaultSeconds: testPtrInt(5), VideoPricePerSecond: testPtrFloat64(0.2), VideoExtraSeconds: 2}
+	account := &ChannelModelPricing{BillingMode: BillingModeVideoReference, VideoPricePerSecond: testPtrFloat64(0.1), VideoExtraSeconds: 3}
+	for _, tt := range []struct {
+		body               string
+		gross, accountCost float64
+	}{
+		{`{"seconds":5}`, 1.4, 0.8},
+		{`{"seconds":5,"referenceVideos":["v.mp4"]}`, 1, 0.5},
+	} {
+		quote, err := ResolveVideoTaskQuote([]byte(tt.body), "video", pricing, 1, 1)
+		require.NoError(t, err)
+		applyVideoAccountStatsPricing(&quote, account, []byte(tt.body))
+		require.Equal(t, tt.gross, quote.GrossCostUSD)
+		require.Equal(t, 0.1, quote.AccountUnitPriceUSD)
+		require.Equal(t, tt.accountCost, quote.AccountBaseCostUSD)
+		require.Equal(t, tt.accountCost, quote.AccountCostUSD)
+		require.True(t, ValidVideoTaskQuote(&quote))
+		raw, err := json.Marshal(quote)
+		require.NoError(t, err)
+		var snapshot map[string]any
+		require.NoError(t, json.Unmarshal(raw, &snapshot))
+		_, ok := videoTaskQuoteFromMetadata(map[string]any{"request_metadata": map[string]any{"video_pricing_snapshot": snapshot}})
+		require.True(t, ok)
+	}
+}
+
+func TestVideoExtraSecondsSnapshotValidation(t *testing.T) {
+	for _, tt := range []struct {
+		fields string
+		valid  bool
+	}{
+		{`"billing_seconds":7,"account_billing_seconds":8`, true},
+		{`"billing_seconds":6,"account_billing_seconds":8`, false},
+		{`"billing_seconds":7,"account_billing_seconds":7`, false},
+		{`"billing_seconds":-1,"account_billing_seconds":8`, false},
+		{`"billing_seconds":3606,"account_billing_seconds":8`, false},
+	} {
+		var quote VideoTaskQuote
+		require.NoError(t, json.Unmarshal([]byte(`{"billing_mode":"video_reference","effective":{"seconds":5,"resolution":"720p","video_count":1},"unit_price_usd":0.2,"gross_cost_usd":1.4,"actual_cost_usd":1.4,"account_unit_price_usd":0.1,"account_base_cost_usd":0.8,"account_cost_usd":0.8,"rate_multiplier":1,"account_rate_multiplier":1,`+tt.fields+`}`), &quote))
+		require.Equal(t, tt.valid, ValidVideoTaskQuote(&quote), tt.fields)
+	}
+}
+
 func TestResolveVideoTaskQuotePerRequestPricing(t *testing.T) {
 	price := 65.0
 	defaultSeconds := 30
@@ -263,7 +362,7 @@ func TestResolveVideoTaskQuotePerRequestPricing(t *testing.T) {
 		RateMultiplier:        0.1065,
 		AccountRateMultiplier: 0.071,
 	}, quote)
-	require.True(t, validVideoTaskQuote(&quote))
+	require.True(t, ValidVideoTaskQuote(&quote))
 
 	// 未命中档位时回退默认按次价。
 	quote, err = ResolveVideoTaskQuote([]byte(`{"seconds":"5","resolution":"720p"}`), "seedance-2.0", pricing, 0.1065, 0.071)
@@ -294,7 +393,7 @@ func TestResolveVideoTaskQuotePerRequestNilPriceIsZeroCost(t *testing.T) {
 		RateMultiplier:        0.1065,
 		AccountRateMultiplier: 0.071,
 	}, quote)
-	require.True(t, validVideoTaskQuote(&quote))
+	require.True(t, ValidVideoTaskQuote(&quote))
 
 	// 无默认价但命中档位时按档位价计费（此前会按 0 计）。
 	tierPricing := &ChannelModelPricing{
@@ -393,7 +492,7 @@ func TestResolveVideoTaskQuotePerRequestTreatsDurationMetadataAsOptional(t *test
 			require.Equal(t, tt.wantSecond, quote.Effective.Seconds)
 			require.Equal(t, tt.wantRes, quote.Effective.Resolution)
 			require.Equal(t, 1, quote.Effective.VideoCount)
-			require.True(t, validVideoTaskQuote(&quote))
+			require.True(t, ValidVideoTaskQuote(&quote))
 		})
 	}
 }
@@ -497,19 +596,19 @@ func TestValidVideoTaskQuoteEnforcesOutputBoundAndAccountBaseFormula(t *testing.
 		AccountUnitPriceUSD: 0.10, AccountBaseCostUSD: 0.10 * 5 * VideoTaskMaxOutputs,
 		AccountCostUSD: 0.10 * 5 * VideoTaskMaxOutputs, AccountRateMultiplier: 1,
 	}
-	require.True(t, validVideoTaskQuote(&quote))
+	require.True(t, ValidVideoTaskQuote(&quote))
 
 	quote.Effective.VideoCount = VideoTaskMaxOutputs + 1
-	require.False(t, validVideoTaskQuote(&quote))
+	require.False(t, ValidVideoTaskQuote(&quote))
 	quote.Effective.VideoCount = VideoTaskMaxOutputs
 	quote.AccountBaseCostUSD++
-	require.False(t, validVideoTaskQuote(&quote))
+	require.False(t, ValidVideoTaskQuote(&quote))
 	quote.AccountBaseCostUSD = 0.10 * 5 * VideoTaskMaxOutputs
 	quote.ActualCostUSD++
-	require.False(t, validVideoTaskQuote(&quote))
+	require.False(t, ValidVideoTaskQuote(&quote))
 	quote.ActualCostUSD = quote.GrossCostUSD
 	quote.AccountCostUSD++
-	require.False(t, validVideoTaskQuote(&quote))
+	require.False(t, ValidVideoTaskQuote(&quote))
 }
 
 func TestVideoTaskQuotePreservesPricingPrecisionAndRoundsAppliedAmounts(t *testing.T) {
@@ -522,7 +621,7 @@ func TestVideoTaskQuotePreservesPricingPrecisionAndRoundsAppliedAmounts(t *testi
 	require.Equal(t, 0.3703703673, quote.AccountBaseCostUSD)
 	require.Equal(t, 0.12345679, quote.ActualCostUSD)
 	require.Equal(t, 0.45724736, quote.AccountCostUSD)
-	require.True(t, validVideoTaskQuote(&quote))
+	require.True(t, ValidVideoTaskQuote(&quote))
 
 	tests := []struct {
 		name   string
@@ -537,7 +636,7 @@ func TestVideoTaskQuotePreservesPricingPrecisionAndRoundsAppliedAmounts(t *testi
 		t.Run(tt.name, func(t *testing.T) {
 			tampered := quote
 			tt.tamper(&tampered)
-			require.False(t, validVideoTaskQuote(&tampered))
+			require.False(t, ValidVideoTaskQuote(&tampered))
 		})
 	}
 }
@@ -556,7 +655,7 @@ func TestValidVideoTaskQuoteRejectsTamperedPerRequestAmounts(t *testing.T) {
 		RateMultiplier:        0.1065,
 		AccountRateMultiplier: 0.071,
 	}
-	require.True(t, validVideoTaskQuote(&quote))
+	require.True(t, ValidVideoTaskQuote(&quote))
 
 	tests := []struct {
 		name   string
@@ -573,7 +672,7 @@ func TestValidVideoTaskQuoteRejectsTamperedPerRequestAmounts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tampered := quote
 			tt.tamper(&tampered)
-			require.False(t, validVideoTaskQuote(&tampered))
+			require.False(t, ValidVideoTaskQuote(&tampered))
 		})
 	}
 }

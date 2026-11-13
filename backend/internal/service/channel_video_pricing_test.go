@@ -3,11 +3,26 @@
 package service
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestValidateVideoExtraSeconds(t *testing.T) {
+	for _, extra := range []int{-1, 0, 2, 3600, 3601} {
+		var pricing ChannelModelPricing
+		require.NoError(t, json.Unmarshal([]byte(fmt.Sprintf(`{"billing_mode":"video_reference","video_default_seconds":5,"video_price_per_second":0.2,"video_extra_seconds":%d}`, extra)), &pricing))
+		err := validatePricingEntries([]ChannelModelPricing{pricing})
+		if extra < 0 || extra > 3600 {
+			require.ErrorContains(t, err, "video_extra_seconds")
+		} else {
+			require.NoError(t, err)
+		}
+	}
+}
 
 func TestBillingModeVideoIsValid(t *testing.T) {
 	require.True(t, BillingModeVideo.IsValid())

@@ -10,10 +10,23 @@ import {
   validateIntervals,
   validateReasoningEffortMultipliers,
   validateTimePricing,
+  validateVideoPricing,
+  type PricingFormEntry,
   type IntervalFormEntry,
   type TimePricingFormEntry,
   type TimePricingPeriodFormEntry,
 } from '../types'
+
+describe('extra billed video seconds', () => {
+  it.each([-1, 0.5, 3601, Infinity, NaN, 'bad'])('rejects invalid extra seconds %s', video_extra_seconds => {
+    const entry = { billing_mode: 'video_reference', video_default_seconds: 5, video_price_per_second: 0.2, video_extra_seconds, intervals: [] } as PricingFormEntry
+    expect(validateVideoPricing(entry, t)).toContain('extraSeconds')
+  })
+  it.each([undefined, null, '', 0, '0', 2, '2', 3600])('accepts optional and bounded extra seconds %s', video_extra_seconds => {
+    const entry = { billing_mode: 'video_reference', video_default_seconds: 5, video_price_per_second: 0.2, video_extra_seconds, intervals: [] } as PricingFormEntry
+    expect(validateVideoPricing(entry, t)).toBeNull()
+  })
+})
 
 describe('reasoning effort multipliers', () => {
   it('serializes independent overrides without altering their values', () => {
