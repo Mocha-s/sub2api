@@ -391,10 +391,17 @@ func plazaVideoDisplayPricing(p *ChannelModelPricing, g *Group, modelName string
 			continue
 		}
 		v := *price
+		var referencePrice *float64
+		if p.BillingMode == BillingModeVideoReference {
+			if resolved, err := resolveVideoTaskUnitPrice(p, label, true); err == nil {
+				referencePrice = &resolved
+			}
+		}
 		clone.Intervals = append(clone.Intervals, PricingInterval{
-			TierLabel:           label,
-			VideoPricePerSecond: &v,
-			SortOrder:           i,
+			TierLabel:                    label,
+			VideoPricePerSecond:          &v,
+			VideoReferencePricePerSecond: referencePrice,
+			SortOrder:                    i,
 		})
 	}
 	return &clone

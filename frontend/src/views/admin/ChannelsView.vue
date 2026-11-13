@@ -643,6 +643,7 @@ import type { AdminGroup, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import { platformTextClass, platformBadgeLightClass, platformLabel as catalogPlatformLabel } from '@/utils/platformColors'
 import { listPlatformIds, supportsPricingModelSync } from '@/constants/platformCatalog'
+import { isVideoBillingMode } from '@/constants/channel'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -877,6 +878,7 @@ function addPricingEntry(sectionIdx: number) {
     image_output_price: null,
     per_request_price: null,
     video_price_per_second: null,
+    video_reference_price_per_second: null,
     video_default_seconds: null,
     video_allowed_seconds: [],
     intervals: [],
@@ -920,6 +922,7 @@ async function syncLatestModels(sectionIdx: number) {
       image_output_price: null,
       per_request_price: null,
       video_price_per_second: null,
+      video_reference_price_per_second: null,
       video_default_seconds: null,
       video_allowed_seconds: [],
       intervals: [],
@@ -991,6 +994,7 @@ function addRulePricingEntry(sectionIdx: number, ruleIndex: number) {
     image_output_price: null,
     per_request_price: null,
     video_price_per_second: null,
+    video_reference_price_per_second: null,
     video_default_seconds: null,
     video_allowed_seconds: [],
     intervals: [],
@@ -1113,6 +1117,7 @@ function accountStatsRulesToAPI(): AccountStatsPricingRule[] {
             image_output_price: mTokToPerToken(p.image_output_price),
             per_request_price: p.per_request_price != null && p.per_request_price !== '' ? Number(p.per_request_price) : null,
             video_price_per_second: p.video_price_per_second != null && p.video_price_per_second !== '' ? Number(p.video_price_per_second) : null,
+            video_reference_price_per_second: p.video_reference_price_per_second != null && p.video_reference_price_per_second !== '' ? Number(p.video_reference_price_per_second) : null,
             video_default_seconds: toNullableNumber(p.video_default_seconds),
             video_allowed_seconds: normalizeVideoAllowedSeconds(p.video_allowed_seconds || []),
             intervals: formIntervalsToAPI(p.intervals || [], p.billing_mode),
@@ -1163,6 +1168,7 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         image_output_price: mTokToPerToken(entry.image_output_price),
          per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
          video_price_per_second: entry.video_price_per_second != null && entry.video_price_per_second !== '' ? Number(entry.video_price_per_second) : null,
+         video_reference_price_per_second: entry.video_reference_price_per_second != null && entry.video_reference_price_per_second !== '' ? Number(entry.video_reference_price_per_second) : null,
          video_default_seconds: toNullableNumber(entry.video_default_seconds),
          video_allowed_seconds: normalizeVideoAllowedSeconds(entry.video_allowed_seconds || []),
          intervals: formIntervalsToAPI(entry.intervals || [], entry.billing_mode),
@@ -1269,7 +1275,8 @@ function apiToForm(channel: Channel): PlatformSection[] {
          image_input_price: perTokenToMTok(p.image_input_price),
          image_output_price: perTokenToMTok(p.image_output_price),
          per_request_price: p.per_request_price,
-         video_price_per_second: p.video_price_per_second,
+          video_price_per_second: p.video_price_per_second,
+          video_reference_price_per_second: p.video_reference_price_per_second,
          video_default_seconds: p.video_default_seconds,
          video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
          intervals: apiIntervalsToForm(p.intervals || []),
@@ -1466,6 +1473,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
          image_output_price: perTokenToMTok(p.image_output_price),
          per_request_price: p.per_request_price,
          video_price_per_second: p.video_price_per_second,
+         video_reference_price_per_second: p.video_reference_price_per_second,
          video_default_seconds: p.video_default_seconds,
          video_allowed_seconds: (p.video_allowed_seconds || []).map(Number),
          intervals: apiIntervalsToForm(p.intervals || []),
@@ -1601,7 +1609,7 @@ async function handleSubmit() {
       ...section.account_stats_pricing_rules.flatMap(rule => rule.pricing),
     ]
     for (const entry of entries) {
-      if (entry.billing_mode !== 'video') continue
+      if (!isVideoBillingMode(entry.billing_mode)) continue
       const error = validateVideoPricing(entry, t)
       if (!error) continue
       const platformLabel = t('admin.groups.platforms.' + section.platform, catalogPlatformLabel(section.platform))

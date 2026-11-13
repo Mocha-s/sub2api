@@ -65,6 +65,11 @@ function mountCard(entry = makeEntry()) {
 }
 
 describe('PricingEntryCard video billing', () => {
+  it('edits a separate reference price without replacing the base price', async () => {
+    const wrapper = mountCard(makeEntry({ billing_mode: 'video_reference', video_price_per_second: 0.2, video_reference_price_per_second: 0.34 }))
+    await wrapper.get('#test-entry-video-reference-default-price').setValue('1.2')
+    expect(wrapper.emitted('update')?.[0]?.[0]).toMatchObject({ video_price_per_second: 0.2, video_reference_price_per_second: '1.2' })
+  })
   it('fills a default duration when switching into video billing', async () => {
     const SelectStub = defineComponent({
       props: { modelValue: String },

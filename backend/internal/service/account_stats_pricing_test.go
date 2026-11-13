@@ -1193,7 +1193,7 @@ func TestApplyVideoAccountStatsPricing_PerRequestUsesResolutionTier(t *testing.T
 		Effective:             VideoTaskEffectiveParams{Resolution: "720p", VideoCount: 1},
 		AccountRateMultiplier: 1.25,
 	}
-	applyVideoAccountStatsPricing(&quote, pricing)
+	applyVideoAccountStatsPricing(&quote, pricing, nil)
 	require.InDelta(t, tier, quote.AccountUnitPriceUSD, 1e-12)
 	require.InDelta(t, tier, quote.AccountBaseCostUSD, 1e-12)
 	require.InDelta(t, tier*1.25, quote.AccountCostUSD, 1e-12)
@@ -1203,6 +1203,6 @@ func TestApplyVideoAccountStatsPricing_PerRequestUsesResolutionTier(t *testing.T
 		Effective:             VideoTaskEffectiveParams{Resolution: "480p", VideoCount: 1},
 		AccountRateMultiplier: 1,
 	}
-	applyVideoAccountStatsPricing(&quote, pricing)
+	applyVideoAccountStatsPricing(&quote, pricing, nil)
 	require.InDelta(t, flat, quote.AccountUnitPriceUSD, 1e-12, "未命中档位回退默认按次价")
 }

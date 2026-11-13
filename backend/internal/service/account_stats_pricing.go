@@ -211,41 +211,10 @@ func calculateStatsCost(pricing *ChannelModelPricing, tokens UsageTokens, reques
 }
 
 func calculateVideoStatsCost(pricing *ChannelModelPricing, usage *UsageLog) *float64 {
-	if pricing == nil || usage == nil || usage.VideoDurationSeconds == nil || *usage.VideoDurationSeconds <= 0 {
-		return nil
-	}
-	resolution := ""
-	if usage.VideoResolution != nil {
-		resolution = NormalizeVideoResolutionTier(*usage.VideoResolution)
-	}
-	unitPrice := pricing.VideoPricePerSecond
-	for i := range pricing.Intervals {
-		interval := &pricing.Intervals[i]
-		if resolution != "" && NormalizeVideoResolutionTier(interval.TierLabel) == resolution && interval.VideoPricePerSecond != nil {
-			unitPrice = interval.VideoPricePerSecond
-			break
-		}
-	}
-	if unitPrice == nil || *unitPrice <= 0 || !validVideoPriceMultiplier(*unitPrice) {
-		return nil
-	}
-	count := usage.VideoCount
-	if count < 1 {
-		count = 1
-	}
-	if count > VideoTaskMaxOutputs {
-		return nil
-	}
-	cost, _ := decimal.NewFromFloat(*unitPrice).
-		Mul(decimal.NewFromInt(int64(*usage.VideoDurationSeconds))).
-		Mul(decimal.NewFromInt(int64(count))).Round(10).Float64()
-	if cost <= 0 || !validVideoPriceMultiplier(cost) {
-		return nil
-	}
-	return &cost
+	return calculateVideoStatsCostVariant(pricing, usage, false)
 }
 
-func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelPricing) {
+func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelPricing, body []byte) {
 	if quote == nil || pricing == nil {
 		return
 	}
@@ -272,7 +241,11 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	}
 	duration, resolution := quote.Effective.Seconds, quote.Effective.Resolution
 	usage := &UsageLog{VideoCount: quote.Effective.VideoCount, VideoResolution: &resolution, VideoDurationSeconds: &duration}
-	base := calculateVideoStatsCost(pricing, usage)
+	referenceVideo := false
+	if payload, err := decodeVideoPricingPayload(body); err == nil {
+		referenceVideo = hasReferenceVideos(payload)
+	}
+	base := calculateVideoStatsCostVariant(pricing, usage, referenceVideo)
 	if base == nil {
 		return
 	}
@@ -292,6 +265,32 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 	quote.AccountUnitPriceUSD = unitPrice
 	quote.AccountBaseCostUSD = accountBase
 	quote.AccountCostUSD = accountCost
+}
+
+func calculateVideoStatsCostVariant(pricing *ChannelModelPricing, usage *UsageLog, referenceVideo bool) *float64 {
+	if pricing == nil || usage == nil || usage.VideoDurationSeconds == nil || *usage.VideoDurationSeconds <= 0 {
+		return nil
+	}
+	resolution := ""
+	if usage.VideoResolution != nil {
+		resolution = NormalizeVideoResolutionTier(*usage.VideoResolution)
+	}
+	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution, referenceVideo && pricing.BillingMode == BillingModeVideoReference)
+	if err != nil || unitPrice <= 0 {
+		return nil
+	}
+	count := usage.VideoCount
+	if count < 1 {
+		count = 1
+	}
+	if count > VideoTaskMaxOutputs {
+		return nil
+	}
+	cost, _ := decimal.NewFromFloat(unitPrice).Mul(decimal.NewFromInt(int64(*usage.VideoDurationSeconds))).Mul(decimal.NewFromInt(int64(count))).Round(10).Float64()
+	if cost <= 0 || !validVideoPriceMultiplier(cost) {
+		return nil
+	}
+	return &cost
 }
 
 // perRequestVideoAccountStatsBase 账户侧按次价：优先按请求分辨率匹配档位价，

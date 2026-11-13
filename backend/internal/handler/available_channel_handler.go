@@ -70,39 +70,41 @@ type userAvailableGroup struct {
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
-	Description                string                   `json:"description,omitempty"`
-	BillingMode                string                   `json:"billing_mode"`
-	InputPrice                 *float64                 `json:"input_price"`
-	OutputPrice                *float64                 `json:"output_price"`
-	CacheWritePrice            *float64                 `json:"cache_write_price"`
-	CacheWrite1hPrice          *float64                 `json:"cache_write_1h_price"`
-	CacheReadPrice             *float64                 `json:"cache_read_price"`
-	ReasoningEffortMultipliers map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
-	ImageInputPrice            *float64                 `json:"image_input_price"`
-	ImageOutputPrice           *float64                 `json:"image_output_price"`
-	PerRequestPrice            *float64                 `json:"per_request_price"`
-	VideoPricePerSecond        *float64                 `json:"video_price_per_second,omitempty"`
-	VideoDefaultSeconds        *int                     `json:"video_default_seconds,omitempty"`
-	VideoAllowedSeconds        []int                    `json:"video_allowed_seconds,omitempty"`
-	Intervals                  []userPricingIntervalDTO `json:"intervals"`
+	Description                  string                   `json:"description,omitempty"`
+	BillingMode                  string                   `json:"billing_mode"`
+	InputPrice                   *float64                 `json:"input_price"`
+	OutputPrice                  *float64                 `json:"output_price"`
+	CacheWritePrice              *float64                 `json:"cache_write_price"`
+	CacheWrite1hPrice            *float64                 `json:"cache_write_1h_price"`
+	CacheReadPrice               *float64                 `json:"cache_read_price"`
+	ReasoningEffortMultipliers   map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
+	ImageInputPrice              *float64                 `json:"image_input_price"`
+	ImageOutputPrice             *float64                 `json:"image_output_price"`
+	PerRequestPrice              *float64                 `json:"per_request_price"`
+	VideoPricePerSecond          *float64                 `json:"video_price_per_second,omitempty"`
+	VideoReferencePricePerSecond *float64                 `json:"video_reference_price_per_second,omitempty"`
+	VideoDefaultSeconds          *int                     `json:"video_default_seconds,omitempty"`
+	VideoAllowedSeconds          []int                    `json:"video_allowed_seconds,omitempty"`
+	Intervals                    []userPricingIntervalDTO `json:"intervals"`
 }
 
 // userPricingIntervalDTO 定价区间白名单（去掉内部 ID、SortOrder 等前端不渲染的字段）。
 type userPricingIntervalDTO struct {
-	MinTokens            int      `json:"min_tokens"`
-	MaxTokens            *int     `json:"max_tokens"`
-	TierLabel            string   `json:"tier_label,omitempty"`
-	InputPrice           *float64 `json:"input_price"`
-	OutputPrice          *float64 `json:"output_price"`
-	CacheWritePrice      *float64 `json:"cache_write_price"`
-	CacheWrite1hPrice    *float64 `json:"cache_write_1h_price"`
-	CacheReadPrice       *float64 `json:"cache_read_price"`
-	InputMultiplier      *float64 `json:"input_multiplier"`
-	OutputMultiplier     *float64 `json:"output_multiplier"`
-	CacheWriteMultiplier *float64 `json:"cache_write_multiplier"`
-	CacheReadMultiplier  *float64 `json:"cache_read_multiplier"`
-	PerRequestPrice      *float64 `json:"per_request_price"`
-	VideoPricePerSecond  *float64 `json:"video_price_per_second,omitempty"`
+	MinTokens                    int      `json:"min_tokens"`
+	MaxTokens                    *int     `json:"max_tokens"`
+	TierLabel                    string   `json:"tier_label,omitempty"`
+	InputPrice                   *float64 `json:"input_price"`
+	OutputPrice                  *float64 `json:"output_price"`
+	CacheWritePrice              *float64 `json:"cache_write_price"`
+	CacheWrite1hPrice            *float64 `json:"cache_write_1h_price"`
+	CacheReadPrice               *float64 `json:"cache_read_price"`
+	InputMultiplier              *float64 `json:"input_multiplier"`
+	OutputMultiplier             *float64 `json:"output_multiplier"`
+	CacheWriteMultiplier         *float64 `json:"cache_write_multiplier"`
+	CacheReadMultiplier          *float64 `json:"cache_read_multiplier"`
+	PerRequestPrice              *float64 `json:"per_request_price"`
+	VideoPricePerSecond          *float64 `json:"video_price_per_second,omitempty"`
+	VideoReferencePricePerSecond *float64 `json:"video_reference_price_per_second,omitempty"`
 }
 
 // userSupportedModel 用户可见的支持模型条目。
@@ -318,20 +320,21 @@ func toUserPricingIntervals(src []service.PricingInterval) []userPricingInterval
 	intervals := make([]userPricingIntervalDTO, 0, len(src))
 	for _, iv := range src {
 		intervals = append(intervals, userPricingIntervalDTO{
-			MinTokens:            iv.MinTokens,
-			MaxTokens:            iv.MaxTokens,
-			TierLabel:            iv.TierLabel,
-			InputPrice:           iv.InputPrice,
-			OutputPrice:          iv.OutputPrice,
-			CacheWritePrice:      iv.CacheWritePrice,
-			CacheWrite1hPrice:    iv.CacheWrite1hPrice,
-			CacheReadPrice:       iv.CacheReadPrice,
-			InputMultiplier:      iv.InputMultiplier,
-			OutputMultiplier:     iv.OutputMultiplier,
-			CacheWriteMultiplier: iv.CacheWriteMultiplier,
-			CacheReadMultiplier:  iv.CacheReadMultiplier,
-			PerRequestPrice:      iv.PerRequestPrice,
-			VideoPricePerSecond:  iv.VideoPricePerSecond,
+			MinTokens:                    iv.MinTokens,
+			MaxTokens:                    iv.MaxTokens,
+			TierLabel:                    iv.TierLabel,
+			InputPrice:                   iv.InputPrice,
+			OutputPrice:                  iv.OutputPrice,
+			CacheWritePrice:              iv.CacheWritePrice,
+			CacheWrite1hPrice:            iv.CacheWrite1hPrice,
+			CacheReadPrice:               iv.CacheReadPrice,
+			InputMultiplier:              iv.InputMultiplier,
+			OutputMultiplier:             iv.OutputMultiplier,
+			CacheWriteMultiplier:         iv.CacheWriteMultiplier,
+			CacheReadMultiplier:          iv.CacheReadMultiplier,
+			PerRequestPrice:              iv.PerRequestPrice,
+			VideoPricePerSecond:          iv.VideoPricePerSecond,
+			VideoReferencePricePerSecond: iv.VideoReferencePricePerSecond,
 		})
 	}
 	return intervals
@@ -352,20 +355,21 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		billingMode = string(service.BillingModeToken)
 	}
 	return &userSupportedModelPricing{
-		Description:                strings.TrimSpace(p.Description),
-		BillingMode:                billingMode,
-		InputPrice:                 p.InputPrice,
-		OutputPrice:                p.OutputPrice,
-		CacheWritePrice:            p.CacheWritePrice,
-		CacheWrite1hPrice:          p.CacheWrite1hPrice,
-		CacheReadPrice:             p.CacheReadPrice,
-		ReasoningEffortMultipliers: p.ReasoningEffortMultipliers,
-		ImageInputPrice:            p.ImageInputPrice,
-		ImageOutputPrice:           p.ImageOutputPrice,
-		PerRequestPrice:            p.PerRequestPrice,
-		VideoPricePerSecond:        p.VideoPricePerSecond,
-		VideoDefaultSeconds:        p.VideoDefaultSeconds,
-		VideoAllowedSeconds:        p.VideoAllowedSeconds,
-		Intervals:                  intervals,
+		Description:                  strings.TrimSpace(p.Description),
+		BillingMode:                  billingMode,
+		InputPrice:                   p.InputPrice,
+		OutputPrice:                  p.OutputPrice,
+		CacheWritePrice:              p.CacheWritePrice,
+		CacheWrite1hPrice:            p.CacheWrite1hPrice,
+		CacheReadPrice:               p.CacheReadPrice,
+		ReasoningEffortMultipliers:   p.ReasoningEffortMultipliers,
+		ImageInputPrice:              p.ImageInputPrice,
+		ImageOutputPrice:             p.ImageOutputPrice,
+		PerRequestPrice:              p.PerRequestPrice,
+		VideoPricePerSecond:          p.VideoPricePerSecond,
+		VideoReferencePricePerSecond: p.VideoReferencePricePerSecond,
+		VideoDefaultSeconds:          p.VideoDefaultSeconds,
+		VideoAllowedSeconds:          p.VideoAllowedSeconds,
+		Intervals:                    intervals,
 	}
 }

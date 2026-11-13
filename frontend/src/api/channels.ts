@@ -37,6 +37,7 @@ export interface UserPricingInterval {
   cache_read_multiplier?: number | null
   per_request_price: number | null
   video_price_per_second: number | null
+  video_reference_price_per_second?: number | null
 }
 
 export interface UserSupportedModelPricing {
@@ -52,6 +53,7 @@ export interface UserSupportedModelPricing {
   image_output_price: number | null
   per_request_price: number | null
   video_price_per_second: number | null
+  video_reference_price_per_second?: number | null
   video_default_seconds: number | null
   video_allowed_seconds: number[] | null
   intervals: UserPricingInterval[]

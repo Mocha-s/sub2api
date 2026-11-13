@@ -550,6 +550,7 @@ export default {
       billingModePerRequest: 'Per Request',
       billingModeImage: 'Image',
       billingModeVideo: 'Per-second video',
+      billingModeVideoReference: 'Per-second video (ref)',
       allBillingModes: 'All Billing Modes',
 	  upstreamModelAudit: 'Upstream model audit',
 	  allUpstreamModelAudit: 'All response model states',

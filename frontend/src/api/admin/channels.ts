@@ -24,6 +24,7 @@ export interface PricingInterval {
   cache_read_multiplier: number | null
   per_request_price: number | null
   video_price_per_second: number | null
+  video_reference_price_per_second?: number | null
   sort_order: number
 }
 
@@ -57,6 +58,7 @@ export interface ChannelModelPricing {
   image_output_price: number | null
   per_request_price: number | null
   video_price_per_second: number | null
+  video_reference_price_per_second?: number | null
   video_default_seconds: number | null
   video_allowed_seconds: number[]
   intervals: PricingInterval[]

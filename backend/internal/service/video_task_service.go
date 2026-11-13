@@ -280,9 +280,9 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 					}
 					return nil, err
 				}
-				applyVideoAccountStatsPricing(&resolved, pricingSelection.AccountStatsPricing)
+				applyVideoAccountStatsPricing(&resolved, pricingSelection.AccountStatsPricing, req.RawBody)
 				quote = &resolved
-				if pricingSelection.Pricing.BillingMode == BillingModeVideo {
+				if isVideoBillingMode(pricingSelection.Pricing.BillingMode) {
 					forwardBody, err = applyEffectiveVideoDuration(req.RawBody, resolved.Effective.Seconds)
 					if err != nil {
 						if selection.ReleaseFunc != nil {
@@ -821,8 +821,8 @@ func (s *VideoTaskService) Estimate(ctx context.Context, params VideoTaskEstimat
 			if err != nil {
 				return nil, err
 			}
-			applyVideoAccountStatsPricing(&resolved, pricing.AccountStatsPricing)
-			if pricing.Pricing.BillingMode == BillingModeVideo {
+			applyVideoAccountStatsPricing(&resolved, pricing.AccountStatsPricing, params.Body)
+			if isVideoBillingMode(pricing.Pricing.BillingMode) {
 				forwardBody, err = applyEffectiveVideoDuration(params.Body, resolved.Effective.Seconds)
 				if err != nil {
 					return nil, err
@@ -1210,6 +1210,7 @@ func (s *VideoTaskService) resumePristineVideoTask(ctx context.Context, task *Vi
 		return nil, errors.Join(ErrVideoTaskSettlementRetriable, errors.New("video task pricing snapshot is missing"))
 	}
 	forwardBody := task.RequestBody
+	// Legacy reference quotes may include the former +5s surcharge; do not forward that duration on replay.
 	if quote.BillingMode == BillingModeVideo {
 		forwardBody, err = applyEffectiveVideoDuration(task.RequestBody, quote.Effective.Seconds)
 		if err != nil {

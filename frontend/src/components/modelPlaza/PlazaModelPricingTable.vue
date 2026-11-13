@@ -194,7 +194,7 @@
           </template>
 
           <!-- 视频按秒计费:分档(480p/720p/1080p)芯片或单一每秒价 -->
-          <template v-else-if="billingMode(m) === BILLING_MODE_VIDEO">
+          <template v-else-if="isVideoBillingMode(billingMode(m))">
             <td colspan="3" class="pz-cell px-3 py-2.5 align-middle">
               <div
                 v-if="videoIntervals(m).length"
@@ -207,7 +207,11 @@
                 >
                   <span class="font-sans text-gray-400 dark:text-dark-500">{{ tierLabel(iv) }}</span>
                   {{ paidRequestPrice(m, videoIntervalPrice(iv))
-                  }}<span class="font-sans text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.perUnitSecond') }}</span>
+                   }}<span class="font-sans text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.perUnitSecond') }}</span>
+                  <span v-if="billingMode(m) === 'video_reference'">
+                    / {{ t('admin.channels.form.videoReferencePricePerSecond') }}:
+                    {{ paidRequestPrice(m, iv.video_reference_price_per_second ?? videoIntervalPrice(iv) ?? m.pricing?.video_reference_price_per_second ?? null) }}{{ t('modelPlaza.table.perUnitSecond') }}
+                  </span>
                 </span>
               </div>
               <template v-else-if="videoUnitPrice(m) != null">
@@ -217,6 +221,10 @@
                 <span class="ml-1 text-xs text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.perUnitSecond') }}</span>
               </template>
               <span v-else class="text-gray-400 dark:text-dark-500">-</span>
+              <div v-if="billingMode(m) === 'video_reference' && !videoIntervals(m).length" class="text-xs">
+                {{ t('admin.channels.form.videoReferencePricePerSecond') }}:
+                {{ paidRequestPrice(m, m.pricing?.video_reference_price_per_second ?? videoUnitPrice(m)) }}{{ t('modelPlaza.table.perUnitSecond') }}
+              </div>
             </td>
           </template>
 
@@ -353,6 +361,7 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_IMAGE,
   BILLING_MODE_VIDEO,
+  isVideoBillingMode,
   REASONING_EFFORT_LEVELS,
   type BillingMode
 } from '@/constants/channel'
@@ -433,6 +442,7 @@ function billingModeLabel(m: PlazaModel): string {
     case BILLING_MODE_IMAGE:
       return t('modelPlaza.table.perImage')
     case BILLING_MODE_VIDEO:
+    case 'video_reference':
       return t('modelPlaza.table.perSecond')
     default:
       return t('modelPlaza.table.perRequest')
@@ -476,12 +486,12 @@ function paidPerMillion(value: number | null | undefined, period: PlazaTimePrici
 /** 图片和视频分别使用对应的独立倍率开关。 */
 function usesIndependentMediaRate(m: PlazaModel): boolean {
   return (billingMode(m) === BILLING_MODE_IMAGE && props.imageRateIndependent === true) ||
-    (billingMode(m) === BILLING_MODE_VIDEO && props.videoRateIndependent === true)
+    (isVideoBillingMode(billingMode(m)) && props.videoRateIndependent === true)
 }
 
 /** 非 token 行的生效倍率，图片和视频可分别覆盖通用倍率。 */
 function requestRate(m: PlazaModel): number {
-  if (billingMode(m) === BILLING_MODE_VIDEO && props.videoRateIndependent === true) {
+  if (isVideoBillingMode(billingMode(m)) && props.videoRateIndependent === true) {
     return Math.max(0, props.videoRateMultiplier ?? 1)
   }
   return billingMode(m) === BILLING_MODE_IMAGE && props.imageRateIndependent === true
@@ -502,7 +512,7 @@ function videoIntervalPrice(iv: UserPricingInterval): number | null {
 
 /** 视频计费的分档每秒价(仅保留有价的档位)。 */
 function videoIntervals(m: PlazaModel): UserPricingInterval[] {
-  return (m.pricing?.intervals ?? []).filter((iv) => videoIntervalPrice(iv) != null)
+  return (m.pricing?.intervals ?? []).filter((iv) => videoIntervalPrice(iv) != null || (billingMode(m) === 'video_reference' && iv.video_reference_price_per_second != null))
 }
 
 /** 视频计费的默认每秒价(无分档配置时的平价)。 */

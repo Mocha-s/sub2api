@@ -90,7 +90,7 @@
               @update:modelValue="emit('update', {
                 ...entry,
                 billing_mode: $event as BillingMode,
-                video_default_seconds: $event === 'video' && entry.video_default_seconds == null
+                video_default_seconds: isVideoBillingMode(String($event)) && entry.video_default_seconds == null
                   ? 10
                   : entry.video_default_seconds,
                 intervals: [],
@@ -282,14 +282,22 @@
         </div>
 
         <!-- Video mode -->
-        <div v-else-if="entry.billing_mode === 'video'">
-          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div v-else-if="isVideoBillingMode(entry.billing_mode)">
+          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
             <div>
               <label :for="videoDefaultPriceId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
                 {{ t('admin.channels.form.defaultVideoPrice') }}
                 <span class="ml-1 font-normal text-gray-400">USD/s</span>
               </label>
               <input :id="videoDefaultPriceId" :value="entry.video_price_per_second" @input="emitField('video_price_per_second', ($event.target as HTMLInputElement).value)"
+                type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
+            </div>
+            <div v-if="entry.billing_mode === 'video_reference'">
+              <label :for="videoReferenceDefaultPriceId" class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.videoReferencePricePerSecond') }}
+                <span class="ml-1 font-normal text-gray-400">USD/s</span>
+              </label>
+              <input :id="videoReferenceDefaultPriceId" :value="entry.video_reference_price_per_second" @input="emitField('video_reference_price_per_second', ($event.target as HTMLInputElement).value)"
                 type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
             </div>
             <div>
@@ -380,7 +388,7 @@ import ModelTagInput from './ModelTagInput.vue'
 import TimePricingSection from './TimePricingSection.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
 import { perTokenToMTok, getPlatformTagClass, isValidPositiveMultiplier, validateReasoningEffortMultipliers } from './types'
-import { REASONING_EFFORT_LEVELS, type ReasoningEffortLevel } from '@/constants/channel'
+import { REASONING_EFFORT_LEVELS, isVideoBillingMode, type ReasoningEffortLevel } from '@/constants/channel'
 import type { BillingMode } from '@/api/admin/channels'
 import channelsAPI from '@/api/admin/channels'
 
@@ -423,7 +431,8 @@ const billingModeOptions = computed(() => [
   { value: 'token', label: t('admin.channels.billingMode.token') },
   { value: 'per_request', label: t('admin.channels.billingMode.perRequest') },
   { value: 'image', label: t('admin.channels.billingMode.image') },
-  { value: 'video', label: t('admin.channels.billingMode.video') }
+  { value: 'video', label: t('admin.channels.billingMode.video') },
+  { value: 'video_reference', label: t('admin.channels.billingMode.videoReference') }
 ])
 
 const billingModeLabel = computed(() => {
@@ -434,6 +443,7 @@ const billingModeLabel = computed(() => {
 const descriptionLength = computed(() => (props.entry.description || '').length)
 const descriptionInputId = computed(() => `${props.inputIdPrefix || `pricing-entry-${getCurrentInstance()?.uid ?? 0}`}-description`)
 const videoDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-default-price`)
+const videoReferenceDefaultPriceId = computed(() => `${props.inputIdPrefix}-video-reference-default-price`)
 const videoDefaultSecondsId = computed(() => `${props.inputIdPrefix}-video-default-seconds`)
 const videoAllowedSecondsId = computed(() => `${props.inputIdPrefix}-video-allowed-seconds`)
 
@@ -475,7 +485,7 @@ function addInterval() {
 
 function addMediaTier() {
   const intervals = [...(props.entry.intervals || [])]
-  const labels = props.entry.billing_mode === 'video'
+  const labels = isVideoBillingMode(props.entry.billing_mode)
     ? ['480p', '720p', '1080p']
     : ['1K', '2K', '4K', 'HD']
   intervals.push({

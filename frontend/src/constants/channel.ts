@@ -8,11 +8,18 @@ export const BILLING_MODE_TOKEN = 'token' as const
 export const BILLING_MODE_PER_REQUEST = 'per_request' as const
 export const BILLING_MODE_IMAGE = 'image' as const
 export const BILLING_MODE_VIDEO = 'video' as const
+export const BILLING_MODE_VIDEO_REFERENCE = 'video_reference' as const
 export type BillingMode =
   | typeof BILLING_MODE_TOKEN
   | typeof BILLING_MODE_PER_REQUEST
   | typeof BILLING_MODE_IMAGE
   | typeof BILLING_MODE_VIDEO
+  | typeof BILLING_MODE_VIDEO_REFERENCE
+
+/** True for any video billing mode (video / video_reference). */
+export function isVideoBillingMode(mode: string | null | undefined): boolean {
+  return mode === BILLING_MODE_VIDEO || mode === BILLING_MODE_VIDEO_REFERENCE
+}
 
 /** Supported request reasoning effort levels, ordered from lowest to highest. */
 export const REASONING_EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const

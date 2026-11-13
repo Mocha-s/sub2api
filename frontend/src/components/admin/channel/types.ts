@@ -1,5 +1,5 @@
 import type { BillingMode, ChannelTimePricing, PricingInterval } from '@/api/admin/channels'
-import { REASONING_EFFORT_LEVELS } from '@/constants/channel'
+import { REASONING_EFFORT_LEVELS, isVideoBillingMode } from '@/constants/channel'
 
 type TranslateFn = (key: string, params?: Record<string, unknown>) => string
 
@@ -18,6 +18,7 @@ export interface IntervalFormEntry {
   cache_read_multiplier: number | string | null
   per_request_price: number | string | null
   video_price_per_second?: number | string | null
+  video_reference_price_per_second?: number | string | null
   sort_order: number
 }
 
@@ -37,6 +38,7 @@ export interface PricingFormEntry {
   image_output_price: number | string | null
   per_request_price: number | string | null
   video_price_per_second?: number | string | null
+  video_reference_price_per_second?: number | string | null
   video_default_seconds?: number | null
   video_allowed_seconds?: number[]
   intervals: IntervalFormEntry[]
@@ -275,7 +277,9 @@ export function validateVideoPricing(entry: PricingFormEntry, t: TranslateFn): s
   const hasPrice = (value: number | string | null | undefined) => value != null && value !== ''
   const prices = [
     entry.video_price_per_second,
+    entry.billing_mode === 'video_reference' ? entry.video_reference_price_per_second : null,
     ...entry.intervals.map(interval => interval.video_price_per_second),
+    ...entry.intervals.map(interval => entry.billing_mode === 'video_reference' ? interval.video_reference_price_per_second : null),
   ]
   if (!prices.some(hasPrice)) {
     return t('admin.channels.videoValidation.missingPrice')
@@ -286,7 +290,7 @@ export function validateVideoPricing(entry: PricingFormEntry, t: TranslateFn): s
     })
   }
 
-  return validateIntervals(entry.intervals || [], 'video', t)
+  return validateIntervals(entry.intervals || [], entry.billing_mode, t)
 }
 
 export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEntry[] {
@@ -305,15 +309,16 @@ export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEn
     cache_read_multiplier: iv.cache_read_multiplier,
     per_request_price: iv.per_request_price,
     video_price_per_second: iv.video_price_per_second,
+    video_reference_price_per_second: iv.video_reference_price_per_second,
     sort_order: iv.sort_order
   }))
 }
 
 export function formIntervalsToAPI(intervals: IntervalFormEntry[], mode?: BillingMode): PricingInterval[] {
   return (intervals || []).map(iv => ({
-    min_tokens: mode === 'video' ? 0 : iv.min_tokens,
-    max_tokens: mode === 'video' ? null : iv.max_tokens,
-    tier_label: mode === 'video' ? normalizeVideoTierLabel(iv.tier_label) : iv.tier_label.trim(),
+    min_tokens: isVideoBillingMode(mode) ? 0 : iv.min_tokens,
+    max_tokens: isVideoBillingMode(mode) ? null : iv.max_tokens,
+    tier_label: isVideoBillingMode(mode) ? normalizeVideoTierLabel(iv.tier_label) : iv.tier_label.trim(),
     input_price: mode === 'token' || mode == null ? mTokToPerToken(iv.input_price) : null,
     output_price: mode === 'token' || mode == null ? mTokToPerToken(iv.output_price) : null,
     cache_write_price: mode === 'token' || mode == null ? mTokToPerToken(iv.cache_write_price) : null,
@@ -323,8 +328,9 @@ export function formIntervalsToAPI(intervals: IntervalFormEntry[], mode?: Billin
     output_multiplier: toNullableNumber(iv.output_multiplier),
     cache_write_multiplier: toNullableNumber(iv.cache_write_multiplier),
     cache_read_multiplier: toNullableNumber(iv.cache_read_multiplier),
-    per_request_price: mode === 'video' ? null : toNullableNumber(iv.per_request_price),
-    video_price_per_second: mode === 'video' ? toNullableNumber(iv.video_price_per_second) : null,
+    per_request_price: isVideoBillingMode(mode) ? null : toNullableNumber(iv.per_request_price),
+    video_price_per_second: isVideoBillingMode(mode) ? toNullableNumber(iv.video_price_per_second) : null,
+    video_reference_price_per_second: mode === 'video_reference' ? toNullableNumber(iv.video_reference_price_per_second) : null,
     sort_order: iv.sort_order
   }))
 }
@@ -385,7 +391,7 @@ export function validateIntervals(
   if (!intervals || intervals.length === 0) return null
 
   // 视频层级按分辨率标签匹配，不使用 token 范围。
-  const sorted = mode === 'video'
+  const sorted = isVideoBillingMode(mode)
     ? [...intervals]
     : [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
 
@@ -394,7 +400,7 @@ export function validateIntervals(
     if (err) return err
   }
 
-  if (mode === 'video') {
+  if (isVideoBillingMode(mode)) {
     const labels = sorted.map(interval => normalizeVideoTierLabel(interval.tier_label))
     if (new Set(labels).size !== labels.length) {
       return intervalValidationMessage(t, 'tierLabelUnique', {})
@@ -420,11 +426,12 @@ function intervalPriceLabel(t: TranslateFn, key: string): string {
 
 function validateSingleInterval(iv: IntervalFormEntry, idx: number, mode: BillingMode, t: TranslateFn): string | null {
   const index = idx + 1
-  if (mode === 'video') {
+  if (isVideoBillingMode(mode)) {
     if (!iv.tier_label.trim()) {
       return intervalValidationMessage(t, 'videoTierLabelRequired', { index })
     }
-    if (iv.video_price_per_second == null || iv.video_price_per_second === '') {
+    if ((iv.video_price_per_second == null || iv.video_price_per_second === '') &&
+        (mode !== 'video_reference' || iv.video_reference_price_per_second == null || iv.video_reference_price_per_second === '')) {
       return intervalValidationMessage(t, 'videoTierPriceRequired', { index })
     }
   } else if (iv.min_tokens < 0) {
@@ -463,8 +470,9 @@ function validateIntervalPrices(iv: IntervalFormEntry, idx: number, mode: Billin
         ['cacheWrite1hPrice', iv.cache_write_1h_price ?? null],
         ['cacheReadPrice', iv.cache_read_price],
       ]
-    : mode === 'video'
-      ? [['videoPricePerSecond', iv.video_price_per_second ?? null]]
+    : isVideoBillingMode(mode)
+      ? [['videoPricePerSecond', iv.video_price_per_second ?? null],
+          ['videoPricePerSecond', mode === 'video_reference' ? iv.video_reference_price_per_second ?? null : null]]
       : [['perRequestPrice', iv.per_request_price]]
   for (const [key, val] of prices) {
     if (val != null && val !== '' && !Number.isFinite(Number(val))) {

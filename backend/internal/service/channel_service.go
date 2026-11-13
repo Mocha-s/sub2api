@@ -791,9 +791,9 @@ func checkBillingModeRequirements(p ChannelModelPricing) error {
 				return infraerrors.BadRequest("INVALID_VIDEO_DEFAULT_SECONDS", "video_default_seconds must be included in video_allowed_seconds")
 			}
 		}
-		hasVideoPrice := p.VideoPricePerSecond != nil
+		hasVideoPrice := p.VideoPricePerSecond != nil || (p.BillingMode == BillingModeVideoReference && p.VideoReferencePricePerSecond != nil)
 		for _, interval := range p.Intervals {
-			hasVideoPrice = hasVideoPrice || interval.VideoPricePerSecond != nil
+			hasVideoPrice = hasVideoPrice || interval.VideoPricePerSecond != nil || (p.BillingMode == BillingModeVideoReference && interval.VideoReferencePricePerSecond != nil)
 		}
 		if !hasVideoPrice {
 			return infraerrors.BadRequest("BILLING_MODE_MISSING_PRICE", "video price_per_second or a priced interval is required for video billing mode")
@@ -830,6 +830,10 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 			field string
 			val   *float64
 		}{"video_price_per_second", p.VideoPricePerSecond})
+		checks = append(checks, struct {
+			field string
+			val   *float64
+		}{"video_reference_price_per_second", p.VideoReferencePricePerSecond})
 	}
 	for _, c := range checks {
 		if c.val != nil {
@@ -858,14 +862,22 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 func checkIntervalsHavePrices(p ChannelModelPricing) error {
 	for _, iv := range p.Intervals {
 		if isVideoBillingMode(p.BillingMode) {
-			if iv.VideoPricePerSecond == nil {
+			if iv.VideoPricePerSecond == nil && (p.BillingMode != BillingModeVideoReference || iv.VideoReferencePricePerSecond == nil) {
 				return infraerrors.BadRequest("INTERVAL_MISSING_PRICE", "video interval has no price fields set: video_price_per_second is required")
 			}
-			if math.IsNaN(*iv.VideoPricePerSecond) || math.IsInf(*iv.VideoPricePerSecond, 0) {
-				return infraerrors.BadRequest("INVALID_VIDEO_PRICE", "interval video_price_per_second must be finite")
-			}
-			if *iv.VideoPricePerSecond < 0 {
-				return infraerrors.BadRequest("NEGATIVE_PRICE", "interval video_price_per_second must be >= 0")
+			for field, price := range map[string]*float64{
+				"video_price_per_second":           iv.VideoPricePerSecond,
+				"video_reference_price_per_second": iv.VideoReferencePricePerSecond,
+			} {
+				if price == nil {
+					continue
+				}
+				if math.IsNaN(*price) || math.IsInf(*price, 0) {
+					return infraerrors.BadRequest("INVALID_VIDEO_PRICE", fmt.Sprintf("interval %s must be finite", field))
+				}
+				if *price < 0 {
+					return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", field))
+				}
 			}
 			continue
 		}

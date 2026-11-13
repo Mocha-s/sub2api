@@ -109,7 +109,7 @@ func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *Ch
 		return VideoTaskQuote{}, err
 	}
 	resolution := resolveVideoTaskResolution(payload, billingModel)
-	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution)
+	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution, false)
 	if err != nil {
 		return VideoTaskQuote{}, err
 	}
@@ -154,11 +154,7 @@ func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *Ch
 	}, nil
 }
 
-// videoReferenceExtraSeconds 是带视频参考时额外计费的固定秒数。
-// shortcut: 固定 5s，当各上游参考处理时长不同时升级为可配置字段。
-const videoReferenceExtraSeconds = 5
-
-// resolveVideoReferenceTaskQuote 与 video 模式相同，但检测到 referenceVideos 时额外计费若干秒。
+// resolveVideoReferenceTaskQuote 按 referenceVideos 是否非空选择独立的参考视频单价。
 func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
 	if pricing.VideoDefaultSeconds == nil || *pricing.VideoDefaultSeconds <= 0 || *pricing.VideoDefaultSeconds > videoTaskMaxSeconds {
 		return VideoTaskQuote{}, invalidVideoPricingConfig("video_default_seconds must be between 1 and 3600")
@@ -175,11 +171,8 @@ func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *C
 	if err != nil {
 		return VideoTaskQuote{}, err
 	}
-	if hasReferenceVideos(payload) {
-		seconds += videoReferenceExtraSeconds
-	}
 	resolution := resolveVideoTaskResolution(payload, billingModel)
-	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution)
+	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution, hasReferenceVideos(payload))
 	if err != nil {
 		return VideoTaskQuote{}, err
 	}
@@ -488,21 +481,32 @@ func NormalizeVideoResolutionTier(value string) string {
 	}
 }
 
-func resolveVideoTaskUnitPrice(pricing *ChannelModelPricing, resolution string) (float64, error) {
+func resolveVideoTaskUnitPrice(pricing *ChannelModelPricing, resolution string, referenceVideo bool) (float64, error) {
 	for i := range pricing.Intervals {
 		interval := &pricing.Intervals[i]
-		if NormalizeVideoResolutionTier(interval.TierLabel) != resolution || interval.VideoPricePerSecond == nil {
+		if NormalizeVideoResolutionTier(interval.TierLabel) != resolution {
 			continue
 		}
-		if !validVideoPriceMultiplier(*interval.VideoPricePerSecond) {
+		price := interval.VideoPricePerSecond
+		if referenceVideo && interval.VideoReferencePricePerSecond != nil {
+			price = interval.VideoReferencePricePerSecond
+		}
+		if price == nil {
+			continue
+		}
+		if !validVideoPriceMultiplier(*price) {
 			return 0, invalidVideoPricingConfig("video tier price must be finite and non-negative")
 		}
-		return *interval.VideoPricePerSecond, nil
+		return *price, nil
 	}
-	if pricing.VideoPricePerSecond == nil || !validVideoPriceMultiplier(*pricing.VideoPricePerSecond) {
+	price := pricing.VideoPricePerSecond
+	if referenceVideo && pricing.VideoReferencePricePerSecond != nil {
+		price = pricing.VideoReferencePricePerSecond
+	}
+	if price == nil || !validVideoPriceMultiplier(*price) {
 		return 0, invalidVideoPricingConfig("video price is missing or invalid for resolution %s", resolution)
 	}
-	return *pricing.VideoPricePerSecond, nil
+	return *price, nil
 }
 
 func validVideoPriceMultiplier(value float64) bool {

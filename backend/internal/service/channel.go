@@ -12,11 +12,11 @@ import (
 type BillingMode string
 
 const (
-	BillingModeToken            BillingMode = "token"            // 按 token 区间计费
-	BillingModePerRequest       BillingMode = "per_request"      // 按次计费（支持上下文窗口分层）
-	BillingModeImage            BillingMode = "image"            // 图片计费（当前按次，预留 token 计费）
-	BillingModeVideo            BillingMode = "video"            // 视频生成计费（按视频生成次数）
-	BillingModeVideoReference   BillingMode = "video_reference"  // 视频生成计费，带视频参考时额外计费若干秒
+	BillingModeToken          BillingMode = "token"           // 按 token 区间计费
+	BillingModePerRequest     BillingMode = "per_request"     // 按次计费（支持上下文窗口分层）
+	BillingModeImage          BillingMode = "image"           // 图片计费（当前按次，预留 token 计费）
+	BillingModeVideo          BillingMode = "video"           // 视频生成计费（按视频生成次数）
+	BillingModeVideoReference BillingMode = "video_reference" // 视频生成计费，带参考视频时使用独立单价
 )
 
 // IsValid 检查 BillingMode 是否为合法值
@@ -112,6 +112,7 @@ type ChannelModelPricing struct {
 	ImageOutputPrice             *float64            `json:"image_output_price"`
 	PerRequestPrice              *float64            `json:"per_request_price"`
 	VideoPricePerSecond          *float64            `json:"video_price_per_second"`
+	VideoReferencePricePerSecond *float64            `json:"video_reference_price_per_second"`
 	VideoDefaultSeconds          *int                `json:"video_default_seconds"`
 	VideoAllowedSeconds          []int               `json:"video_allowed_seconds"`
 	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier,omitempty"`
@@ -137,25 +138,26 @@ type ChannelTimePricingPeriod struct {
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID                   int64     `json:"id,omitempty"`
-	PricingID            int64     `json:"pricing_id,omitempty"`
-	MinTokens            int       `json:"min_tokens"`
-	MaxTokens            *int      `json:"max_tokens"`
-	TierLabel            string    `json:"tier_label"`
-	InputPrice           *float64  `json:"input_price"`
-	OutputPrice          *float64  `json:"output_price"`
-	CacheWritePrice      *float64  `json:"cache_write_price"`
-	CacheWrite1hPrice    *float64  `json:"cache_write_1h_price"`
-	CacheReadPrice       *float64  `json:"cache_read_price"`
-	InputMultiplier      *float64  `json:"input_multiplier"`
-	OutputMultiplier     *float64  `json:"output_multiplier"`
-	CacheWriteMultiplier *float64  `json:"cache_write_multiplier"`
-	CacheReadMultiplier  *float64  `json:"cache_read_multiplier"`
-	PerRequestPrice      *float64  `json:"per_request_price"`
-	VideoPricePerSecond  *float64  `json:"video_price_per_second"`
-	SortOrder            int       `json:"sort_order"`
-	CreatedAt            time.Time `json:"created_at,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at,omitempty"`
+	ID                           int64     `json:"id,omitempty"`
+	PricingID                    int64     `json:"pricing_id,omitempty"`
+	MinTokens                    int       `json:"min_tokens"`
+	MaxTokens                    *int      `json:"max_tokens"`
+	TierLabel                    string    `json:"tier_label"`
+	InputPrice                   *float64  `json:"input_price"`
+	OutputPrice                  *float64  `json:"output_price"`
+	CacheWritePrice              *float64  `json:"cache_write_price"`
+	CacheWrite1hPrice            *float64  `json:"cache_write_1h_price"`
+	CacheReadPrice               *float64  `json:"cache_read_price"`
+	InputMultiplier              *float64  `json:"input_multiplier"`
+	OutputMultiplier             *float64  `json:"output_multiplier"`
+	CacheWriteMultiplier         *float64  `json:"cache_write_multiplier"`
+	CacheReadMultiplier          *float64  `json:"cache_read_multiplier"`
+	PerRequestPrice              *float64  `json:"per_request_price"`
+	VideoPricePerSecond          *float64  `json:"video_price_per_second"`
+	VideoReferencePricePerSecond *float64  `json:"video_reference_price_per_second"`
+	SortOrder                    int       `json:"sort_order"`
+	CreatedAt                    time.Time `json:"created_at,omitempty"`
+	UpdatedAt                    time.Time `json:"updated_at,omitempty"`
 }
 
 // IsActive 判断渠道是否启用
@@ -412,6 +414,7 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 		{"cache_read_price", iv.CacheReadPrice},
 		{"per_request_price", iv.PerRequestPrice},
 		{"video_price_per_second", iv.VideoPricePerSecond},
+		{"video_reference_price_per_second", iv.VideoReferencePricePerSecond},
 	}
 	for _, p := range prices {
 		if p.val != nil && *p.val < 0 {

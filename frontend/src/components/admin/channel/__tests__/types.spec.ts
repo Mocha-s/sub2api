@@ -42,6 +42,21 @@ describe('reasoning effort multipliers', () => {
 })
 
 describe('interval multiplier conversion', () => {
+  it('round-trips independent reference video prices, including zero', () => {
+    const form = [makeInterval({ tier_label: '720P', video_price_per_second: '0.34', video_reference_price_per_second: '0' })]
+    const api = formIntervalsToAPI(form, 'video_reference')
+    expect(api[0]).toMatchObject({ tier_label: '720p', video_price_per_second: 0.34, video_reference_price_per_second: 0 })
+    expect(apiIntervalsToForm(api)[0].video_reference_price_per_second).toBe(0)
+  })
+
+  it('validates both reference prices and permits reference-only tiers only in reference mode', () => {
+    const tier = makeInterval({ tier_label: '720p', video_reference_price_per_second: '0.34' })
+    expect(validateIntervals([tier], 'video_reference', t)).toBeNull()
+    expect(validateIntervals([tier], 'video', t)).not.toBeNull()
+    for (const value of [-1, Infinity, NaN]) {
+      expect(validateIntervals([{ ...tier, video_price_per_second: 0.2, video_reference_price_per_second: value }], 'video_reference', t)).not.toBeNull()
+    }
+  })
   it('preserves component multipliers without MTok conversion', () => {
     const form = apiIntervalsToForm([{
       min_tokens: 272000,

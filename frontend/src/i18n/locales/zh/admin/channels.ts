@@ -124,7 +124,8 @@ export default {
         token: 'Token',
         perRequest: '按次',
         image: '图片（按次）',
-        video: '视频（按秒）'
+        video: '视频（按秒）',
+        videoReference: '视频（参考视频独立单价）'
       },
       form: {
         name: '名称',
@@ -217,6 +218,7 @@ export default {
         defaultImagePrice: '默认图片价格（未命中层级时使用）',
         defaultVideoPrice: '默认视频每秒价格（未命中层级时使用）',
         videoPricePerSecond: '每秒价格',
+        videoReferencePricePerSecond: '带参考视频每秒价格',
         videoDefaultSeconds: '默认时长（秒）',
         videoAllowedSeconds: '允许时长（秒，可选）',
         videoAllowedSecondsPlaceholder: '例如：5, 10, 15',

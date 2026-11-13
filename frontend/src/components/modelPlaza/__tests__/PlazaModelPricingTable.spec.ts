@@ -58,6 +58,17 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('shows independent reference video prices using the video multiplier', () => {
+    const model = tokenModel({ name: 'reference-video', official_pricing: null })
+    model.pricing!.billing_mode = 'video_reference'
+    model.pricing!.video_price_per_second = 0.2
+    model.pricing!.video_reference_price_per_second = 0.34
+    const wrapper = mountTable([model], 0.1, null, { videoRateIndependent: true, videoRateMultiplier: 1 })
+    expect(wrapper.text()).toContain('$0.20')
+    expect(wrapper.text()).toContain('$0.34')
+    expect(wrapper.text()).toContain('admin.channels.form.videoReferencePricePerSecond')
+    wrapper.unmount()
+  })
   it.each([
     { enabled: true, multiplier: 1, userRate: 0.05, expected: 1 },
     { enabled: true, multiplier: 0.5, userRate: null, expected: 0.5 },

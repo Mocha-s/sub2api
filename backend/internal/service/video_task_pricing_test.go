@@ -199,6 +199,41 @@ func TestResolveVideoTaskQuoteSelectsNormalizedTierBeforeDefaultAndCalculatesAmo
 	require.Equal(t, defaultPrice, quote.UnitPriceUSD)
 }
 
+func TestResolveVideoReferenceTaskQuoteUsesReferenceTierPriceWithoutDurationSurcharge(t *testing.T) {
+	defaultSeconds := 15
+	basePrice := 0.20
+	baseTierPrice := 0.34
+	referencePrice := 0.65
+	referenceTierPrice := 0.90
+	pricing := &ChannelModelPricing{
+		BillingMode: BillingModeVideoReference, VideoPricePerSecond: &basePrice,
+		VideoReferencePricePerSecond: &referencePrice, VideoDefaultSeconds: &defaultSeconds,
+		Intervals: []PricingInterval{{TierLabel: "720p", VideoPricePerSecond: &baseTierPrice, VideoReferencePricePerSecond: &referenceTierPrice}},
+	}
+
+	quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":15,"resolution":"720p","referenceVideos":["video.mp4"]}`), "megaai", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, BillingModeVideoReference, quote.BillingMode)
+	require.Equal(t, 15, quote.Effective.Seconds)
+	require.Equal(t, 0.90, quote.UnitPriceUSD)
+	require.Equal(t, 13.5, quote.GrossCostUSD)
+	for _, ref := range []string{`[]`, `null`, `"video.mp4"`, `{}`} {
+		quote, err = ResolveVideoTaskQuote([]byte(`{"seconds":15,"resolution":"720p","referenceVideos":`+ref+`}`), "megaai", pricing, 1, 1)
+		require.NoError(t, err)
+		require.Equal(t, 15, quote.Effective.Seconds)
+		require.Equal(t, baseTierPrice, quote.UnitPriceUSD)
+	}
+	pricing.Intervals[0].VideoReferencePricePerSecond = nil
+	quote, err = ResolveVideoTaskQuote([]byte(`{"seconds":15,"resolution":"720p","referenceVideos":["video.mp4"]}`), "megaai", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, baseTierPrice, quote.UnitPriceUSD)
+	pricing.Intervals[0].VideoReferencePricePerSecond = &referenceTierPrice
+	pricing.BillingMode = BillingModeVideo
+	quote, err = ResolveVideoTaskQuote([]byte(`{"seconds":15,"resolution":"720p","referenceVideos":["video.mp4"]}`), "megaai", pricing, 1, 1)
+	require.NoError(t, err)
+	require.Equal(t, baseTierPrice, quote.UnitPriceUSD)
+}
+
 func TestResolveVideoTaskQuotePerRequestPricing(t *testing.T) {
 	price := 65.0
 	defaultSeconds := 30

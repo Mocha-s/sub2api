@@ -165,6 +165,13 @@
                 </div>
               </div>
             </div>
+            <PricingRow
+              v-if="model.pricing.billing_mode === 'video_reference' && (model.pricing.video_reference_price_per_second ?? videoUnitPrice) != null"
+              :label="t('admin.channels.form.videoReferencePricePerSecond')"
+              :value="model.pricing.video_reference_price_per_second ?? videoUnitPrice"
+              :unit="t(prefixKey('unitPerSecond'))"
+              :scale="1"
+            />
           </div>
         </div>
       </div>
@@ -181,7 +188,8 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
-  BILLING_MODE_VIDEO
+  BILLING_MODE_VIDEO,
+  isVideoBillingMode
 } from '@/constants/channel'
 // 复用 api/channels.ts 的用户侧最小形态 DTO。
 // admin 侧 ChannelModelPricing 字段更多，但结构上是用户 DTO 的超集，admin 视图传入可直接通过结构化子类型检查。
@@ -246,6 +254,8 @@ const billingModeLabel = computed(() => {
       return t(prefixKey('billingModeImage'))
     case BILLING_MODE_VIDEO:
       return t(prefixKey('billingModeVideo'))
+    case 'video_reference':
+      return t(prefixKey('billingModeVideo'))
     default:
       return '-'
   }
@@ -254,7 +264,7 @@ const billingModeLabel = computed(() => {
 /** 视频每秒价:新字段优先,兼容历史把每秒价写在按次字段的数据。 */
 const videoUnitPrice = computed<number | null>(() => {
   const pricing = props.model.pricing
-  if (pricing?.billing_mode !== BILLING_MODE_VIDEO) return null
+  if (!pricing || !isVideoBillingMode(pricing.billing_mode)) return null
   return pricing.video_price_per_second ?? pricing.per_request_price
 })
 
@@ -264,8 +274,14 @@ function formatRange(min: number, max: number | null): string {
 }
 
 function formatInterval(iv: UserPricingInterval, pricing: UserSupportedModelPricing): string {
-  if (pricing.billing_mode === BILLING_MODE_VIDEO) {
-    return `${formatScaled(iv.video_price_per_second ?? iv.per_request_price, 1)} ${t(prefixKey('unitPerSecond'))}`
+  if (isVideoBillingMode(pricing.billing_mode)) {
+    const base = iv.video_price_per_second ?? iv.per_request_price
+    const unit = t(prefixKey('unitPerSecond'))
+    if (pricing.billing_mode === 'video_reference') {
+      const reference = iv.video_reference_price_per_second ?? base ?? pricing.video_reference_price_per_second ?? pricing.video_price_per_second
+      return `${formatScaled(base, 1)} ${unit} / ${t('admin.channels.form.videoReferencePricePerSecond')}: ${formatScaled(reference, 1)} ${unit}`
+    }
+    return `${formatScaled(base, 1)} ${unit}`
   }
   if (pricing.billing_mode === BILLING_MODE_PER_REQUEST || pricing.billing_mode === BILLING_MODE_IMAGE) {
     return formatScaled(iv.per_request_price, 1)

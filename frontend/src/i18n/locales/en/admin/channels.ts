@@ -124,7 +124,8 @@ export default {
         token: 'Token',
         perRequest: 'Per Request',
         image: 'Image (Per Request)',
-        video: 'Video (Per Second)'
+        video: 'Video (Per Second)',
+        videoReference: 'Video (Reference pricing)'
       },
       form: {
         name: 'Name',
@@ -217,6 +218,7 @@ export default {
         defaultImagePrice: 'Default image price (fallback when no tier matches)',
         defaultVideoPrice: 'Default video price per second (fallback when no tier matches)',
         videoPricePerSecond: 'Price per second',
+        videoReferencePricePerSecond: 'Price per second with reference video',
         videoDefaultSeconds: 'Default duration (seconds)',
         videoAllowedSeconds: 'Allowed durations (seconds, optional)',
         videoAllowedSecondsPlaceholder: 'e.g. 5, 10, 15',

@@ -30,11 +30,12 @@ type ResolvedPricing struct {
 	RequestTiers []PricingInterval
 
 	// 按次/图片模式：默认价格（未命中层级时使用）
-	DefaultPerRequestPrice     float64
-	ReasoningEffortMultipliers map[string]float64
-	VideoPricePerSecond        float64
-	VideoDefaultSeconds        int
-	VideoAllowedSeconds        []int
+	DefaultPerRequestPrice       float64
+	ReasoningEffortMultipliers   map[string]float64
+	VideoPricePerSecond          float64
+	VideoReferencePricePerSecond float64
+	VideoDefaultSeconds          int
+	VideoAllowedSeconds          []int
 
 	// 来源标识
 	Source string // "channel", "litellm", "fallback"
@@ -316,6 +317,9 @@ func (r *ModelPricingResolver) applyVideoOverrides(chPricing *ChannelModelPricin
 	if chPricing.VideoPricePerSecond != nil {
 		resolved.VideoPricePerSecond = *chPricing.VideoPricePerSecond
 	}
+	if chPricing.VideoReferencePricePerSecond != nil {
+		resolved.VideoReferencePricePerSecond = *chPricing.VideoReferencePricePerSecond
+	}
 	if chPricing.VideoDefaultSeconds != nil {
 		resolved.VideoDefaultSeconds = *chPricing.VideoDefaultSeconds
 	}
@@ -329,7 +333,7 @@ func filterValidIntervals(intervals []PricingInterval) []PricingInterval {
 	for _, iv := range intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
 			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheReadPrice != nil ||
-			iv.PerRequestPrice != nil || iv.VideoPricePerSecond != nil || iv.InputMultiplier != nil ||
+			iv.PerRequestPrice != nil || iv.VideoPricePerSecond != nil || iv.VideoReferencePricePerSecond != nil || iv.InputMultiplier != nil ||
 			iv.OutputMultiplier != nil || iv.CacheWriteMultiplier != nil ||
 			iv.CacheReadMultiplier != nil {
 			valid = append(valid, iv)
