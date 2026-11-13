@@ -7,11 +7,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // VideoAdapterMegaAi handles MegaAi-compatible upstream APIs.
 // Endpoints: POST /v1/videos (create), GET /v1/videos/{id} (fetch), GET /v1/videos/{id}/content (download).
-// Requires integer duration; reuses seedanceCreateBody for numeric field normalization.
+// Requires an integer duration and resolution/ratio rather than OpenAI's size field.
 const VideoAdapterMegaAi = "megaai"
 
 type megaAiVideoAdapter struct {
@@ -25,11 +26,11 @@ func NewMegaAiVideoAdapter(openai *OpenAIGatewayService) VideoTaskAdapter {
 func (a *megaAiVideoAdapter) Name() string { return VideoAdapterMegaAi }
 
 func (a *megaAiVideoAdapter) ValidateCreate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) error {
-	if _, err := seedanceCreateBody(body, upstreamModel); err != nil {
+	if _, err := megaAiCreateBody(body, upstreamModel); err != nil {
 		return err
 	}
 	if err := validateUnifiedVideoGenerationFields(ctx, body,
-		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds",
+		"size", "resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds",
 		"seed", "referenceImages", "referenceVideos", "referenceAudios",
 		"generate_audio", "content", "images", "videos", "audios",
 	); err != nil {
@@ -160,12 +161,18 @@ func megaAiCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 	if prompt := rawStringField(payload, "prompt"); prompt != "" {
 		out["prompt"] = prompt
 	}
-	// duration: accept duration/seconds/duration_seconds, all as integer
-	for _, key := range []string{"duration", "seconds", "duration_seconds"} {
-		if num, ok, err := seedanceRawNumericField(payload, key); err != nil {
-			return nil, err
-		} else if ok {
-			out["duration"] = num
+	// Match billing precedence and emit a JSON integer even for integral decimal/exponent inputs.
+	for _, key := range []string{"seconds", "duration", "duration_seconds"} {
+		if raw, exists := payload[key]; exists {
+			value, err := seedanceRawValue(raw)
+			if err != nil {
+				return nil, err
+			}
+			seconds, err := parseVideoTaskSeconds(value)
+			if err != nil {
+				return nil, invalidVideoTaskRequest("%s must be an integer between 1 and 3600", key)
+			}
+			out["duration"] = seconds
 			break
 		}
 	}
@@ -176,6 +183,31 @@ func megaAiCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 	}
 	if ratio != "" {
 		out["ratio"] = ratio
+	}
+	if raw, exists := payload["size"]; exists {
+		var size string
+		if err := json.Unmarshal(raw, &size); err != nil || strings.TrimSpace(size) == "" {
+			return nil, invalidVideoTaskRequest("size must be a resolution or pixel dimensions")
+		}
+		size = strings.ToLower(strings.TrimSpace(size))
+		resolution := NormalizeVideoResolutionTier(size)
+		switch resolution {
+		case "480p", "720p", "1080p", "4k":
+		default:
+			return nil, invalidVideoTaskRequest("unsupported MegaAi size %q; use resolution and ratio", size)
+		}
+		out["resolution"] = resolution
+		if ratio == "" {
+			if sizeRatio := videoAspectRatioFromSize(size); sizeRatio != "" {
+				if size == "854x480" {
+					sizeRatio = "16:9"
+				}
+				if size == "480x854" {
+					sizeRatio = "9:16"
+				}
+				out["ratio"] = sizeRatio
+			}
+		}
 	}
 	for _, key := range []string{"resolution", "seed", "referenceImages", "referenceVideos", "referenceAudios",
 		"generate_audio", "content", "images", "videos", "audios"} {

@@ -374,8 +374,12 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 		return nil, err
 	}
 	if quote != nil {
-		claim, err := s.settlement.ReservePrepared(ctx, reserveCommand)
+		// The task is durable now; admission must survive client disconnects just like provider dispatch.
+		reserveCtx, cancelReserve := videoTaskPersistenceContext(ctx)
+		claim, err := s.settlement.ReservePrepared(reserveCtx, reserveCommand)
+		cancelReserve()
 		if err != nil {
+			logger.LegacyPrintf("service.video_task", "video task admission reservation failed before provider dispatch: task_id=%s account_id=%d request_context_err=%v err=%v", publicTaskID, account.ID, ctx.Err(), err)
 			return nil, err
 		}
 		if claim == nil || !claim.Claimed {

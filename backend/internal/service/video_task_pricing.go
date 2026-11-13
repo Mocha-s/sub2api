@@ -468,13 +468,13 @@ func resolveVideoTaskResolution(payload map[string]any, model string) string {
 func NormalizeVideoResolutionTier(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case "854x480", "480p":
+	case "854x480", "480x854", "480p":
 		return "480p"
-	case "1280x720", "720p":
+	case "1280x720", "720x1280", "720p":
 		return "720p"
-	case "1920x1080", "1080p":
+	case "1920x1080", "1080x1920", "1080p":
 		return "1080p"
-	case "3840x2160", "2160p", "4k":
+	case "3840x2160", "2160x3840", "2160p", "4k":
 		return "4k"
 	default:
 		return value
