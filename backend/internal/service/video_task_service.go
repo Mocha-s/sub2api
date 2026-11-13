@@ -272,7 +272,7 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 				GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
 				RequestedModel: requestedModel, UpstreamModel: upstreamModel,
 			})
-			if pricingSelection.Pricing != nil && (pricingSelection.Pricing.BillingMode == BillingModeVideo || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
+			if pricingSelection.Pricing != nil && (isVideoBillingMode(pricingSelection.Pricing.BillingMode) || pricingSelection.Pricing.BillingMode == BillingModePerRequest) {
 				resolved, err := ResolveVideoTaskQuote(req.RawBody, pricingSelection.BillingModel, pricingSelection.Pricing, pricingSelection.RateMultiplier, pricingSelection.AccountRateMultiplier)
 				if err != nil {
 					if selection.ReleaseFunc != nil {
@@ -816,7 +816,7 @@ func (s *VideoTaskService) Estimate(ctx context.Context, params VideoTaskEstimat
 			GroupID: groupID, UserID: params.User.ID, APIKey: params.APIKey, Account: account,
 			RequestedModel: requestedModel, UpstreamModel: upstreamModel,
 		})
-		if pricing.Pricing != nil && (pricing.Pricing.BillingMode == BillingModeVideo || pricing.Pricing.BillingMode == BillingModePerRequest) {
+		if pricing.Pricing != nil && (isVideoBillingMode(pricing.Pricing.BillingMode) || pricing.Pricing.BillingMode == BillingModePerRequest) {
 			resolved, err := ResolveVideoTaskQuote(params.Body, pricing.BillingModel, pricing.Pricing, pricing.RateMultiplier, pricing.AccountRateMultiplier)
 			if err != nil {
 				return nil, err
@@ -850,7 +850,7 @@ func applyVideoTaskEstimateQuote(result *VideoTaskEstimateResult, quote VideoTas
 	response["billing_model"] = quote.BillingModel
 	response["effective"] = quote.Effective
 	switch quote.BillingMode {
-	case BillingModeVideo:
+	case BillingModeVideo, BillingModeVideoReference:
 		delete(response, "per_request_price_usd")
 		response["unit_price_usd"] = quote.UnitPriceUSD
 	case BillingModePerRequest:

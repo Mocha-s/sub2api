@@ -356,7 +356,7 @@ func plazaImageDisplayPricing(p *ChannelModelPricing, g *Group) *ChannelModelPri
 // 分组未配任何视频价、渠道定价缺失或定价非视频模式时原样返回。返回克隆，不修改入参
 // （渠道定价指针指向缓存共享数据）。
 func plazaVideoDisplayPricing(p *ChannelModelPricing, g *Group, modelName string) *ChannelModelPricing {
-	if p == nil || g == nil || p.BillingMode != BillingModeVideo {
+	if p == nil || g == nil || !isVideoBillingMode(p.BillingMode) {
 		return p
 	}
 	tiers := []string{VideoBillingResolution480P, VideoBillingResolution720P, VideoBillingResolution1080P}

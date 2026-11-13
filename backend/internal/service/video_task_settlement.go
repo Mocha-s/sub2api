@@ -320,7 +320,7 @@ func buildVideoTaskSettlementUsage(input VideoTaskSettlementCreateInput, billing
 		channelID = &input.ChannelID
 	}
 	usage := &UsageLog{UserID: input.Params.User.ID, APIKeyID: input.Params.APIKey.ID, AccountID: input.Account.ID, RequestID: VideoTaskChargeRequestID(input.PublicTaskID), Model: input.Quote.BillingModel, RequestedModel: requestedModel, UpstreamModel: optionalTrimmedStringPtr(input.UpstreamModel), ChannelID: channelID, GroupID: groupID, SubscriptionID: subscriptionID, BillingMode: &mode, BillingType: billingType, RequestType: RequestTypeSync, InboundEndpoint: &inbound, UpstreamEndpoint: &upstream, TotalCost: input.Quote.GrossCostUSD, ActualCost: 0, RateMultiplier: input.Quote.RateMultiplier, AccountRateMultiplier: &input.Quote.AccountRateMultiplier, AccountStatsCost: &input.Quote.AccountCostUSD, CreatedAt: time.Now()}
-	if input.Quote.BillingMode == BillingModeVideo {
+	if isVideoBillingMode(input.Quote.BillingMode) {
 		usage.VideoCount = input.Quote.Effective.VideoCount
 		usage.VideoResolution = optionalTrimmedStringPtr(input.Quote.Effective.Resolution)
 		usage.VideoDurationSeconds = &input.Quote.Effective.Seconds

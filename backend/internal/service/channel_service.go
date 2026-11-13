@@ -770,7 +770,7 @@ func checkBillingModeRequirements(p ChannelModelPricing) error {
 	if !p.BillingMode.IsValid() {
 		return infraerrors.BadRequest("INVALID_BILLING_MODE", fmt.Sprintf("unsupported billing_mode %q", p.BillingMode))
 	}
-	if p.BillingMode == BillingModeVideo {
+	if p.BillingMode == BillingModeVideo || p.BillingMode == BillingModeVideoReference {
 		if p.VideoDefaultSeconds == nil || *p.VideoDefaultSeconds <= 0 || *p.VideoDefaultSeconds > videoTaskMaxSeconds {
 			return infraerrors.BadRequest("INVALID_VIDEO_DEFAULT_SECONDS", "video_default_seconds must be between 1 and 3600")
 		}
@@ -825,7 +825,7 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"image_output_price", p.ImageOutputPrice},
 		{"per_request_price", p.PerRequestPrice},
 	}
-	if p.BillingMode == BillingModeVideo {
+	if isVideoBillingMode(p.BillingMode) {
 		checks = append(checks, struct {
 			field string
 			val   *float64
@@ -836,7 +836,7 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 			if *c.val < 0 {
 				return infraerrors.BadRequest("NEGATIVE_PRICE", fmt.Sprintf("%s must be >= 0", c.field))
 			}
-			if p.BillingMode == BillingModeVideo && (math.IsNaN(*c.val) || math.IsInf(*c.val, 0)) {
+			if isVideoBillingMode(p.BillingMode) && (math.IsNaN(*c.val) || math.IsInf(*c.val, 0)) {
 				return infraerrors.BadRequest("INVALID_VIDEO_PRICE", fmt.Sprintf("%s must be finite", c.field))
 			}
 		}
@@ -857,7 +857,7 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 
 func checkIntervalsHavePrices(p ChannelModelPricing) error {
 	for _, iv := range p.Intervals {
-		if p.BillingMode == BillingModeVideo {
+		if isVideoBillingMode(p.BillingMode) {
 			if iv.VideoPricePerSecond == nil {
 				return infraerrors.BadRequest("INTERVAL_MISSING_PRICE", "video interval has no price fields set: video_price_per_second is required")
 			}

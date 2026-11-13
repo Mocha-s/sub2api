@@ -80,7 +80,7 @@ func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, in
 			}
 		}
 	}
-	if selection.Pricing == nil || (selection.Pricing.BillingMode != BillingModeVideo && selection.Pricing.BillingMode != BillingModePerRequest) {
+	if selection.Pricing == nil || (!isVideoBillingMode(selection.Pricing.BillingMode) && selection.Pricing.BillingMode != BillingModePerRequest) {
 		selection.Pricing = nil
 		return selection
 	}
@@ -112,7 +112,7 @@ func (s *OpenAIGatewayService) resolveVideoTaskPricingAt(ctx context.Context, in
 	if selection.Pricing.BillingMode == BillingModePerRequest {
 		selection.RateMultiplier, _ = computePeakAwareMultipliers(apiKeyWithBillingGroup(input.APIKey, billingGroup, billingGroupID), baseMultiplier, now)
 	}
-	if selection.Pricing.BillingMode == BillingModeVideo {
+	if isVideoBillingMode(selection.Pricing.BillingMode) {
 		videoRateKey := input.APIKey
 		if _, composite := CompositeBillingGroupFromContext(ctx); composite {
 			videoRateKey = apiKeyWithBillingGroup(input.APIKey, billingGroup, billingGroupID)

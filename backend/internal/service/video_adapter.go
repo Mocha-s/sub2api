@@ -114,6 +114,7 @@ func newDefaultVideoAdapterRegistry(openai *OpenAIGatewayService) videoAdapterRe
 		VideoAdapterCangyuanReferenceURLs:  NewCangyuanReferenceURLsVideoAdapter(openai),
 		VideoAdapterNewAPIVideoGenerations: NewNewAPIVideoGenerationsAdapter(openai),
 		VideoAdapterAutoVideoGenerations:   NewAutoVideoGenerationsAdapter(openai),
+		VideoAdapterMegaAi:                 NewMegaAiVideoAdapter(openai),
 	}
 }
 
@@ -139,7 +140,7 @@ func resolveVideoAdapterName(account *Account, task *VideoTask) (string, error) 
 		return VideoAdapterJimengOpenAIVideos, nil
 	}
 	switch name {
-	case VideoAdapterJimengOpenAIVideos, VideoAdapterSeedanceAPIV1, VideoAdapterOpenAIVideosDuration, VideoAdapterNewAPIVideoGenerations, VideoAdapterAutoVideoGenerations, VideoAdapterCangyuanReferenceURLs:
+	case VideoAdapterJimengOpenAIVideos, VideoAdapterSeedanceAPIV1, VideoAdapterOpenAIVideosDuration, VideoAdapterNewAPIVideoGenerations, VideoAdapterAutoVideoGenerations, VideoAdapterCangyuanReferenceURLs, VideoAdapterMegaAi:
 		return name, nil
 	default:
 		return "", fmt.Errorf("unknown video_adapter %q", name)

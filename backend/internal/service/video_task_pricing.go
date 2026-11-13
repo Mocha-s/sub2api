@@ -83,6 +83,8 @@ func ResolveVideoTaskQuote(body []byte, billingModel string, pricing *ChannelMod
 	switch pricing.BillingMode {
 	case BillingModeVideo:
 		return resolveDurationVideoTaskQuote(body, billingModel, pricing, rateMultiplier, accountRateMultiplier)
+	case BillingModeVideoReference:
+		return resolveVideoReferenceTaskQuote(body, billingModel, pricing, rateMultiplier, accountRateMultiplier)
 	case BillingModePerRequest:
 		return resolvePerRequestVideoTaskQuote(body, billingModel, pricing, rateMultiplier, accountRateMultiplier)
 	default:
@@ -150,6 +152,86 @@ func resolveDurationVideoTaskQuote(body []byte, billingModel string, pricing *Ch
 		RateMultiplier:        rateMultiplier,
 		AccountRateMultiplier: accountRateMultiplier,
 	}, nil
+}
+
+// videoReferenceExtraSeconds 是带视频参考时额外计费的固定秒数。
+// shortcut: 固定 5s，当各上游参考处理时长不同时升级为可配置字段。
+const videoReferenceExtraSeconds = 5
+
+// resolveVideoReferenceTaskQuote 与 video 模式相同，但检测到 referenceVideos 时额外计费若干秒。
+func resolveVideoReferenceTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
+	if pricing.VideoDefaultSeconds == nil || *pricing.VideoDefaultSeconds <= 0 || *pricing.VideoDefaultSeconds > videoTaskMaxSeconds {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video_default_seconds must be between 1 and 3600")
+	}
+	if !validVideoPriceMultiplier(rateMultiplier) || !validVideoPriceMultiplier(accountRateMultiplier) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video pricing multipliers must be finite and non-negative")
+	}
+
+	payload, err := decodeVideoPricingPayload(body)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoTaskRequest("invalid video create JSON: %v", err)
+	}
+	seconds, err := resolveVideoTaskSeconds(payload, *pricing.VideoDefaultSeconds, pricing.VideoAllowedSeconds)
+	if err != nil {
+		return VideoTaskQuote{}, err
+	}
+	if hasReferenceVideos(payload) {
+		seconds += videoReferenceExtraSeconds
+	}
+	resolution := resolveVideoTaskResolution(payload, billingModel)
+	unitPrice, err := resolveVideoTaskUnitPrice(pricing, resolution)
+	if err != nil {
+		return VideoTaskQuote{}, err
+	}
+
+	grossCost, err := NormalizeVideoTaskPricingAmount(unitPrice * float64(seconds))
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video gross cost must be finite")
+	}
+	actualCost := grossCost * rateMultiplier
+	if !validVideoPriceMultiplier(actualCost) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video actual cost must be finite")
+	}
+	accountUnitPrice, _ := decimal.NewFromFloat(unitPrice).Round(10).Float64()
+	accountBaseCost, err := NormalizeVideoTaskPricingAmount(accountUnitPrice * float64(seconds))
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video account base cost is outside pricing precision")
+	}
+	accountCost := accountBaseCost * accountRateMultiplier
+	if !validVideoPriceMultiplier(accountCost) {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video account cost must be finite")
+	}
+	actualCost, err = NormalizeVideoTaskSettlementAmount(actualCost)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video actual cost is outside applied precision")
+	}
+	accountCost, err = NormalizeVideoTaskSettlementAmount(accountCost)
+	if err != nil {
+		return VideoTaskQuote{}, invalidVideoPricingConfig("video account cost is outside applied precision")
+	}
+	return VideoTaskQuote{
+		BillingMode:           BillingModeVideoReference,
+		BillingModel:          strings.TrimSpace(billingModel),
+		Effective:             VideoTaskEffectiveParams{Seconds: seconds, Resolution: resolution, VideoCount: 1},
+		UnitPriceUSD:          unitPrice,
+		GrossCostUSD:          grossCost,
+		ActualCostUSD:         actualCost,
+		AccountUnitPriceUSD:   accountUnitPrice,
+		AccountBaseCostUSD:    accountBaseCost,
+		AccountCostUSD:        accountCost,
+		RateMultiplier:        rateMultiplier,
+		AccountRateMultiplier: accountRateMultiplier,
+	}, nil
+}
+
+// hasReferenceVideos 检测请求体是否携带了 referenceVideos 且不为空。
+func hasReferenceVideos(payload map[string]any) bool {
+	v, ok := payload["referenceVideos"]
+	if !ok {
+		return false
+	}
+	arr, ok := v.([]any)
+	return ok && len(arr) > 0
 }
 
 func resolvePerRequestVideoTaskQuote(body []byte, billingModel string, pricing *ChannelModelPricing, rateMultiplier, accountRateMultiplier float64) (VideoTaskQuote, error) {
@@ -508,7 +590,7 @@ func validVideoTaskQuote(quote *VideoTaskQuote) bool {
 	count := decimal.NewFromInt(int64(quote.Effective.VideoCount))
 	var gross, accountBase decimal.Decimal
 	switch quote.BillingMode {
-	case BillingModeVideo:
+	case BillingModeVideo, BillingModeVideoReference:
 		if quote.Effective.Seconds <= 0 || quote.Effective.Seconds > videoTaskMaxSeconds || strings.TrimSpace(quote.Effective.Resolution) == "" {
 			return false
 		}

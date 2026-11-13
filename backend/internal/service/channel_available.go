@@ -157,7 +157,7 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 	if p == nil {
 		return true
 	}
-	if p.BillingMode == BillingModeVideo {
+	if isVideoBillingMode(p.BillingMode) {
 		if p.VideoPricePerSecond != nil {
 			return false
 		}
@@ -209,7 +209,7 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 	if existing != nil {
 		description = existing.Description
 	}
-	if mode == BillingModeVideo {
+	if isVideoBillingMode(mode) {
 		return existing
 	}
 

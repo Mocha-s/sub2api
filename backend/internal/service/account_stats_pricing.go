@@ -63,7 +63,7 @@ func resolveAccountStatsCost(
 		return &cost
 	}
 
-	if billingMode == BillingModeImage || billingMode == BillingModePerRequest || billingMode == BillingModeVideo {
+	if billingMode == BillingModeImage || billingMode == BillingModePerRequest || isVideoBillingMode(billingMode) {
 		return nil
 	}
 
@@ -203,7 +203,7 @@ func calculateStatsCost(pricing *ChannelModelPricing, tokens UsageTokens, reques
 		return nil
 	}
 	switch pricing.BillingMode {
-	case BillingModePerRequest, BillingModeImage, BillingModeVideo:
+	case BillingModePerRequest, BillingModeImage, BillingModeVideo, BillingModeVideoReference:
 		return calculatePerRequestStatsCost(pricing, requestCount)
 	default:
 		return calculateTokenStatsCost(pricing, tokens)
@@ -267,7 +267,7 @@ func applyVideoAccountStatsPricing(quote *VideoTaskQuote, pricing *ChannelModelP
 		quote.AccountCostUSD = accountCost
 		return
 	}
-	if quote.BillingMode != BillingModeVideo {
+	if !isVideoBillingMode(quote.BillingMode) {
 		return
 	}
 	duration, resolution := quote.Effective.Seconds, quote.Effective.Resolution
