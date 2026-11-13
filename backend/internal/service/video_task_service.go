@@ -61,13 +61,13 @@ type VideoTaskService struct {
 	settlement      videoTaskSettlementOrchestrator
 }
 
-func NewVideoTaskService(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskService {
+func NewVideoTaskService(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService, storage *ImageStorageSettingService) *VideoTaskService {
 	return &VideoTaskService{
 		repo:            repo,
 		accountLookup:   accountRepo,
 		selector:        openai,
 		pricingResolver: openai,
-		provider:        NewAccountVideoTaskProvider(openai),
+		provider:        NewAccountVideoTaskProvider(openai, storage.Resolver()),
 		usageRecorder:   openai,
 		settlement:      settlement,
 	}
@@ -380,6 +380,19 @@ func (s *VideoTaskService) Create(ctx context.Context, params VideoTaskCreatePar
 		cancelReserve()
 		if err != nil {
 			logger.LegacyPrintf("service.video_task", "video task admission reservation failed before provider dispatch: task_id=%s account_id=%d request_context_err=%v err=%v", publicTaskID, account.ID, ctx.Err(), err)
+			// These business failures roll back reservation; don't mislabel them as interrupted submissions.
+			if errors.Is(err, ErrVideoTaskInsufficientBalance) || errors.Is(err, ErrVideoTaskSubscriptionIneligible) {
+				code := "VIDEO_TASK_INSUFFICIENT_BALANCE"
+				if errors.Is(err, ErrVideoTaskSubscriptionIneligible) {
+					code = "VIDEO_TASK_SUBSCRIPTION_INELIGIBLE"
+				}
+				failCtx, cancelFail := videoTaskPersistenceContext(ctx)
+				_, persistErr := s.repo.FailAdmission(failCtx, publicTaskID, code, err.Error())
+				cancelFail()
+				if persistErr != nil {
+					return nil, errors.Join(err, persistErr)
+				}
+			}
 			return nil, err
 		}
 		if claim == nil || !claim.Claimed {
@@ -1208,7 +1221,9 @@ func videoTaskIsInterruptedAdmissionOrphan(task *VideoTask) bool {
 	if task == nil || task.Status != VideoTaskStatusFailed || strings.TrimSpace(task.ProviderTaskID) != "" || task.SubmittedAt != nil {
 		return false
 	}
-	if videoTaskMetadataString(task.Metadata, "reconciliation_error_code") != VideoTaskAdmissionInterruptedCode {
+	switch videoTaskMetadataString(task.Metadata, "reconciliation_error_code") {
+	case VideoTaskAdmissionInterruptedCode, "VIDEO_TASK_INSUFFICIENT_BALANCE", "VIDEO_TASK_SUBSCRIPTION_INELIGIBLE":
+	default:
 		return false
 	}
 	providerCalled, ok := task.Metadata["provider_called"].(bool)

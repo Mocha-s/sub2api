@@ -459,6 +459,15 @@ func TestVideoTaskHandlerContentHeadReturnsHeadersWithoutBody(t *testing.T) {
 	require.Equal(t, http.MethodHead, fake.contentParams.Method)
 }
 
+func TestVideoTaskServiceErrorRecordsUpstreamStatus(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	videoTaskServiceError(c, &service.OpenAIVideoUpstreamError{StatusCode: 400, Body: `{"message":"images[0] must be an absolute http/https URL"}`})
+	require.Equal(t, 400, recorder.Code)
+	require.Equal(t, 400, c.GetInt(service.OpsUpstreamStatusCodeKey))
+	require.Contains(t, c.GetString(service.OpsUpstreamErrorMessageKey), "absolute http/https")
+}
+
 func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -477,6 +486,14 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			err:        fmt.Errorf("wrapped: %w", service.ErrVideoGenerationPermissionDenied),
 			wantStatus: http.StatusForbidden,
 			wantType:   "permission_error",
+		},
+		{
+			name:       "insufficient video balance",
+			handler:    "create",
+			err:        fmt.Errorf("wrapped: %w", service.ErrVideoTaskInsufficientBalance),
+			wantStatus: http.StatusPaymentRequired,
+			wantType:   "insufficient_quota",
+			wantMsg:    service.ErrVideoTaskInsufficientBalance.Error(),
 		},
 		{
 			name:       "idempotency conflict",

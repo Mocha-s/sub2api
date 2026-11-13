@@ -105,7 +105,7 @@ type VideoMaterialAssetProvider interface {
 
 type videoAdapterRegistry map[string]VideoTaskAdapter
 
-func newDefaultVideoAdapterRegistry(openai *OpenAIGatewayService) videoAdapterRegistry {
+func newDefaultVideoAdapterRegistry(openai *OpenAIGatewayService, storage ImageStorageResolver) videoAdapterRegistry {
 	jimeng := NewJimengOpenAIVideoAdapter(openai)
 	return videoAdapterRegistry{
 		jimeng.Name():                      jimeng,
@@ -114,7 +114,7 @@ func newDefaultVideoAdapterRegistry(openai *OpenAIGatewayService) videoAdapterRe
 		VideoAdapterCangyuanReferenceURLs:  NewCangyuanReferenceURLsVideoAdapter(openai),
 		VideoAdapterNewAPIVideoGenerations: NewNewAPIVideoGenerationsAdapter(openai),
 		VideoAdapterAutoVideoGenerations:   NewAutoVideoGenerationsAdapter(openai),
-		VideoAdapterMegaAi:                 NewMegaAiVideoAdapter(openai),
+		VideoAdapterMegaAi:                 NewMegaAiVideoAdapter(openai, storage),
 	}
 }
 
@@ -151,8 +151,8 @@ type accountVideoTaskProvider struct {
 	registry videoAdapterRegistry
 }
 
-func NewAccountVideoTaskProvider(openai *OpenAIGatewayService) VideoTaskProvider {
-	return &accountVideoTaskProvider{registry: newDefaultVideoAdapterRegistry(openai)}
+func NewAccountVideoTaskProvider(openai *OpenAIGatewayService, storage ImageStorageResolver) VideoTaskProvider {
+	return &accountVideoTaskProvider{registry: newDefaultVideoAdapterRegistry(openai, storage)}
 }
 
 func (p *accountVideoTaskProvider) adapter(account *Account, task *VideoTask) (VideoTaskAdapter, error) {

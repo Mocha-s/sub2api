@@ -625,6 +625,7 @@ type VideoTaskProviderUpdate struct {
 }
 
 type VideoTaskRepository interface {
+	FailAdmission(ctx context.Context, publicTaskID, code, message string) (bool, error)
 	Create(ctx context.Context, input VideoTaskCreateInput) (*VideoTask, error)
 	UpdateSettlementSummary(ctx context.Context, publicTaskID string, summary VideoTaskSettlementSummary) error
 	PersistUpstreamFallback(ctx context.Context, publicTaskID string, fallback VideoTaskUpstreamFallback) error

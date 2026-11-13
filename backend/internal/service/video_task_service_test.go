@@ -30,7 +30,7 @@ func TestVideoTaskProviderContextSurvivesClientCancellationWithDeadline(t *testi
 }
 
 func TestNewVideoTaskServiceUsesAccountVideoTaskProvider(t *testing.T) {
-	svc := NewVideoTaskService(newFakeVideoTaskRepository(nil), nil, nil, nil)
+	svc := NewVideoTaskService(newFakeVideoTaskRepository(nil), nil, nil, nil, nil)
 
 	_, ok := svc.provider.(*accountVideoTaskProvider)
 	require.True(t, ok, "NewVideoTaskService should use account-level provider")
@@ -2438,6 +2438,10 @@ func (r *fakeVideoTaskRepository) ListForUser(ctx context.Context, params VideoT
 
 func (r *fakeVideoTaskRepository) UpdateSubmit(ctx context.Context, publicTaskID string, update VideoTaskSubmitUpdate) error {
 	return r.AttachUpstream(ctx, publicTaskID, update)
+}
+
+func (r *fakeVideoTaskRepository) FailAdmission(ctx context.Context, publicTaskID, code, message string) (bool, error) {
+	return r.UpdateFromProvider(ctx, publicTaskID, VideoTaskProviderUpdate{Status: VideoTaskStatusFailed, ErrorMessage: message, Metadata: map[string]any{"reconciliation_error_code": code, "provider_called": false}})
 }
 
 func (r *fakeVideoTaskRepository) UpdateFromProvider(ctx context.Context, publicTaskID string, update VideoTaskProviderUpdate) (bool, error) {

@@ -16,11 +16,12 @@ import (
 const VideoAdapterMegaAi = "megaai"
 
 type megaAiVideoAdapter struct {
-	provider *openAICompatibleVideoProvider
+	provider     *openAICompatibleVideoProvider
+	imageStorage ImageStorageResolver
 }
 
-func NewMegaAiVideoAdapter(openai *OpenAIGatewayService) VideoTaskAdapter {
-	return &megaAiVideoAdapter{provider: &openAICompatibleVideoProvider{client: http.DefaultClient, openai: openai}}
+func NewMegaAiVideoAdapter(openai *OpenAIGatewayService, storage ImageStorageResolver) VideoTaskAdapter {
+	return &megaAiVideoAdapter{provider: &openAICompatibleVideoProvider{client: http.DefaultClient, openai: openai}, imageStorage: storage}
 }
 
 func (a *megaAiVideoAdapter) Name() string { return VideoAdapterMegaAi }
@@ -57,6 +58,10 @@ func (a *megaAiVideoAdapter) Create(ctx context.Context, account *Account, body 
 		return nil, err
 	}
 	forwardBody, err := megaAiCreateBody(body, upstreamModel)
+	if err != nil {
+		return nil, err
+	}
+	forwardBody, err = a.prepareInlineImages(ctx, forwardBody)
 	if err != nil {
 		return nil, err
 	}

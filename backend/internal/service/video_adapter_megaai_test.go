@@ -21,7 +21,7 @@ func TestMegaAiDurationDoesNotExcludeMatchingAccount(t *testing.T) {
 		"model_mapping": map[string]any{"T1-seedance-2.5": "T1-seedance-2.5"},
 	}}
 	body := []byte(`{"model":"T1-seedance-2.5","prompt":"waves","duration":15}`)
-	provider := NewAccountVideoTaskProvider(nil).(*accountVideoTaskProvider)
+	provider := NewAccountVideoTaskProvider(nil, nil).(*accountVideoTaskProvider)
 	require.True(t, account.IsModelSupported("T1-seedance-2.5"))
 	err := provider.ValidateCreate(context.Background(), account, body, "application/json", "T1-seedance-2.5")
 	require.Error(t, err)

@@ -17,6 +17,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -103,6 +104,8 @@ func (h *VideoTaskHandler) CreateGenerationsCompat(c *gin.Context) {
 }
 
 func (h *VideoTaskHandler) createWithBody(c *gin.Context, svc videoTaskService, apiKey *service.APIKey, body []byte, endpoint string, unified bool) {
+	setOpsRequestContext(c, gjson.GetBytes(body, "model").String(), false)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(false, false)))
 	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, body) {
 		return
 	}
@@ -672,10 +675,15 @@ func videoTaskServiceError(c *gin.Context, err error) {
 	var upstreamErr *service.OpenAIVideoUpstreamError
 	if errors.As(err, &upstreamErr) {
 		status, errType := videoTaskUpstreamErrorStatus(upstreamErr.StatusCode)
+		service.SetOpsUpstreamError(c, upstreamErr.StatusCode, videoTaskUpstreamErrorMessage(upstreamErr), "")
 		videoTaskErrorResponse(c, status, errType, videoTaskUpstreamErrorMessage(upstreamErr))
 		return
 	}
 	switch {
+	case errors.Is(err, service.ErrVideoTaskInsufficientBalance):
+		videoTaskErrorResponse(c, http.StatusPaymentRequired, "insufficient_quota", service.ErrVideoTaskInsufficientBalance.Error())
+	case errors.Is(err, service.ErrVideoTaskSubscriptionIneligible):
+		videoTaskErrorResponse(c, http.StatusForbidden, "permission_error", service.ErrVideoTaskSubscriptionIneligible.Error())
 	case errors.Is(err, service.ErrVideoTaskNotFound):
 		videoTaskErrorResponse(c, http.StatusNotFound, "not_found_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoGenerationPermissionDenied):
@@ -689,6 +697,8 @@ func videoTaskServiceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrNoAvailableAccounts):
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskAccountUnavailable):
+		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
+	case infraerrors.IsServiceUnavailable(err):
 		videoTaskErrorResponse(c, http.StatusServiceUnavailable, "server_error", videoTaskErrorMessage(err))
 	case errors.Is(err, service.ErrVideoTaskActionUnsupported):
 		videoTaskErrorResponse(c, http.StatusBadRequest, "invalid_request_error", videoTaskErrorMessage(err))

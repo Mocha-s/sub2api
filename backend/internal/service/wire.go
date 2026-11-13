@@ -60,7 +60,7 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 }
 
 func ProvideVideoTaskPoller(repo VideoTaskRepository, accountRepo AccountRepository, openai *OpenAIGatewayService, settlement *VideoTaskSettlementService) *VideoTaskPoller {
-	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai), settlement)
+	poller := NewVideoTaskPoller(repo, accountRepo, NewAccountVideoTaskProvider(openai, nil), settlement)
 	poller.Start()
 	return poller
 }

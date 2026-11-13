@@ -307,7 +307,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	imageTaskLogRepository := repository.NewImageTaskLogRepository(db)
 	imageTaskLogService := service.NewImageTaskLogService(imageTaskLogRepository, openAIGatewayService)
 	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(imageTaskLogService, openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver)
-	videoTaskService := service.NewVideoTaskService(videoTaskRepository, accountRepository, openAIGatewayService, videoTaskSettlementService)
+	videoTaskService := service.NewVideoTaskService(videoTaskRepository, accountRepository, openAIGatewayService, videoTaskSettlementService, imageStorageSettingService)
 	videoTaskHandler := handler.ProvideVideoTaskHandler(videoTaskService, coordinator)
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
 	totpHandler := handler.NewTotpHandler(totpService)

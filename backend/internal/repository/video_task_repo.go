@@ -27,6 +27,38 @@ func NewVideoTaskRepository(client *dbent.Client, db *sql.DB) service.VideoTaskR
 	return &videoTaskRepository{client: client, db: db}
 }
 
+// FailAdmission serializes with reservation so a losing request cannot fail a recovered submission.
+func (r *videoTaskRepository) FailAdmission(ctx context.Context, publicTaskID, code, message string) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	task, err := lockSettlementTask(ctx, tx, publicTaskID)
+	if err != nil {
+		return false, err
+	}
+	if task.status != string(service.VideoTaskStatusSubmitting) || task.providerEvidence || task.usageLogID.Valid {
+		return false, nil
+	}
+	_, err = getSettlementForTask(ctx, tx, task.id, true)
+	if err == nil {
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE video_tasks SET status='failed',error_code=$2::text,error_message=$3::text,completed_at=NOW(),next_poll_at=NULL,
+		result_metadata=COALESCE(result_metadata,'{}'::jsonb)||jsonb_build_object('reconciliation_error_code',$2::text,'provider_called',false),updated_at=NOW() WHERE id=$1`, task.id, code, message)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *videoTaskRepository) Create(ctx context.Context, input service.VideoTaskCreateInput) (*service.VideoTask, error) {
 	client := clientFromContext(ctx, r.client)
 	metadata := cloneAnyMap(input.Metadata)

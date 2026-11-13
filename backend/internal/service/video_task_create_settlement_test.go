@@ -48,6 +48,21 @@ func TestVideoTaskCreateImmediateProviderFailurePersistsThenReleasesWithoutCaptu
 	require.Equal(t, VideoTaskStatusFailed, stored.Status)
 }
 
+func TestVideoTaskInsufficientBalanceRecordsAdmissionFailure(t *testing.T) {
+	svc, repo, provider, settlement := pricedVideoTaskServiceFixture(&videoTaskServiceTestEvents{})
+	settlement.reserveErr = ErrVideoTaskInsufficientBalance
+	_, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: []byte(`{"model":"video-test","prompt":"test","seconds":5}`), ContentType: "application/json"})
+	require.ErrorIs(t, err, ErrVideoTaskInsufficientBalance)
+	require.Zero(t, provider.createCalls)
+	require.Len(t, repo.tasks, 1)
+	for _, task := range repo.tasks {
+		require.Equal(t, VideoTaskStatusFailed, task.Status)
+		require.Contains(t, task.ErrorMessage, "insufficient balance")
+		require.Equal(t, false, task.Metadata["provider_called"])
+		require.Equal(t, "VIDEO_TASK_INSUFFICIENT_BALANCE", task.Metadata["reconciliation_error_code"])
+	}
+}
+
 func TestVideoTaskCreateImmediateCancelledOrExpiredReleasesReservedSettlement(t *testing.T) {
 	for _, status := range []VideoTaskStatus{VideoTaskStatusCancelled, VideoTaskStatusExpired} {
 		t.Run(string(status), func(t *testing.T) {
@@ -581,39 +596,41 @@ func TestVideoTaskServiceIdempotencyCreateConflictUsesSettlementAwareReplay(t *t
 }
 
 func TestVideoTaskServiceInterruptedOrphanReplayReturnsPersistedFailureWithoutResubmission(t *testing.T) {
-	for _, uniqueConflict := range []bool{false, true} {
-		name := "prelookup"
-		if uniqueConflict {
-			name = "unique conflict"
-		}
-		t.Run(name, func(t *testing.T) {
-			events := &videoTaskServiceTestEvents{}
-			svc, tasks, provider, _ := pricedVideoTaskServiceFixture(events)
-			body := []byte(`{"model":"seedance","prompt":"city","seconds":5}`)
-			req, err := ParseVideoTaskCreateEnvelope(body)
-			require.NoError(t, err)
-			quote := VideoTaskQuote{BillingMode: BillingModeVideo, BillingModel: "seedance", Effective: VideoTaskEffectiveParams{Seconds: 5, Resolution: "720p", VideoCount: 1}, UnitPriceUSD: 0.08, GrossCostUSD: 0.4, ActualCostUSD: 0.2, AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 0.4, AccountCostUSD: 0.4, RateMultiplier: 0.5, AccountRateMultiplier: 1}
-			tasks.seedTask(&VideoTask{PublicTaskID: "task_interrupted", APIKeyID: 42, UserID: 7, RequestHash: req.RequestHash, RequestBody: body, Status: VideoTaskStatusFailed, ErrorMessage: VideoTaskAdmissionInterruptedMessage, Metadata: map[string]any{
-				"idempotency_key": "interrupted-idem", "request_metadata": map[string]any{"video_pricing_snapshot": quote},
-				"reconciliation_error_code": VideoTaskAdmissionInterruptedCode, "provider_called": false,
-			}})
+	for _, code := range []string{VideoTaskAdmissionInterruptedCode, "VIDEO_TASK_INSUFFICIENT_BALANCE", "VIDEO_TASK_SUBSCRIPTION_INELIGIBLE"} {
+		for _, uniqueConflict := range []bool{false, true} {
+			name := code + "/prelookup"
 			if uniqueConflict {
-				tasks.idempotencyMisses = 1
-				tasks.createErr = errors.New("duplicate idempotency key")
+				name = code + "/unique conflict"
 			}
-			settlementRepo := &videoTaskSettlementRepoStub{getErr: ErrVideoTaskSettlementNotFound}
-			svc.settlement = &VideoTaskSettlementService{repo: settlementRepo, tasks: tasks}
+			t.Run(name, func(t *testing.T) {
+				events := &videoTaskServiceTestEvents{}
+				svc, tasks, provider, _ := pricedVideoTaskServiceFixture(events)
+				body := []byte(`{"model":"seedance","prompt":"city","seconds":5}`)
+				req, err := ParseVideoTaskCreateEnvelope(body)
+				require.NoError(t, err)
+				quote := VideoTaskQuote{BillingMode: BillingModeVideo, BillingModel: "seedance", Effective: VideoTaskEffectiveParams{Seconds: 5, Resolution: "720p", VideoCount: 1}, UnitPriceUSD: 0.08, GrossCostUSD: 0.4, ActualCostUSD: 0.2, AccountUnitPriceUSD: 0.08, AccountBaseCostUSD: 0.4, AccountCostUSD: 0.4, RateMultiplier: 0.5, AccountRateMultiplier: 1}
+				tasks.seedTask(&VideoTask{PublicTaskID: "task_interrupted", APIKeyID: 42, UserID: 7, RequestHash: req.RequestHash, RequestBody: body, Status: VideoTaskStatusFailed, ErrorMessage: VideoTaskAdmissionInterruptedMessage, Metadata: map[string]any{
+					"idempotency_key": "interrupted-idem", "request_metadata": map[string]any{"video_pricing_snapshot": quote},
+					"reconciliation_error_code": code, "provider_called": false,
+				}})
+				if uniqueConflict {
+					tasks.idempotencyMisses = 1
+					tasks.createErr = errors.New("duplicate idempotency key")
+				}
+				settlementRepo := &videoTaskSettlementRepoStub{getErr: ErrVideoTaskSettlementNotFound}
+				svc.settlement = &VideoTaskSettlementService{repo: settlementRepo, tasks: tasks}
 
-			result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "interrupted-idem"})
+				result, err := svc.Create(context.Background(), VideoTaskCreateParams{APIKey: videoTaskTestAPIKey(), User: &User{ID: 7}, Body: body, IdempotencyKey: "interrupted-idem"})
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
-			require.JSONEq(t, `{"id":"task_interrupted","object":"video","status":"failed"}`, string(result.ResponseBody))
-			require.Equal(t, 1, settlementRepo.getCalls)
-			require.Zero(t, settlementRepo.reserveCalls)
-			require.Zero(t, provider.createCalls)
-		})
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, VideoTaskStatusFailed, result.Task.Status)
+				require.JSONEq(t, `{"id":"task_interrupted","object":"video","status":"failed"}`, string(result.ResponseBody))
+				require.Equal(t, 1, settlementRepo.getCalls)
+				require.Zero(t, settlementRepo.reserveCalls)
+				require.Zero(t, provider.createCalls)
+			})
+		}
 	}
 }
 
