@@ -3,12 +3,15 @@ package repository
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go/middleware"
 )
 
 // s3ClientParams 描述构造 S3 兼容客户端所需的参数。
@@ -35,6 +38,9 @@ func newS3Client(ctx context.Context, p s3ClientParams) (*s3.Client, error) {
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(p.AccessKeyID, p.SecretAccessKey, ""),
 		),
+		awsconfig.WithHTTPClient(awshttp.NewBuildableClient().WithTransportOptions(func(t *http.Transport) {
+			t.DisableCompression = true
+		})),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
@@ -48,6 +54,14 @@ func newS3Client(ctx context.Context, p s3ClientParams) (*s3.Client, error) {
 			o.UsePathStyle = true
 		}
 		o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
+		// Proxies rewrite Accept-Encoding; signing it breaks MinIO behind Cloudflare.
+		o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+			if _, ok := stack.Finalize.Get("DisableAcceptEncodingGzip"); !ok {
+				return nil // Presigning has no content-encoding middleware.
+			}
+			_, err := stack.Finalize.Remove("DisableAcceptEncodingGzip")
+			return err
+		})
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	}), nil
 }

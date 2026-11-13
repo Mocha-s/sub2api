@@ -4,6 +4,7 @@
 
 import { apiClient } from './client'
 import type { PaginatedResponse } from '@/types'
+import type { AxiosProgressEvent } from 'axios'
 
 export type TaskLogType = 'video' | 'batch_image' | 'image'
 export type TaskLogStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired'
@@ -59,21 +60,23 @@ export async function listTaskLogs(admin: boolean, params: TaskLogQuery, signal?
 }
 
 // 视频和压缩包可能很大，不套用默认的 30 秒超时。
-export async function fetchVideoContent(admin: boolean, taskId: string, signal?: AbortSignal): Promise<Blob> {
+export async function fetchVideoContent(admin: boolean, taskId: string, signal?: AbortSignal, onDownloadProgress?: (event: AxiosProgressEvent) => void): Promise<Blob> {
   const { data } = await apiClient.get(`${base(admin)}/video/${encodeURIComponent(taskId)}/content`, {
     responseType: 'blob',
     timeout: 0,
-    signal
+    signal,
+    onDownloadProgress
   })
   return data
 }
 
-export async function fetchImageContent(admin: boolean, taskId: string, index: number, signal?: AbortSignal): Promise<Blob> {
+export async function fetchImageContent(admin: boolean, taskId: string, index: number, signal?: AbortSignal, onDownloadProgress?: (event: AxiosProgressEvent) => void): Promise<Blob> {
   const { data } = await apiClient.get(`${base(admin)}/image/${encodeURIComponent(taskId)}/content`, {
     params: { index },
     responseType: 'blob',
     timeout: 0,
-    signal
+    signal,
+    onDownloadProgress
   })
   return data
 }

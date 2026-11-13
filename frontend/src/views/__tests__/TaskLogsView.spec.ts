@@ -4,9 +4,9 @@ import type { VueWrapper } from '@vue/test-utils'
 import TaskLogsView from '../TaskLogsView.vue'
 import type { TaskLog } from '@/api/taskLogs'
 
-const { get, showError, saveAs } = vi.hoisted(() => ({ get: vi.fn(), showError: vi.fn(), saveAs: vi.fn() }))
+const { get, showError, showSuccess, saveAs } = vi.hoisted(() => ({ get: vi.fn(), showError: vi.fn(), showSuccess: vi.fn(), saveAs: vi.fn() }))
 vi.mock('@/api/client', () => ({ apiClient: { get } }))
-vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError }) }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError, showSuccess }) }))
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copyToClipboard: vi.fn() }) }))
 vi.mock('file-saver', () => ({ saveAs }))
 vi.mock('vue-i18n', async importOriginal => ({
@@ -28,7 +28,7 @@ function render(admin = false) {
     global: { stubs: {
       AppLayout: { template: '<main><slot /></main>' },
       TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
-      BaseDialog: { props: ['show'], template: '<section v-if="show" role="dialog"><slot /><slot name="footer" /></section>' },
+      BaseDialog: { props: ['show', 'title'], template: '<section v-if="show" role="dialog"><h2>{{ title }}</h2><slot /><slot name="footer" /></section>' },
       DateRangePicker: true, Select: true, Pagination: true, VideoSettlementModal: true
     } }
   })
@@ -60,6 +60,52 @@ afterEach(() => {
 })
 
 describe('task log results', () => {
+  it('shows media loading and a preview title instead of task metadata while fetching', async () => {
+    const pending = deferred<{ data: Blob }>()
+    get.mockResolvedValueOnce(page([task()])).mockReturnValueOnce(pending.promise)
+    render(true)
+    await flushPromises()
+    await button('taskLogs.preview').trigger('click')
+    expect(wrapper!.get('[role=dialog] h2').text()).toBe('taskLogs.videoPreview')
+    expect(wrapper!.get('[role=dialog]').text()).not.toContain('taskLogs.rawStatus')
+    expect(wrapper!.get('[role=status]').text()).toContain('taskLogs.loadingMedia')
+    pending.resolve({ data: new Blob(['video'], { type: 'video/mp4' }) })
+    await flushPromises()
+  })
+
+  it('shows in-flight download and completion feedback', async () => {
+    const pending = deferred<{ data: Blob }>()
+    get.mockResolvedValueOnce(page([task()])).mockReturnValueOnce(pending.promise)
+    render()
+    await flushPromises()
+    await button('taskLogs.download').trigger('click')
+    expect(wrapper!.text()).toContain('taskLogs.downloading')
+    pending.resolve({ data: new Blob(['video'], { type: 'video/mp4' }) })
+    await flushPromises()
+    expect(saveAs).toHaveBeenCalled()
+    expect(showSuccess).toHaveBeenCalledWith('taskLogs.downloadStarted')
+  })
+
+  it('shows preview failures inside the media dialog', async () => {
+    get.mockResolvedValueOnce(page([task()])).mockRejectedValueOnce(new Error('Upstream content expired'))
+    render()
+    await flushPromises()
+    await button('taskLogs.preview').trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('[role=alert]').text()).toContain('Upstream content expired')
+    expect(wrapper!.find('video').exists()).toBe(false)
+  })
+
+  it('does not show a 100 percent completion bar for unsuccessful terminal tasks', async () => {
+    get.mockResolvedValueOnce(page(['failed', 'cancelled', 'expired'].map((status, i) => task({
+      task_id: `task_${i}`, status: status as TaskLog['status'], progress: 100, has_result: false
+    }))))
+    render()
+    await flushPromises()
+    expect(wrapper!.findAll('[role=progressbar]')).toHaveLength(0)
+    expect(wrapper!.text()).not.toContain('100%')
+  })
+
   it.each([false, true])('previews and downloads completed video without a public URL (admin=%s)', async admin => {
     const video = new Blob(['video'], { type: 'video/mp4' })
     get.mockResolvedValueOnce(page([task()])).mockResolvedValue({ data: video })

@@ -68,7 +68,7 @@
             </span>
           </template>
           <template #cell-progress="{ row }">
-            <div class="flex items-center gap-2">
+            <div v-if="isTaskActive(row) || row.status === 'succeeded'" class="flex items-center gap-2">
               <div
                 class="h-1.5 w-20 overflow-hidden rounded bg-gray-200 dark:bg-dark-600"
                 role="progressbar"
@@ -85,6 +85,7 @@
                 >
               </span>
             </div>
+            <span v-else class="text-gray-500 dark:text-gray-400">{{ t(`taskLogs.status.${row.status}`) }}</span>
           </template>
           <template #cell-user="{ row }">
             <span class="text-xs">{{ row.user_email || row.user_id }}</span>
@@ -117,7 +118,7 @@
                 class="font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 dark:text-primary-400"
                 :disabled="!!busyId"
                 @click="downloadResult(row)"
-              >{{ t('taskLogs.download') }}</button>
+              >{{ busyId === row.task_id ? `${t('taskLogs.downloading')}${downloadProgress}` : t('taskLogs.download') }}</button>
               <span
                 v-else-if="row.error_message"
                 class="max-w-[200px] truncate text-red-600 dark:text-red-400"
@@ -157,16 +158,18 @@
       </template>
     </TablePageLayout>
 
-    <BaseDialog :show="!!detailRow" :title="t('taskLogs.detailTitle')" width="wide" @close="closeDetail">
+    <BaseDialog :show="!!detailRow" :title="t(previewMode ? detailRow?.type === 'video' ? 'taskLogs.videoPreview' : 'taskLogs.imagePreview' : 'taskLogs.detailTitle')" width="wide" @close="closeDetail">
       <div v-if="detailRow" class="space-y-4 text-sm">
-        <p v-if="previewLoading" role="status">{{ t('common.loading') }}</p>
-        <video v-if="resultUrl && detailRow.type === 'video'" :src="resultUrl" controls class="max-h-[60vh] w-full rounded bg-black"></video>
+        <p v-if="previewLoading" role="status" class="py-8 text-center">{{ t('taskLogs.loadingMedia') }}{{ previewProgress }}</p>
+        <p v-if="previewError" role="alert" class="rounded bg-red-50 p-3 text-red-700 dark:bg-red-950 dark:text-red-300">{{ previewError }}</p>
+        <video v-if="resultUrl && detailRow.type === 'video'" :src="resultUrl" controls playsinline class="max-h-[60vh] w-full rounded bg-black" @error="previewError = t('taskLogs.playbackFailed')"></video>
         <img v-if="resultUrl && detailRow.type === 'image'" :src="resultUrl" :alt="detailRow.prompt || t('taskLogs.types.image')" class="max-h-[60vh] w-full rounded object-contain" />
-        <div v-if="detailRow.type === 'image' && hasResultLink(detailRow) && (detailRow.success_count ?? 0) > 1" class="flex items-center justify-center gap-3">
+        <div v-if="previewMode && detailRow.type === 'image' && hasResultLink(detailRow) && (detailRow.success_count ?? 0) > 1" class="flex items-center justify-center gap-3">
           <button type="button" class="btn btn-secondary" :disabled="previewLoading || imageIndex === 0" @click="loadPreview(detailRow, imageIndex - 1)">{{ t('taskLogs.previousImage') }}</button>
           <span>{{ imageIndex + 1 }} / {{ detailRow.success_count }}</span>
           <button type="button" class="btn btn-secondary" :disabled="previewLoading || imageIndex + 1 >= (detailRow.success_count ?? 0)" @click="loadPreview(detailRow, imageIndex + 1)">{{ t('common.next') }}</button>
         </div>
+        <template v-if="!previewMode">
         <div>
           <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t('taskLogs.columns.taskId') }}</div>
           <div class="font-mono text-xs">{{ detailRow.task_id }}</div>
@@ -187,10 +190,11 @@
             <span v-if="detailRow.error_code" class="font-mono">[{{ detailRow.error_code }}] </span>{{ detailRow.error_message }}
           </div>
         </div>
+        </template>
       </div>
       <template #footer>
         <button v-if="detailRow && hasResultLink(detailRow) && !resultUrl && !previewLoading && detailRow.type !== 'batch_image'" type="button" class="btn btn-secondary" @click="loadPreview(detailRow, imageIndex)">{{ t('taskLogs.preview') }}</button>
-        <button v-if="detailRow && hasResultLink(detailRow)" type="button" class="btn btn-primary" :disabled="!!busyId || previewLoading" @click="downloadResult(detailRow, imageIndex)">{{ t('taskLogs.download') }}</button>
+        <button v-if="detailRow && hasResultLink(detailRow)" type="button" class="btn btn-primary" :disabled="!!busyId || previewLoading" @click="downloadResult(detailRow, imageIndex)">{{ busyId === detailRow.task_id ? `${t('taskLogs.downloading')}${downloadProgress}` : t('taskLogs.download') }}</button>
         <button type="button" class="btn btn-ghost" @click="closeDetail">{{ t('common.close') }}</button>
       </template>
     </BaseDialog>
@@ -203,6 +207,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
+import type { AxiosProgressEvent } from 'axios'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -252,9 +257,14 @@ const detailRow = ref<TaskLog | null>(null)
 const settleRow = ref<TaskLog | null>(null)
 const resultUrl = ref('')
 const previewLoading = ref(false)
+const previewMode = ref(false)
+const previewError = ref('')
+const previewProgress = ref('')
+const downloadProgress = ref('')
 const imageIndex = ref(0)
 let previewRequest: AbortController | undefined
 let listRequest: AbortController | undefined
+let downloadRequest: AbortController | undefined
 let previewBlob: Blob | undefined
 const busyId = ref('')
 
@@ -347,6 +357,8 @@ function clearPreview() {
   previewRequest?.abort()
   previewRequest = undefined
   previewLoading.value = false
+  previewError.value = ''
+  previewProgress.value = ''
   if (resultUrl.value) URL.revokeObjectURL(resultUrl.value)
   resultUrl.value = ''
   previewBlob = undefined
@@ -357,6 +369,7 @@ function closeDetail() {
 }
 function openDetail(row: TaskLog) {
   clearPreview()
+  previewMode.value = false
   imageIndex.value = 0
   detailRow.value = row
 }
@@ -370,26 +383,38 @@ function openResult(row: TaskLog) {
 }
 async function loadPreview(row: TaskLog, index: number) {
   clearPreview()
+  previewMode.value = true
   imageIndex.value = index
   const request = new AbortController()
   previewRequest = request
   previewLoading.value = true
   try {
     const blob = row.type === 'video'
-      ? await fetchVideoContent(props.admin, row.task_id, request.signal)
-      : await fetchImageContent(props.admin, row.task_id, index, request.signal)
+      ? await fetchVideoContent(props.admin, row.task_id, request.signal, event => { if (!request.signal.aborted) previewProgress.value = transferProgress(event) })
+      : await fetchImageContent(props.admin, row.task_id, index, request.signal, event => { if (!request.signal.aborted) previewProgress.value = transferProgress(event) })
     if (request.signal.aborted) return
     previewBlob = blob
     resultUrl.value = URL.createObjectURL(blob)
   } catch (e) {
-    if (!request.signal.aborted) appStore.showError(errorText(e, t('taskLogs.resultFailed')))
+    if (!request.signal.aborted) {
+      previewError.value = errorText(e, t('taskLogs.resultFailed'))
+      appStore.showError(previewError.value)
+    }
   } finally {
     if (previewRequest === request) previewLoading.value = false
   }
 }
+function transferProgress(event: AxiosProgressEvent) {
+  return event.total
+    ? ` ${Math.min(100, Math.round(event.loaded * 100 / event.total))}%`
+    : ` ${(event.loaded / 1024 / 1024).toFixed(1)} MB`
+}
 async function downloadResult(row: TaskLog, index = 0) {
   if (busyId.value) return
   busyId.value = row.task_id
+  downloadProgress.value = ''
+  const request = new AbortController()
+  downloadRequest = request
   try {
     if (row.type === 'batch_image') {
       saveAs(await downloadBatchImages(props.admin, row.task_id), `${row.task_id}.zip`)
@@ -397,20 +422,26 @@ async function downloadResult(row: TaskLog, index = 0) {
       const blob = detailRow.value?.task_id === row.task_id && detailRow.value.type === row.type && imageIndex.value === index && previewBlob
         ? previewBlob
         : row.type === 'video'
-          ? await fetchVideoContent(props.admin, row.task_id)
-          : await fetchImageContent(props.admin, row.task_id, index)
+          ? await fetchVideoContent(props.admin, row.task_id, request.signal, event => { if (!request.signal.aborted) downloadProgress.value = transferProgress(event) })
+          : await fetchImageContent(props.admin, row.task_id, index, request.signal, event => { if (!request.signal.aborted) downloadProgress.value = transferProgress(event) })
+      if (request.signal.aborted) return
       const extensions: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/avif': 'avif', 'video/mp4': 'mp4', 'video/webm': 'webm' }
       const extension = extensions[blob.type.split(';')[0]] ?? (row.type === 'video' ? 'mp4' : 'bin')
       saveAs(blob, `${row.task_id}${row.type === 'image' ? `-${index + 1}` : ''}.${extension}`)
     }
+    appStore.showSuccess(t('taskLogs.downloadStarted'))
   } catch (e) {
-    appStore.showError(errorText(e, t('taskLogs.resultFailed')))
+    if (!request.signal.aborted) appStore.showError(errorText(e, t('taskLogs.resultFailed')))
   } finally {
-    busyId.value = ''
+    if (downloadRequest === request) {
+      busyId.value = ''
+      downloadRequest = undefined
+    }
   }
 }
 
 watch(() => props.admin, () => {
+  downloadRequest?.abort()
   closeDetail()
   settleRow.value = null
   rows.value = []
@@ -429,6 +460,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.clearInterval(timer)
   listRequest?.abort()
+  downloadRequest?.abort()
   clearPreview()
 })
 </script>
