@@ -70,12 +70,16 @@ func (r *batchImageRepository) GetBatchImageJobByIdempotencyKey(ctx context.Cont
 
 func (r *batchImageRepository) GetBatchImageJobByBatchIDForOwner(ctx context.Context, userID, apiKeyID int64, batchID string) (*service.BatchImageJob, error) {
 	job, err := scanBatchImageJob(r.sql.QueryRowContext(ctx, batchImageJobSelectSQL+`
- WHERE batch_id = $1 AND user_id = $2 AND api_key_id = $3 AND user_deleted_at IS NULL`, batchID, userID, apiKeyID))
+ WHERE batch_id = $1 AND user_id = $2 AND api_key_id = $3 AND user_deleted_at IS NULL`+batchImageOwnerRetentionSQL, batchID, userID, apiKeyID))
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrBatchImageJobNotFound, nil)
 	}
 	return job, nil
 }
+
+const batchImageOwnerRetentionSQL = ` AND retention_scrubbed_at IS NULL
+ AND (status NOT IN ('completed','failed','cancelled','output_deleted')
+ OR COALESCE(finished_at,updated_at) > NOW()-INTERVAL '72 hours')`
 
 func (r *batchImageRepository) ListBatchImageJobsForOwner(ctx context.Context, userID, apiKeyID int64, filter service.BatchImageJobFilter) ([]*service.BatchImageJob, error) {
 	limit := filter.Limit
@@ -86,7 +90,7 @@ func (r *batchImageRepository) ListBatchImageJobsForOwner(ctx context.Context, u
 		filter.Offset = 0
 	}
 
-	query := batchImageJobSelectSQL + " WHERE user_id = $1 AND api_key_id = $2"
+	query := batchImageJobSelectSQL + " WHERE user_id = $1 AND api_key_id = $2" + batchImageOwnerRetentionSQL
 	args := []any{userID, apiKeyID}
 	if filter.ExcludeDeleted {
 		query += " AND user_deleted_at IS NULL"

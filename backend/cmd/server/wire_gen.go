@@ -305,7 +305,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	geminiCachedContentService := service.ProvideGeminiCachedContentService(geminiCachedContentRepository, geminiMessagesCompatService, configConfig)
 	gatewayHandler := handler.ProvideGatewayHandler(gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, userMessageQueueService, configConfig, settingService, coordinator, geminiCachedContentService)
 	imageTaskLogRepository := repository.NewImageTaskLogRepository(db)
-	imageTaskLogService := service.NewImageTaskLogService(imageTaskLogRepository, openAIGatewayService)
+	imageTaskLogService := service.ProvideImageTaskLogService(imageTaskLogRepository, openAIGatewayService, imageStorageSettingService)
 	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(imageTaskLogService, openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver)
 	videoTaskService := service.NewVideoTaskService(videoTaskRepository, accountRepository, openAIGatewayService, videoTaskSettlementService, imageStorageSettingService)
 	videoTaskHandler := handler.ProvideVideoTaskHandler(videoTaskService, coordinator)

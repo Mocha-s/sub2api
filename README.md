@@ -27,6 +27,14 @@ Please read the following carefully before using this project:
 - **📖 Disclaimer**: This project is provided for technical learning and research purposes only. The authors assume no liability for account bans, service interruptions, data loss, or any other direct or indirect damages resulting from the use of this project.
 - **🚫 No Commercial Authorization**: The developers of this project have never authorized any individual or organization to conduct any form of commercial operation based on this project. Any commercial activity conducted in the name of or based on this project is unrelated to this project and its developers, and all resulting disputes, losses, and legal liabilities shall be borne solely by the party conducting such activity.
 
+### Media/task-log retention
+
+- Image/video/batch task-log lists and authenticated content expire at **72 hours after completion**, independently of cleanup scheduling. Interrupted image/video work uses its local execution deadline as a fallback; active batch work remains visible until terminal.
+- Private image links default to 72 hours and cannot exceed 72 hours from upload; Redis async results cannot renew their original completion window. Existing shorter-lived links stay shorter-lived.
+- Cleanup runs at startup and every 5 minutes, with a 2-minute deadline: at most 10 batches of 100 rows per table and one paginated S3 page (100 objects), plus up to 100 queued object retries per cycle. Failed deletes do not block later objects/pages; retry overflow remains in S3 for subsequent traversals. Physical deletion/redaction can lag logical expiry during backlogs, outages, or financial reconciliation. PostgreSQL storage is reclaimed by its normal vacuum/backup policy, not secure disk erasure.
+- Video and batch financial rows, settlements, charges, refunds, billing snapshots, and audit events are retained. Pending reconciliation payloads are protected; finalized video prompt/request/response/media payloads and batch prompt/error previews are redacted. Upstream-hosted video files are not owned or deleted by this gateway; only local logs and proxy access expire.
+- Object cleanup only targets known gateway image keys in the currently configured **private image bucket/prefix**, including `video-reference/task_…` reference images. Public storage, arbitrary keys, and overlapping backup prefixes are rejected. If storage configuration changes, previously used buckets/prefixes require separately reviewed cleanup. S3 version history/delete markers, historical backups, and client-downloaded files are not erased by this policy. A three-day object lifecycle may be an extra backstop, but its rounded/asynchronous timing is not the API expiry guarantee.
+
 ## ❤️ Sponsors
 
 > [Want to appear here?](mailto:support@sub2api.org)

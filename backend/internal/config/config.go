@@ -2294,7 +2294,7 @@ func setDefaults() {
 	viper.SetDefault("image_storage.region", "auto")
 	viper.SetDefault("image_storage.prefix", "images/")
 	viper.SetDefault("image_storage.force_path_style", false)
-	viper.SetDefault("image_storage.presign_expiry_hours", 24)
+	viper.SetDefault("image_storage.presign_expiry_hours", 72)
 	viper.SetDefault("image_storage.max_download_bytes", 33554432)
 	// Registered with empty defaults so AutomaticEnv can reach them: viper only
 	// decodes keys present in AllKeys(), so a credential that is supplied purely

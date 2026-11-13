@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -472,7 +473,28 @@ func writeVideoTaskContentStream(c *gin.Context, stream *service.VideoContentStr
 	if status == 0 {
 		status = http.StatusOK
 	}
+	contentType := stream.ContentType
+	if contentType == "" {
+		for key, value := range stream.Headers {
+			if strings.EqualFold(key, "Content-Type") {
+				contentType = value
+				break
+			}
+		}
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if (status != http.StatusOK && status != http.StatusPartialContent) || err != nil ||
+		(!strings.HasPrefix(mediaType, "video/") && mediaType != "application/octet-stream") {
+		videoTaskErrorResponse(c, http.StatusBadGateway, "server_error", "Video content is unavailable")
+		return
+	}
 	copyVideoTaskContentHeaders(c, stream)
+	c.Header("Content-Type", mediaType)
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.Status(status)
 	if c.Request.Method == http.MethodHead {
 		return
@@ -859,26 +881,24 @@ func videoTaskErrorResponse(c *gin.Context, status int, errType, message string)
 
 func copyVideoTaskContentHeaders(c *gin.Context, stream *service.VideoContentStream) {
 	for key, value := range stream.Headers {
-		if shouldSkipVideoTaskResponseHeader(key) || strings.TrimSpace(value) == "" {
-			continue
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "accept-ranges":
+			if value == "bytes" || value == "none" {
+				c.Header("Accept-Ranges", value)
+			}
+		case "content-range":
+			if videoContentRangePattern.MatchString(value) {
+				c.Header("Content-Range", value)
+			}
+		case "content-encoding":
+			if value == "gzip" || value == "br" || value == "identity" {
+				c.Header("Content-Encoding", value)
+			}
 		}
-		c.Header(http.CanonicalHeaderKey(key), value)
-	}
-	if stream.ContentType != "" {
-		c.Header("Content-Type", stream.ContentType)
 	}
 	if stream.ContentLength > 0 {
 		c.Header("Content-Length", strconv.FormatInt(stream.ContentLength, 10))
 	}
 }
 
-func shouldSkipVideoTaskResponseHeader(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade":
-		return true
-	case "authorization", "cookie", "set-cookie", "x-api-key":
-		return true
-	default:
-		return false
-	}
-}
+var videoContentRangePattern = regexp.MustCompile(`^bytes (?:[0-9]+-[0-9]+|\*)/(?:[0-9]+|\*)$`)

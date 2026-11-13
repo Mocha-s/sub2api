@@ -427,10 +427,54 @@ func TestVideoTaskHandlerContentForwardsRangeStatusHeadersAndStreamBody(t *testi
 	require.Equal(t, "5", rec.Header().Get("Content-Length"))
 	require.Equal(t, "bytes 0-4/10", rec.Header().Get("Content-Range"))
 	require.Equal(t, "bytes", rec.Header().Get("Accept-Ranges"))
-	require.Equal(t, "rid-video", rec.Header().Get("X-Upstream-Request"))
+	require.Empty(t, rec.Header().Get("X-Upstream-Request"))
 	require.Empty(t, rec.Header().Get("Authorization"))
 	require.Empty(t, rec.Header().Get("Connection"))
 	require.Empty(t, rec.Header().Get("Set-Cookie"))
+}
+
+func TestVideoContentDoesNotExposeUpstreamHeaders(t *testing.T) {
+	rec, c, _, _ := newVideoTaskTestContext(http.MethodGet, "/task-logs/video/task_local/content", "")
+	writeVideoTaskContentStream(c, &service.VideoContentStream{
+		Body: io.NopCloser(strings.NewReader("video")), StatusCode: 206, ContentType: "video/mp4", ContentLength: 5,
+		Headers: map[string]string{
+			"Location": "https://provider.example/secret", "Content-Location": "https://provider.example/secret",
+			"Link": "<https://provider.example/secret>", "Refresh": "0;url=https://provider.example/secret",
+			"Content-Disposition": `attachment; filename="https://provider.example/secret.mp4"`,
+			"X-Video-Url":         "https://provider.example/secret", "Server": "provider.example",
+			"ETag": `"https://provider.example/secret"`, "Content-Range": "bytes 0-4/10", "Accept-Ranges": "bytes",
+			"Content-Type": "video/mp4; upstream=https://provider.example/secret",
+		},
+	})
+	require.Equal(t, 206, rec.Code)
+	require.Equal(t, "video", rec.Body.String())
+	for k, values := range rec.Header() {
+		require.NotContains(t, strings.Join(values, ","), "provider.example", k)
+	}
+	require.Empty(t, rec.Header().Get("Location"))
+	require.Empty(t, rec.Header().Get("Content-Disposition"))
+	require.Equal(t, "bytes 0-4/10", rec.Header().Get("Content-Range"))
+	require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+}
+
+func TestVideoContentRejectsUpstreamRedirectsAndNonMediaBodies(t *testing.T) {
+	for _, tc := range []struct {
+		status      int
+		contentType string
+	}{
+		{302, "video/mp4"}, {200, "text/html"}, {500, "application/json"},
+	} {
+		t.Run(fmt.Sprint(tc.status, tc.contentType), func(t *testing.T) {
+			rec, c, _, _ := newVideoTaskTestContext(http.MethodGet, "/task-logs/video/task_local/content", "")
+			body := &closeTrackingReader{Reader: strings.NewReader("https://provider.example/secret")}
+			writeVideoTaskContentStream(c, &service.VideoContentStream{Body: body, StatusCode: tc.status, ContentType: tc.contentType, Headers: map[string]string{"Location": "https://provider.example/secret"}})
+			require.Equal(t, http.StatusBadGateway, rec.Code)
+			require.Empty(t, rec.Header().Get("Location"))
+			require.NotContains(t, rec.Body.String(), "provider.example")
+			require.True(t, body.closed)
+		})
+	}
 }
 
 func TestVideoTaskHandlerContentHeadReturnsHeadersWithoutBody(t *testing.T) {

@@ -107,7 +107,7 @@ func TestTaskLogHandlerAdminListKeepsAdminFields(t *testing.T) {
 
 	require.Equal(t, int64(9), repo.filter.UserID)
 	require.False(t, repo.filter.ExcludeUserDeleted)
-	require.Equal(t, "https://upstream/x.mp4", item["result_url"])
+	require.NotContains(t, item, "result_url")
 	require.Equal(t, "charged", item["settlement_state"])
 }
 

@@ -161,6 +161,25 @@ func TestVideoTaskPollerExpiresTaskPastLocalDeadlineWithoutProviderFetch(t *test
 	require.Equal(t, 1, hook.calls)
 }
 
+func TestVideoTaskPollerDelayedLocalTimeoutDoesNotResurrectHistory(t *testing.T) {
+	now := time.Now()
+	submitted := now.Add(-5 * 24 * time.Hour)
+	task := &VideoTask{PublicTaskID: "delayed", Status: VideoTaskStatusInProgress, SubmittedAt: &submitted}
+	require.True(t, VideoTaskLogExpired(task, now))
+	repo := &pollerVideoTaskRepositoryFake{claimed: []*VideoTask{task}}
+	poller := NewVideoTaskPoller(repo, &pollerAccountRepositoryFake{}, &pollerVideoTaskProviderFake{})
+	poller.now = func() time.Time { return now }
+	require.NoError(t, poller.PollOnce(context.Background(), "worker", now))
+	update := repo.updates["delayed"]
+	require.NotNil(t, update.CompletedAt)
+	require.Equal(t, submitted.Add(24*time.Hour), *update.CompletedAt)
+	task.Status, task.ProviderStatus, task.CompletedAt = update.Status, update.ProviderStatus, update.CompletedAt
+	require.True(t, VideoTaskLogExpired(task, now))
+	// Legacy delayed timeout rows must use the same local deadline, not their late persistence time.
+	task.CompletedAt = &now
+	require.True(t, VideoTaskLogExpired(task, now))
+}
+
 func TestVideoTaskPollerPollOnceSchedulesFromTaskCompletionTime(t *testing.T) {
 	for _, tt := range []struct {
 		name          string

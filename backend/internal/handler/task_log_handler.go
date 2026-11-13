@@ -78,8 +78,10 @@ func (h *TaskLogHandler) list(c *gin.Context, filter service.TaskLogFilter, admi
 		response.ErrorFrom(c, err)
 		return
 	}
-	if !admin {
-		for i := range rows {
+	for i := range rows {
+		// Media is served through authenticated proxies for both roles.
+		rows[i].ResultURL = ""
+		if !admin {
 			rows[i].RedactForUser()
 		}
 	}

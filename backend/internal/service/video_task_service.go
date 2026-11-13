@@ -635,7 +635,7 @@ func (s *VideoTaskService) Fetch(ctx context.Context, params VideoTaskFetchParam
 		}
 		return nil, err
 	}
-	if task == nil {
+	if task == nil || VideoTaskLogExpired(task, time.Now()) {
 		return nil, ErrVideoTaskNotFound
 	}
 	if task.Status.Terminal() {
@@ -699,7 +699,7 @@ func (s *VideoTaskService) AdminContent(ctx context.Context, params VideoTaskCon
 }
 
 func (s *VideoTaskService) contentFromTask(ctx context.Context, task *VideoTask, params VideoTaskContentParams) (*VideoContentStream, error) {
-	if task == nil {
+	if task == nil || VideoTaskLogExpired(task, time.Now()) {
 		return nil, ErrVideoTaskNotFound
 	}
 	if task.Status != VideoTaskStatusCompleted {
@@ -1169,6 +1169,9 @@ func (s *VideoTaskService) videoTaskIdempotencyResult(ctx context.Context, apiKe
 }
 
 func (s *VideoTaskService) videoTaskReplayResult(ctx context.Context, existing *VideoTask, requestHash string, endpoint string, body []byte, params VideoTaskCreateParams) (*VideoTaskCreateResult, error) {
+	if VideoTaskLogExpired(existing, time.Now()) {
+		return nil, ErrVideoTaskNotFound
+	}
 	if err := validateVideoTaskIdempotencyReplay(existing, requestHash, endpoint, body); err != nil {
 		return nil, err
 	}

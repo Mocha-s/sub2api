@@ -114,6 +114,7 @@ export default {
         publicBaseUrl: 'Public base URL',
         publicBaseUrlPlaceholder: 'Leave empty to return presigned links',
         presignExpiryHours: 'Presigned link TTL (hours)',
+        retentionHint: 'Links and task results are available for at most 72 hours. Expired files and task logs are cleaned automatically; billing records are retained.',
         saved: 'Async image object storage saved'
       },
       schedule: {

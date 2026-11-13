@@ -331,7 +331,7 @@ func (p *VideoTaskPoller) pollClaimedTask(ctx context.Context, task *VideoTask, 
 				Status:          VideoTaskStatusExpired,
 				ProviderStatus:  "local_timeout",
 				ErrorMessage:    "video task polling deadline exceeded",
-				CompletedAt:     &completedAt,
+				CompletedAt:     &deadline,
 				ClearNextPollAt: true,
 			})
 			if err != nil {

@@ -215,6 +215,9 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if idempotencyKey != "" {
 		existing, err := s.Repo.GetBatchImageJobByIdempotencyKey(ctx, owner.UserID, owner.APIKeyID, idempotencyKey)
 		if err == nil {
+			if batchImageLogExpired(existing, time.Now()) {
+				return nil, ErrBatchImageJobNotFound
+			}
 			if batchImageDerefString(existing.RequestHash) != requestHash {
 				return nil, ErrBatchImageIdempotencyConflict
 			}
@@ -537,6 +540,9 @@ func (s *BatchImagePublicService) Get(ctx context.Context, owner BatchImageOwner
 	if err != nil {
 		return nil, err
 	}
+	if batchImageLogExpired(job, time.Now()) {
+		return nil, ErrBatchImageJobNotFound
+	}
 	return BatchImageJobToPublic(job), nil
 }
 
@@ -586,6 +592,9 @@ func (s *BatchImagePublicService) List(ctx context.Context, owner BatchImageOwne
 	}
 	data := make([]*BatchImagePublicBatch, 0, len(jobs))
 	for _, job := range jobs {
+		if batchImageLogExpired(job, time.Now()) {
+			continue
+		}
 		data = append(data, BatchImageJobToPublic(job))
 	}
 	return &BatchImagePublicListResponse{
@@ -674,6 +683,9 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 }
 
 func (s *BatchImagePublicService) ListItems(ctx context.Context, owner BatchImageOwner, batchID string, query BatchImageItemsQuery) (*BatchImagePublicItemsResponse, error) {
+	if _, err := s.Get(ctx, owner, batchID); err != nil {
+		return nil, err
+	}
 	filter := BatchImageItemFilter{Limit: query.Limit, Offset: parseBatchImageCursor(query.Cursor)}
 	switch strings.TrimSpace(query.Status) {
 	case "", "all":

@@ -91,6 +91,17 @@ function mountBackupView() {
 }
 
 describe('admin BackupView', () => {
+  it('uses a 72-hour image lifetime and rejects larger input values', async () => {
+    getImageStorageConfig.mockImplementationOnce(() => new Promise(() => {}))
+    const wrapper = mountBackupView()
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('#image-presign-expiry')
+    expect(input.element.value).toBe('72')
+    await input.setValue(73)
+    expect(input.element.validity.rangeOverflow).toBe(true)
+    expect(wrapper.text()).toContain('admin.backup.imageStorage.retentionHint')
+  })
+
   beforeEach(() => {
     getS3Config.mockResolvedValue({})
     getImageStorageConfig.mockResolvedValue({ config: {}, secret_configured: false })

@@ -39,6 +39,9 @@ const taskLogUnionSQL = `(
 		COALESCE(s.actual_cost_usd,0)::float8 AS actual_cost_usd, COALESCE(s.refunded_cost_usd,0)::float8 AS refunded_cost_usd,
 		t.user_id AS user_id, t.user_deleted_at AS user_deleted_at, ''::text AS request_mode,NULL::boolean AS cost_known
 	FROM video_tasks t LEFT JOIN video_task_settlements s ON s.video_task_id=t.id
+ WHERE t.retention_scrubbed_at IS NULL AND
+ CASE WHEN t.status IN ('completed','failed','cancelled','expired') THEN COALESCE(t.completed_at,t.updated_at)
+ ELSE COALESCE(t.submitted_at,t.created_at)+INTERVAL '24 hours' END > NOW()-INTERVAL '72 hours'
 	UNION ALL
 	SELECT 'batch_image', j.batch_id, j.provider, j.model,
 		j.status,
@@ -53,6 +56,8 @@ const taskLogUnionSQL = `(
 		0::float8, 0::float8,
 		j.user_id, j.user_deleted_at, '',NULL::boolean
 	FROM batch_image_jobs j
+ WHERE j.retention_scrubbed_at IS NULL AND (j.status NOT IN ('completed','failed','cancelled','output_deleted')
+ OR COALESCE(j.finished_at,j.updated_at) > NOW()-INTERVAL '72 hours')
  UNION ALL
  SELECT 'image',i.task_id,i.platform,i.model,
   CASE WHEN i.status='processing' AND i.deadline_at<=NOW() THEN 'expired' ELSE i.status END,
@@ -70,6 +75,7 @@ const taskLogUnionSQL = `(
   FROM usage_logs u WHERE i.request_id<>'' AND u.request_id=i.request_id AND u.api_key_id=i.api_key_id
   ORDER BY u.id DESC LIMIT 1
  ) b ON TRUE
+ WHERE COALESCE(i.finished_at,i.deadline_at) > NOW()-INTERVAL '72 hours'
 ) x`
 
 func taskLogWhere(f service.TaskLogFilter) (string, []any) {

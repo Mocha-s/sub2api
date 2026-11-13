@@ -225,7 +225,7 @@ func (r *videoTaskRepository) GetByPublicTaskID(ctx context.Context, publicTaskI
 
 func (r *videoTaskRepository) GetByPublicTaskIDForUser(ctx context.Context, publicTaskID string, userID int64) (*service.VideoTask, error) {
 	row, err := r.client.VideoTask.Query().
-		Where(videotask.PublicTaskIDEQ(publicTaskID), videotask.UserIDEQ(userID), videotask.UserDeletedAtIsNil()).
+		Where(videotask.PublicTaskIDEQ(publicTaskID), videotask.UserIDEQ(userID), videotask.UserDeletedAtIsNil(), visibleVideoTaskPredicate(time.Now())).
 		Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, errVideoTaskNotFound, nil)
@@ -285,7 +285,7 @@ func (r *videoTaskRepository) ListForUser(ctx context.Context, params service.Vi
 	if limit > 100 {
 		limit = 100
 	}
-	predicates := []predicate.VideoTask{videotask.UserIDEQ(params.UserID), videotask.UserDeletedAtIsNil()}
+	predicates := []predicate.VideoTask{videotask.UserIDEQ(params.UserID), videotask.UserDeletedAtIsNil(), visibleVideoTaskPredicate(time.Now())}
 	if params.Status != "" {
 		predicates = append(predicates, videotask.StatusEQ(params.Status))
 	}
@@ -315,6 +315,18 @@ func (r *videoTaskRepository) ListForUser(ctx context.Context, params service.Vi
 		items = append(items, videoTaskEntToService(row))
 	}
 	return items, hasMore, nil
+}
+
+func visibleVideoTaskPredicate(now time.Time) predicate.VideoTask {
+	terminal := []string{"completed", "failed", "cancelled", "expired"}
+	cutoff := now.Add(-service.MediaRetention)
+	return videotask.Or(
+		videotask.And(videotask.StatusIn(terminal...), videotask.Or(
+			videotask.CompletedAtGT(cutoff), videotask.And(videotask.CompletedAtIsNil(), videotask.UpdatedAtGT(cutoff)))),
+		videotask.And(videotask.StatusNotIn(terminal...), videotask.Or(
+			videotask.SubmittedAtGT(cutoff.Add(-24*time.Hour)),
+			videotask.And(videotask.SubmittedAtIsNil(), videotask.CreatedAtGT(cutoff.Add(-24*time.Hour))))),
+	)
 }
 
 func (r *videoTaskRepository) UpdateSubmit(ctx context.Context, publicTaskID string, update service.VideoTaskSubmitUpdate) error {

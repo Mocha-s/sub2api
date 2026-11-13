@@ -19,7 +19,7 @@ const (
 	ImageTaskStatusCompleted  = "completed"
 	ImageTaskStatusFailed     = "failed"
 
-	defaultImageTaskTTL              = 24 * time.Hour
+	defaultImageTaskTTL              = MediaRetention
 	defaultImageTaskExecutionTimeout = 30 * time.Minute
 )
 
@@ -96,7 +96,7 @@ func NewImageTaskService(store ImageTaskStore) *ImageTaskService {
 }
 
 func NewImageTaskServiceWithOptions(store ImageTaskStore, ttl, executionTimeout time.Duration) *ImageTaskService {
-	if ttl <= 0 {
+	if ttl <= 0 || ttl > MediaRetention {
 		ttl = defaultImageTaskTTL
 	}
 	if executionTimeout <= 0 {
@@ -201,7 +201,8 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		}
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
-	if task.UserID != owner.UserID || task.APIKeyID != owner.APIKeyID {
+	if task == nil || task.UserID != owner.UserID || task.APIKeyID != owner.APIKeyID || time.Now().Unix() >= task.ExpiresAt ||
+		(task.CompletedAt != nil && time.Now().Unix() >= *task.CompletedAt+int64(MediaRetention/time.Second)) {
 		// Do not reveal whether a random task ID exists for another caller.
 		return nil, ErrImageTaskNotFound
 	}
@@ -209,6 +210,16 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {
+	if s == nil || s.store == nil {
+		return ErrImageTaskUnavailable
+	}
+	previous, err := s.store.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if previous.CompletedAt != nil || previous.Status != ImageTaskStatusProcessing {
+		return nil
+	}
 	if !json.Valid(result) {
 		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
 	}
@@ -243,14 +254,17 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
 	now := time.Now().UTC()
+	if task.CompletedAt != nil || task.Status != ImageTaskStatusProcessing {
+		return nil
+	}
 	completedAt := now.Unix()
 	task.Status = status
 	task.HTTPStatus = statusCode
 	task.Result = result
 	task.Error = taskErr
 	task.CompletedAt = &completedAt
-	task.ExpiresAt = now.Add(s.ttl).Unix()
-	if err := s.store.Save(ctx, task, s.ttl); err != nil {
+	task.ExpiresAt = completedAt + int64(s.ttl/time.Second)
+	if err := s.store.Save(ctx, task, time.Until(time.Unix(task.ExpiresAt, 0))); err != nil {
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
 	return nil

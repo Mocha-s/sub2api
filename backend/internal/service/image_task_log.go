@@ -44,13 +44,14 @@ type ImageTaskLogRepository interface {
 }
 
 type ImageTaskLogService struct {
-	repo      ImageTaskLogRepository
-	gateway   *OpenAIGatewayService
-	retention pond.Pool
-	metadata  pond.Pool
-	stopOnce  sync.Once
-	workCtx   context.Context
-	cancel    context.CancelFunc
+	repo           ImageTaskLogRepository
+	gateway        *OpenAIGatewayService
+	retention      pond.Pool
+	metadata       pond.Pool
+	stopOnce       sync.Once
+	workCtx        context.Context
+	cancel         context.CancelFunc
+	cleanupWorkers sync.WaitGroup
 }
 
 func NewImageTaskLogService(repo ImageTaskLogRepository, gateway *OpenAIGatewayService) *ImageTaskLogService {
@@ -64,7 +65,7 @@ func (s *ImageTaskLogService) Stop() {
 	if s == nil {
 		return
 	}
-	s.stopOnce.Do(func() { s.cancel(); s.retention.StopAndWait(); s.metadata.StopAndWait() })
+	s.stopOnce.Do(func() { s.cancel(); s.cleanupWorkers.Wait(); s.retention.StopAndWait(); s.metadata.StopAndWait() })
 }
 
 // FinishAsync takes ownership of the bounded body and a value copy of metadata.
@@ -103,8 +104,8 @@ func (s *ImageTaskLogService) Start(ctx context.Context, e *ImageTaskLogEntry) {
 	}
 	if e.DeadlineAt.IsZero() {
 		// Sync upstream work is detached and has no common execution timeout.
-		// shortcut: mark abandoned sync logs expired after 24h; a late completion still replaces this read-side state.
-		e.DeadlineAt = e.CreatedAt.Add(defaultImageTaskTTL)
+		// Sync work has a 24h abandonment bound, independent of result retention.
+		e.DeadlineAt = e.CreatedAt.Add(24 * time.Hour)
 	}
 	if e.RequestMode == "" {
 		e.RequestMode = "sync"

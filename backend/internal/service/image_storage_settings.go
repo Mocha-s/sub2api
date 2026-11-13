@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -58,10 +59,13 @@ type ImageStorageSettingService struct {
 	// 保证升级前已用配置文件开启该功能的部署不被打断。
 	fallback config.ImageStorageConfig
 
-	mu       sync.Mutex
-	resolved bool
-	uploader *ImageResultUploader
-	enabled  bool
+	mu           sync.Mutex
+	resolved     bool
+	uploader     *ImageResultUploader
+	enabled      bool
+	sweepMu      sync.Mutex
+	sweepConfig  config.ImageStorageConfig
+	sweepStorage ImageStorage
 }
 
 func NewImageStorageSettingService(
@@ -85,6 +89,61 @@ func (s *ImageStorageSettingService) Resolver() ImageStorageResolver {
 	return func() (*ImageResultUploader, bool) {
 		return s.resolve()
 	}
+}
+
+// CleanupExpired uses current credentials even when new async submissions are disabled.
+// Its separate cached client retains the bounded listing cursor between sweeps.
+func (s *ImageStorageSettingService) CleanupExpired(ctx context.Context, now time.Time) error {
+	if s == nil {
+		return nil
+	}
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	cfg, err := s.effectiveConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if !cfg.IsConfigured() {
+		return nil
+	}
+	if cfg.PublicBaseURL != "" || !SafeImageRetentionPrefix(cfg.Prefix) {
+		return errors.New("image cleanup requires a private store and safe dedicated prefix")
+	}
+	// Compare the configured backup namespace even when image credentials are independent.
+	// Do not call backup.loadS3Config here: it treats database read failures as no config.
+	if s.settingRepo != nil {
+		raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupS3Config)
+		if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			return err
+		}
+		if raw != "" {
+			var backup BackupS3Config
+			if err := json.Unmarshal([]byte(raw), &backup); err != nil {
+				return err
+			}
+			prefix := strings.TrimRight(backup.Prefix, "/") + "/"
+			if prefix == "/" {
+				prefix = "backups/"
+			}
+			if cfg.Bucket == backup.Bucket &&
+				(strings.HasPrefix(cfg.Prefix, prefix) || strings.HasPrefix(prefix, cfg.Prefix)) {
+				return errors.New("image retention prefix overlaps backup namespace")
+			}
+		}
+	}
+	if s.sweepStorage == nil || s.sweepConfig != *cfg {
+		storage, err := s.factory(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		s.sweepStorage, s.sweepConfig = storage, *cfg
+	}
+	if cleaner, ok := s.sweepStorage.(interface {
+		CleanupExpired(context.Context, time.Time) error
+	}); ok {
+		return cleaner.CleanupExpired(ctx, now)
+	}
+	return errors.New("image storage does not support retention cleanup")
 }
 
 func (s *ImageStorageSettingService) resolve() (*ImageResultUploader, bool) {
@@ -294,7 +353,10 @@ func (s *ImageStorageSettingService) load(ctx context.Context) (*ImageStorageSet
 		return nil, nil //nolint:nilnil // no repository means no stored settings
 	}
 	raw, err := s.settingRepo.GetValue(ctx, settingKeyImageStorageConfig)
-	if err != nil || strings.TrimSpace(raw) == "" {
+	if err != nil && !errors.Is(err, ErrSettingNotFound) {
+		return nil, err
+	}
+	if strings.TrimSpace(raw) == "" {
 		return nil, nil //nolint:nilnil // never configured is a valid state
 	}
 	var settings ImageStorageSettings
@@ -338,8 +400,8 @@ func normalizeImageStorageSettings(in *ImageStorageSettings) {
 	if in.Region == "" {
 		in.Region = "auto"
 	}
-	if in.PresignExpiry <= 0 {
-		in.PresignExpiry = 24
+	if in.PresignExpiry <= 0 || in.PresignExpiry > 72 {
+		in.PresignExpiry = 72
 	}
 	if in.MaxDownloadBytes <= 0 {
 		in.MaxDownloadBytes = defaultImageMaxDownloadBytes

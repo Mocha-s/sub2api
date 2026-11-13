@@ -353,6 +353,10 @@ func (s *BatchImageDownloadService) getCompletedJob(ctx context.Context, owner B
 	if err != nil {
 		return nil, err
 	}
+	if batchImageLogExpired(job, time.Now()) ||
+		(job.OutputExpiresAt != nil && !time.Now().Before(*job.OutputExpiresAt)) {
+		return nil, ErrBatchImageOutputDeleted
+	}
 	switch job.Status {
 	case BatchImageJobStatusCompleted:
 		return job, nil

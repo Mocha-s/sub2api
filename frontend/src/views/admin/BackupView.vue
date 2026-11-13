@@ -114,8 +114,9 @@
             <input v-model="imageStorageForm.public_base_url" class="input w-full" :placeholder="t('admin.backup.imageStorage.publicBaseUrlPlaceholder')" />
           </div>
           <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.presignExpiryHours') }}</label>
-            <input v-model.number="imageStorageForm.presign_expiry_hours" type="number" min="1" class="input w-full" />
+            <label for="image-presign-expiry" class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.presignExpiryHours') }}</label>
+            <input id="image-presign-expiry" v-model.number="imageStorageForm.presign_expiry_hours" type="number" min="1" max="72" class="input w-full" aria-describedby="image-retention-hint" />
+            <p id="image-retention-hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.imageStorage.retentionHint') }}</p>
           </div>
         </div>
 
@@ -467,7 +468,7 @@ const imageStorageForm = ref<ImageStorageConfig>({
   bucket: '',
   prefix: 'images/',
   public_base_url: '',
-  presign_expiry_hours: 24,
+  presign_expiry_hours: 72,
   max_download_bytes: 33554432,
   endpoint: '',
   region: 'auto',

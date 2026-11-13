@@ -12,6 +12,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/videotask"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 
@@ -118,6 +119,21 @@ func TestVideoTaskRepositoryGetByPublicTaskIDForUserEnforcesOwnership(t *testing
 	if !errors.Is(err, errVideoTaskNotFound) {
 		t.Fatalf("cross-user lookup error = %v, want %v", err, errVideoTaskNotFound)
 	}
+}
+
+func TestVideoTaskRepositoryPublicReadsExcludeExpiredTerminal(t *testing.T) {
+	repo, client := newVideoTaskRepoSQLite(t)
+	ctx := context.Background()
+	mustCreateVideoTaskListItem(t, ctx, client, "task_expired", 7, "video", service.VideoTaskStatusCompleted, time.Now())
+	require.NoError(t, client.VideoTask.Update().Where(videotask.PublicTaskIDEQ("task_expired")).SetCompletedAt(time.Now().Add(-72*time.Hour)).Exec(ctx))
+	_, err := repo.GetByPublicTaskIDForUser(ctx, "task_expired", 7)
+	require.ErrorIs(t, err, errVideoTaskNotFound)
+	items, _, err := repo.ListForUser(ctx, service.VideoTaskListParams{UserID: 7})
+	require.NoError(t, err)
+	require.Empty(t, items)
+	task, err := repo.GetByPublicTaskID(ctx, "task_expired")
+	require.NoError(t, err, "internal financial lookup must still find expired task")
+	require.NotNil(t, task)
 }
 
 func TestVideoTaskRepositoryListForUserFiltersOrdersAndLimits(t *testing.T) {
