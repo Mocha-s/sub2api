@@ -366,6 +366,21 @@ describe('admin UsageTable tooltip', () => {
     wrapper.unmount()
   })
 
+  it.each(['video', 'video_reference'])('does not multiply settled video account cost twice (%s)', async billingMode => {
+    const row = { ...baseImageRow, billing_mode: billingMode, image_count: 0, video_count: 1,
+      total_cost: 6.5, actual_cost: 6.5, account_stats_cost: 0.65, account_rate_multiplier: 0.1 }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.text()).toContain('A $0.650000')
+    expect(wrapper.text()).not.toContain('A $0.065000')
+    const triggers = wrapper.findAll('.group.relative')
+    await triggers[triggers.length - 1].trigger('mouseenter')
+    expect(wrapper.get('.fixed').text()).toContain('$0.65000000')
+    wrapper.unmount()
+  })
+
   it('uses eight decimal places for missing cost values', async () => {
     const wrapper = mount(UsageTable, {
       props: {

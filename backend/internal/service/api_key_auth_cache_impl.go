@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 25 // v25: Composite dynamic billing flag
+const apiKeyAuthSnapshotVersion = 26 // v26: invalidate snapshots built without the dynamic billing DB projection
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

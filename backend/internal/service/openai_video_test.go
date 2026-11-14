@@ -742,6 +742,38 @@ func TestResolveVideoTaskPricingUsesCompositeBillingGroupVideoRate(t *testing.T)
 	require.InDelta(t, sourceVideoRate, selection.RateMultiplier, 1e-12)
 }
 
+func TestCompositeManagedVideoQuoteUsesAccountRateAndMarkup(t *testing.T) {
+	const model = "seedance-2.0-mini-m2"
+	targetID := int64(28)
+	price, accountRate, seconds := 1.3, 0.1, 5
+	cache := newEmptyChannelCache()
+	cache.loadedAt = time.Now()
+	cache.channelByGroupID[targetID] = &Channel{ID: 12, Status: StatusActive, BillingModelSource: BillingModelSourceRequested}
+	cache.groupPlatform[targetID] = PlatformOpenAI
+	cache.pricingByGroupModel[channelModelKey{groupID: targetID, platform: PlatformOpenAI, model: model}] = &ChannelModelPricing{
+		BillingMode: BillingModeVideoReference, VideoDefaultSeconds: &seconds, VideoPricePerSecond: &price,
+	}
+	channels := &ChannelService{}
+	channels.cache.Store(cache)
+	svc := &OpenAIGatewayService{channelService: channels}
+	for _, enabled := range []bool{true, false} {
+		ctx := WithCompositeBillingGroup(context.Background(), &Group{ID: 41, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, RateMultiplier: 1, DynamicRateBillingEnabled: enabled})
+		selection := svc.ResolveVideoTaskPricing(ctx, VideoTaskPricingResolveInput{
+			GroupID: targetID, UserID: 1, RequestedModel: model,
+			APIKey:  &APIKey{GroupID: &targetID, Group: &Group{ID: targetID, Platform: PlatformOpenAI, RateMultiplier: 0.15}},
+			Account: &Account{RateMultiplier: &accountRate, Credentials: map[string]any{"pricing_managed_by": "api-pricing-sync", "pricing_markup_factor": 1.5}},
+		})
+		quote, err := ResolveVideoTaskQuote([]byte(`{"seconds":5,"resolution":"720p"}`), model, selection.Pricing, selection.RateMultiplier, selection.AccountRateMultiplier)
+		require.NoError(t, err)
+		want := 6.5
+		if enabled {
+			want = 0.975
+		}
+		require.InDelta(t, want, quote.ActualCostUSD, 1e-9)
+		require.InDelta(t, 0.65, quote.AccountCostUSD, 1e-9)
+	}
+}
+
 func TestResolveVideoTaskPricingFallsBackWithoutAPIKeyGroup(t *testing.T) {
 	groupID := int64(42)
 	const defaultRate = 0.25

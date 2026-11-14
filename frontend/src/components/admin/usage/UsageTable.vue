@@ -531,6 +531,8 @@
                   total_cost: tooltipData?.total_cost,
                   account_stats_cost: tooltipData?.account_stats_cost,
                   account_rate_multiplier: tooltipData?.account_rate_multiplier,
+                  video_count: tooltipData?.video_count,
+                  billing_mode: tooltipData?.billing_mode,
                 }).toFixed(8) }}
               </span>
             </div>
@@ -565,6 +567,7 @@ import {
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
+  isVideoBillingMode,
   getDisplayBillingMode,
   imageUnitPrice,
 } from '@/utils/billingMode'
@@ -582,8 +585,11 @@ import {
   hasImageInputCost,
 } from '@/utils/imageUsage'
 
-/** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
-function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {
+/** Video settlements already store the final account cost after the multiplier. */
+function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null; video_count?: number | null; billing_mode?: string | null }): number {
+  if (row.account_stats_cost != null && ((row.video_count ?? 0) > 0 || isVideoBillingMode(row.billing_mode))) {
+    return Number.isFinite(row.account_stats_cost) ? row.account_stats_cost : 0
+  }
   const base = row.account_stats_cost != null ? row.account_stats_cost : (row.total_cost ?? 0)
   const result = base * (row.account_rate_multiplier ?? 1)
   return Number.isNaN(result) ? 0 : result
