@@ -444,7 +444,7 @@ func attachInflightSnapshot(svc *GatewayService, snap *inflightSnapshotCacheStub
 	return repo
 }
 
-// 已定价模型永不查账号映射；随机未定价模型名不直接查库、不产生按模型名的缓存（内存有界）。
+// 已定价模型只读动态倍率快照；未定价模型额外查账号映射，不直接查库或缓存随机模型名。
 func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	groupID := int64(40)
 	svc := newInflightEstimateGateway(t, nil)
@@ -459,7 +459,8 @@ func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 		_, priced := svc.EstimateInflightReservation(ctx, apiKey, InflightEstimateRequest{Model: "claude-sonnet-4-5", BodyBytes: 4000, MaxTokens: 1000})
 		require.True(t, priced)
 	}
-	require.Zero(t, snap.reads.Load(), "priced models must never trigger account-mapping lookup")
+	require.Equal(t, int64(100), snap.reads.Load(), "priced models read the dynamic-rate snapshot once, without account-mapping lookup")
+	snap.reads.Store(0)
 
 	var before, after runtime.MemStats
 	runtime.GC()
@@ -472,7 +473,7 @@ func TestInflightEstimate_AccountMappingNoDBAndBoundedMemory(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&after)
 	require.Zero(t, repo.dbCalls.Load(), "no direct DB query on the request path")
-	require.Equal(t, int64(n), snap.reads.Load(), "unpriced lookups read the scheduler snapshot only")
+	require.Equal(t, int64(2*n), snap.reads.Load(), "unpriced lookups read snapshots for dynamic rates and account mappings only")
 	require.Less(t, int64(after.HeapAlloc)-int64(before.HeapAlloc), int64(8<<20), "no per-model cache growth")
 }
 
