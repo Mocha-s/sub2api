@@ -59,6 +59,7 @@ type GatewayHandler struct {
 	maxAccountSwitches         int
 	maxAccountSwitchesGemini   int
 	imageLimiter               *imageConcurrencyLimiter
+	imageLogs                  *service.ImageTaskLogService
 	cfg                        *config.Config
 	settingService             *service.SettingService
 }

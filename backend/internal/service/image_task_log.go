@@ -155,6 +155,13 @@ func (s *ImageTaskLogService) finish(ctx context.Context, e *ImageTaskLogEntry, 
 		return
 	}
 	items := gjson.GetBytes(body, "data").Array()
+	if len(items) == 0 {
+		event := gjson.ParseBytes(body)
+		if response := event.Get("response"); response.Exists() {
+			event = response
+		}
+		items = geminiImageTaskLogItems(event)
+	}
 	if len(items) > 0 {
 		e.ItemCount = len(items)
 	}
@@ -365,7 +372,39 @@ func (c *ImageTaskLogCapture) consume(data []byte) {
 		}
 	} else if kind == "image_generation.completed" || kind == "image_edit.completed" || kind == "image_editing.completed" {
 		c.add(event)
+	} else {
+		if response := event.Get("response"); response.Exists() {
+			event = response
+		}
+		for _, item := range geminiImageTaskLogItems(event) {
+			c.completed = true
+			c.add(item)
+		}
 	}
+}
+
+func geminiImageTaskLogItems(event gjson.Result) []gjson.Result {
+	var items []gjson.Result
+	for _, candidate := range event.Get("candidates").Array() {
+		for _, part := range candidate.Get("content.parts").Array() {
+			if part.Get("thought").Bool() {
+				continue
+			}
+			inline := part.Get("inlineData")
+			if !inline.Exists() {
+				inline = part.Get("inline_data")
+			}
+			mime := firstNonEmpty(inline.Get("mimeType").String(), inline.Get("mime_type").String())
+			if data := inline.Get("data").String(); strings.HasPrefix(mime, "image/") && data != "" {
+				raw, _ := json.Marshal(map[string]string{"b64_json": data})
+				items = append(items, gjson.ParseBytes(raw))
+				if len(items) >= imageTaskLogMaxItems {
+					return items
+				}
+			}
+		}
+	}
+	return items
 }
 func (c *ImageTaskLogCapture) add(item gjson.Result) {
 	if len(c.items) >= imageTaskLogMaxItems {

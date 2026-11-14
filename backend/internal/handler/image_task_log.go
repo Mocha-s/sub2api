@@ -8,6 +8,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 const asyncImageExecutionKey = "image_task_async_execution"
@@ -29,7 +30,36 @@ func (w *imageTaskLogWriter) Write(p []byte) (int, error) {
 func (w *imageTaskLogWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
 
 func (h *OpenAIGatewayHandler) startImageTaskLog(c *gin.Context) func() {
-	if h == nil || h.imageLogs == nil || c.GetBool(asyncImageExecutionKey) {
+	if h == nil {
+		return func() {}
+	}
+	return startImageTaskLog(c, h.imageLogs)
+}
+
+func (h *GatewayHandler) startGeminiImageTaskLog(c *gin.Context, model string, body []byte) func() {
+	if h.imageLogs == nil || (!service.IsGeminiImageGenerationModel(model) && !service.IsGeminiBananaBridgeModel(model)) {
+		return func() {}
+	}
+	finish := startImageTaskLog(c, h.imageLogs)
+	if raw, ok := c.Get(imageTaskLogEntryKey); ok {
+		entry := raw.(*service.ImageTaskLogEntry)
+		entry.Model = model
+		var texts []string
+		for _, content := range gjson.GetBytes(body, "contents").Array() {
+			for _, part := range content.Get("parts").Array() {
+				if text := part.Get("text").String(); text != "" {
+					texts = append(texts, text)
+				}
+			}
+		}
+		entry.Prompt = strings.Join(texts, "\n")
+		h.imageLogs.Save(c.Request.Context(), entry)
+	}
+	return finish
+}
+
+func startImageTaskLog(c *gin.Context, logs *service.ImageTaskLogService) func() {
+	if logs == nil || c.GetBool(asyncImageExecutionKey) {
 		return func() {}
 	}
 	key, ok := middleware2.GetAPIKeyFromContext(c)
@@ -38,7 +68,7 @@ func (h *OpenAIGatewayHandler) startImageTaskLog(c *gin.Context) func() {
 	}
 	entry := &service.ImageTaskLogEntry{UserID: key.UserID, APIKeyID: key.ID, Platform: effectiveAPIKeyPlatform(c, key),
 		RequestID: service.ResolveUsageBillingRequestID(c.Request.Context(), "")}
-	h.imageLogs.Start(c.Request.Context(), entry)
+	logs.Start(c.Request.Context(), entry)
 	c.Set(imageTaskLogEntryKey, entry)
 	writer := &imageTaskLogWriter{ResponseWriter: c.Writer, capture: service.NewImageTaskLogCapture()}
 	service.SetImageTaskLogCapture(c, writer.capture)
@@ -50,7 +80,7 @@ func (h *OpenAIGatewayHandler) startImageTaskLog(c *gin.Context) func() {
 			status = http.StatusGatewayTimeout
 		}
 		c.Writer = writer.ResponseWriter
-		h.imageLogs.FinishAsync(*entry, status, body, failed)
+		logs.FinishAsync(*entry, status, body, failed)
 	}
 }
 

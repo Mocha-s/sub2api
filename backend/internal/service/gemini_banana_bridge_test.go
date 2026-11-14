@@ -71,6 +71,17 @@ func TestBuildOpenAIImagesRequestFromGeminiBananaKeepsTextGenerationJSON(t *test
 	require.Equal(t, "draw a cat", gjson.GetBytes(converted, "prompt").String())
 }
 
+func TestBuildOpenAIImagesRequestFromGeminiImageModel(t *testing.T) {
+	body := []byte(`{"contents":[{"parts":[{"text":"draw a square"}]}],"generationConfig":{"imageConfig":{"imageSize":"1K","aspectRatio":"1:1"}}}`)
+	converted, contentType, endpoint, err := BuildOpenAIImagesRequestFromGeminiBanana("gemini-3.1-flash-image-preview", body)
+	require.NoError(t, err)
+	require.Equal(t, "/v1/images/generations", endpoint)
+	require.Equal(t, "application/json", contentType)
+	require.Equal(t, "gemini-3.1-flash-image-preview", gjson.GetBytes(converted, "model").String())
+	require.Equal(t, "1k", gjson.GetBytes(converted, "quality").String())
+	require.Equal(t, "1:1", gjson.GetBytes(converted, "size").String())
+}
+
 func TestGeminiBananaBridgeModel(t *testing.T) {
 	require.False(t, IsGeminiBananaBridgeModel("gemini-3.1-flash-image"))
 	require.True(t, IsGeminiBananaBridgeModel("nano-banana2-2k"))

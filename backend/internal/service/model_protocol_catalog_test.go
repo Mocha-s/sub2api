@@ -44,6 +44,84 @@ func TestParseModelProtocolCatalog(t *testing.T) {
 	require.Error(t, err, "a plain /models without supported_endpoints is not a protocol catalog")
 }
 
+func TestParseModelProtocolCatalogImagesEndpointTypes(t *testing.T) {
+	models, err := parseModelProtocolCatalog([]byte(`{"data":[
+		{"id":"gemini-3.1-flash-image-preview","supported_endpoint_types":["openai-image"]},
+		{"id":"gemini-native-image","supported_endpoint_types":["gemini","openai-image"]}
+	]}`))
+	require.NoError(t, err)
+	require.Equal(t, []string{"openai-image"}, models["gemini-3.1-flash-image-preview"])
+	require.Equal(t, []string{"gemini", "openai-image"}, models["gemini-native-image"])
+}
+
+func TestGeminiImagesBridgeRequiresAccountCatalogCapability(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		base   string
+		model  string
+		body   string
+		status int
+		bridge bool
+		fetch  bool
+	}{
+		{name: "images only", body: `{"data":[{"id":"gemini-3.1-flash-image-preview","supported_endpoint_types":["openai-image"]}]}`, bridge: true, fetch: true},
+		{name: "native preferred", body: `{"data":[{"id":"gemini-3.1-flash-image-preview","supported_endpoint_types":["openai-image","gemini"]}]}`, fetch: true},
+		{name: "missing metadata", body: `{"data":[{"id":"gemini-3.1-flash-image-preview"}]}`, fetch: true},
+		{name: "catalog unavailable", status: 503, body: `{"error":"unavailable"}`, fetch: true},
+		{name: "official", base: "https://generativelanguage.googleapis.com", body: `{"data":[]}`},
+		{name: "text model", model: "gemini-2.5-flash", body: `{"data":[]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := tc.base
+			if base == "" {
+				base = fmt.Sprintf("https://gemini-catalog-%d.example", time.Now().UnixNano())
+			}
+			account := &Account{ID: 84188, Platform: PlatformGemini, Type: AccountTypeAPIKey, Credentials: map[string]any{
+				"api_key": "fixture-key", "base_url": base,
+				"model_mapping": map[string]any{"draw-image": "models/gemini-3.1-flash-image-preview"},
+			}}
+			status := tc.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			upstream := &commandCodeAlphaUpstream{responses: map[string]commandCodeAlphaResponse{
+				"/v1/models": {status: status, body: tc.body},
+			}}
+			svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+			model := tc.model
+			if model == "" {
+				model = "draw-image"
+			}
+			require.Equal(t, tc.bridge, svc.UsesOpenAIImagesForGemini(t.Context(), account, model))
+			// Repeated calls share the account-isolated cache, including failure backoff.
+			require.Equal(t, tc.bridge, svc.UsesOpenAIImagesForGemini(t.Context(), account, model))
+			upstream.mu.Lock()
+			defer upstream.mu.Unlock()
+			if tc.fetch {
+				require.Len(t, upstream.requests, 1)
+				require.Equal(t, "Bearer fixture-key", upstream.requests[0].Header.Get("Authorization"))
+				require.Equal(t, http.MethodGet, upstream.requests[0].Method)
+			} else {
+				require.Empty(t, upstream.requests)
+			}
+		})
+	}
+}
+
+func TestGeminiImagesBridgeSeparatesUpstreamAccounts(t *testing.T) {
+	upstream := &httpUpstreamRecorder{err: errors.New("unexpected catalog fetch")}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	const base = "https://gemini-account-isolation.example"
+	const model = "gemini-3.1-flash-image-preview"
+	for id, protocols := range map[int64][]string{84189: {"openai-image"}, 84190: {"gemini"}} {
+		account := &Account{ID: id, Platform: PlatformGemini, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": base}}
+		key := modelProtocolCatalogKey(account, buildOpenAIModelsURL(base))
+		upstreamModelProtocols.store(key, map[string][]string{model: protocols}, nil, time.Now())
+		require.Equal(t, id == 84189, svc.UsesOpenAIImagesForGemini(t.Context(), account, model))
+	}
+	require.Empty(t, upstream.requests)
+}
+
 func TestModelProtocolCatalogLookupRefreshesInBackground(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var catalog modelProtocolCatalog

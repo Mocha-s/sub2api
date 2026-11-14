@@ -25,6 +25,44 @@ type handlerImageLogRepo struct {
 	finished chan struct{}
 }
 
+func TestGeminiImageTaskLogCapturesOtherPlatformAndSkipsText(t *testing.T) {
+	for _, status := range []int{200, 400} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			repo := &handlerImageLogRepo{rows: map[string]service.ImageTaskLogEntry{}}
+			logs := service.NewImageTaskLogService(repo, nil)
+			h := &GatewayHandler{imageLogs: logs}
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-3.1-flash-image-preview:generateContent", nil)
+			c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 10, UserID: 7, Group: &service.Group{Platform: service.PlatformGemini}})
+			body := []byte(`{"contents":[{"parts":[{"text":"draw a square"}]}]}`)
+			finish := h.startGeminiImageTaskLog(c, "gemini-3.1-flash-image-preview", body)
+			response := []byte(`{"error":{"message":"fixture error"}}`)
+			if status == http.StatusOK {
+				response = []byte(`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7xkAAAAASUVORK5CYII="}}]},"finishReason":"STOP"}]}`)
+			}
+			c.Data(status, "application/json", response)
+			finish()
+			logs.Stop()
+			require.Len(t, repo.rows, 1)
+			for _, entry := range repo.rows {
+				require.Equal(t, service.PlatformGemini, entry.Platform)
+				require.Equal(t, "gemini-3.1-flash-image-preview", entry.Model)
+				require.Equal(t, "draw a square", entry.Prompt)
+				if status == http.StatusOK {
+					require.Equal(t, "completed", entry.Status)
+					require.Equal(t, 1, entry.SuccessCount)
+				} else {
+					require.Equal(t, "failed", entry.Status)
+				}
+			}
+			before := repo.saves
+			h.startGeminiImageTaskLog(c, "gemini-2.5-flash", body)()
+			require.Equal(t, before, repo.saves)
+		})
+	}
+}
+
 func (r *handlerImageLogRepo) Save(_ context.Context, e *service.ImageTaskLogEntry) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -99,9 +99,13 @@ func IsGeminiBananaBridgeModel(model string) bool {
 	return strings.HasPrefix(model, "gemini-nano-banana-") || strings.HasPrefix(model, "nano-banana2-") || strings.HasPrefix(model, "banana2-") || strings.HasPrefix(model, "nano-banana-pro-")
 }
 
+func IsGeminiImageGenerationModel(model string) bool {
+	return isGeminiCompatibleImageModel(NormalizeGeminiModelID(model))
+}
+
 func BuildOpenAIImagesBodyFromGeminiBanana(model string, body []byte) ([]byte, error) {
 	model = strings.TrimSpace(strings.TrimPrefix(model, "models/"))
-	if !IsGeminiBananaBridgeModel(model) {
+	if !IsGeminiBananaBridgeModel(model) && !IsGeminiImageGenerationModel(model) {
 		return nil, fmt.Errorf("unsupported gemini banana model: %s", model)
 	}
 	if len(body) == 0 || !gjson.ValidBytes(body) {

@@ -706,11 +706,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKeyRaw(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	if IsGeminiBananaBridgeModel(requestModel) {
+	if IsGeminiBananaBridgeModel(requestModel) || isGeminiCompatibleImageModel(requestModel) {
 		requestModel = NormalizeGeminiModelID(requestModel)
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
-	if IsGeminiBananaBridgeModel(requestModel) {
+	if IsGeminiBananaBridgeModel(requestModel) || isGeminiCompatibleImageModel(requestModel) {
 		upstreamModel = NormalizeGeminiModelID(upstreamModel)
 	}
 	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
@@ -809,11 +809,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	if IsGeminiBananaBridgeModel(requestModel) {
+	if IsGeminiBananaBridgeModel(requestModel) || isGeminiCompatibleImageModel(requestModel) {
 		requestModel = NormalizeGeminiModelID(requestModel)
 	}
 	upstreamModel := account.GetMappedModel(requestModel)
-	if IsGeminiBananaBridgeModel(requestModel) {
+	if IsGeminiBananaBridgeModel(requestModel) || isGeminiCompatibleImageModel(requestModel) {
 		upstreamModel = NormalizeGeminiModelID(upstreamModel)
 	}
 	SetOpsUpstreamModel(c, upstreamModel)

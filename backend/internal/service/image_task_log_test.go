@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -15,6 +16,32 @@ import (
 type imageLogMemoryRepo struct {
 	entry ImageTaskLogEntry
 	err   error
+}
+
+func TestImageTaskLogRetainsGeminiOutputs(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			r := &imageLogMemoryRepo{}
+			s := NewImageTaskLogService(r, nil)
+			defer s.Stop()
+			e := &ImageTaskLogEntry{TaskID: "gemini", UserID: 7, Platform: PlatformGemini}
+			s.Start(t.Context(), e)
+			b64 := base64.StdEncoding.EncodeToString(b64BackfillPNGBytes)
+			body := []byte(`{"candidates":[{"content":{"parts":[{"thought":true,"inlineData":{"mimeType":"image/png","data":"ignored"}},{"inlineData":{"mimeType":"image/png","data":"` + b64 + `"}}]},"finishReason":"STOP"}]}`)
+			capture := NewImageTaskLogCapture()
+			if stream {
+				capture.Write(append(append([]byte("data: "), body...), []byte("\n\n")...), true)
+			} else {
+				capture.Write(body, false)
+			}
+			output, failed := capture.Result(stream)
+			s.Finish(t.Context(), e, 200, output, failed)
+			require.Equal(t, "completed", r.entry.Status)
+			require.Equal(t, 1, r.entry.SuccessCount)
+			require.Len(t, r.entry.Results, 1)
+			require.Equal(t, b64BackfillPNGBytes, r.entry.Results[0].Data)
+		})
+	}
 }
 
 func (r *imageLogMemoryRepo) Save(_ context.Context, e *ImageTaskLogEntry) error {

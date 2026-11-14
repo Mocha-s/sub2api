@@ -382,6 +382,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	setOpsRequestContext(c, modelName, stream)
+	if action == "generateContent" || action == "streamGenerateContent" {
+		defer h.startGeminiImageTaskLog(c, modelName, body)()
+	}
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
 	pricingCtx, pricingAt := service.WithGatewayTokenRequestPricing(c.Request.Context())
 	c.Request = c.Request.WithContext(pricingCtx)
@@ -454,7 +457,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
 	estimate := tokenInflightEstimate(modelName, body)
-	if bananaBridgeRequest {
+	if bananaBridgeRequest || service.IsGeminiImageGenerationModel(modelName) {
 		estimate = imageInflightEstimate(modelName, body)
 	}
 	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, estimate)
@@ -786,7 +789,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
-		if bananaBridgeRequest {
+		if bananaBridgeRequest || (!stream && action == "generateContent" && cachedContentBinding == nil && h.openAIGatewayService.UsesOpenAIImagesForGemini(requestCtx, account, modelName)) {
 			result, err = h.forwardGeminiBananaBridge(requestCtx, c, account, modelName, body, channelMapping)
 		} else if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 			result, err = h.antigravityGatewayService.ForwardGemini(
@@ -1048,6 +1051,11 @@ func (h *GatewayHandler) forwardGeminiBananaBridge(
 	body []byte,
 	channelMapping service.ChannelMappingResult,
 ) (*service.ForwardResult, error) {
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || !service.GroupAllowsImageGeneration(apiKey.Group) {
+		googleError(c, http.StatusForbidden, service.ImageGenerationPermissionMessage())
+		return nil, nil
+	}
 	imageRelease, acquired := h.acquireGeminiImageGenerationSlot(c)
 	if !acquired {
 		return nil, nil
@@ -1070,14 +1078,15 @@ func (h *GatewayHandler) forwardGeminiBananaBridge(
 	openAIReq.ContentLength = int64(len(openAIBody))
 	openAIReq.Header = openAIReq.Header.Clone()
 	openAIReq.Header.Set("Content-Type", openAIContentType)
-	openAICtx := *c
+	openAICtx := c.Copy()
 	openAICtx.Request = openAIReq
-	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(&openAICtx, openAIBody)
+	parsed, err := h.openAIGatewayService.ParseOpenAIImagesRequest(openAICtx, openAIBody)
 	if err != nil {
 		googleError(c, http.StatusBadRequest, err.Error())
 		return nil, nil
 	}
 	channelMappedModel := service.NormalizeGeminiModelID(channelMapping.MappedModel)
+	setActualUpstreamEndpoint(c, openAIEndpoint)
 	raw, err := h.openAIGatewayService.ForwardImagesRaw(requestCtx, c, account, openAIBody, parsed, channelMappedModel)
 	if err != nil {
 		var failoverErr *service.UpstreamFailoverError

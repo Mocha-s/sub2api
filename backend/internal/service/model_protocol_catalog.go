@@ -36,6 +36,8 @@ const (
 	modelProtocolCatalogTimeout       = 15 * time.Second
 	modelProtocolCatalogFirstLoadWait = 2 * time.Second
 	modelProtocolCatalogMaxBodyBytes  = 2 << 20
+	modelProtocolOpenAIImages         = "openai-image"
+	modelProtocolGemini               = "gemini"
 )
 
 type modelProtocolCatalogEntry struct {
@@ -127,7 +129,7 @@ func (c *modelProtocolCatalog) store(key string, models map[string][]string, err
 	entry.retryAt = time.Time{}
 }
 
-// modelEndpointProtocol 把 supported_endpoints 中的端点路径映射为上游协议。
+// modelEndpointProtocol accepts endpoint paths and Gemini/Images endpoint types.
 func modelEndpointProtocol(endpoint string) string {
 	endpoint = strings.ToLower(strings.TrimRight(strings.TrimSpace(endpoint), "/"))
 	switch {
@@ -137,13 +139,17 @@ func modelEndpointProtocol(endpoint string) string {
 		return APIProtocolResponses
 	case strings.HasSuffix(endpoint, "/messages"):
 		return APIProtocolAnthropic
+	case endpoint == modelProtocolOpenAIImages, strings.HasSuffix(endpoint, "/images/generations"):
+		return modelProtocolOpenAIImages
+	case endpoint == modelProtocolGemini, strings.HasSuffix(endpoint, "/v1beta/models"):
+		return modelProtocolGemini
 	default:
 		return ""
 	}
 }
 
-// parseModelProtocolCatalog 解析 /models 响应；没有任何模型带可识别的 supported_endpoints
-// 时返回错误（上游不提供该字段，或是中转站的普通 /models）。
+// parseModelProtocolCatalog 解析 /models 响应中的端点路径或端点类型；
+// 未声明任何可识别协议的普通模型列表返回错误。
 func parseModelProtocolCatalog(body []byte) (map[string][]string, error) {
 	entries, err := extractUpstreamModelRawEntries(body)
 	if err != nil {
@@ -156,7 +162,8 @@ func parseModelProtocolCatalog(body []byte) (map[string][]string, error) {
 			continue
 		}
 		var protocols []string
-		for _, endpoint := range gjson.GetBytes(raw, "supported_endpoints").Array() {
+		endpoints := append(gjson.GetBytes(raw, "supported_endpoints").Array(), gjson.GetBytes(raw, "supported_endpoint_types").Array()...)
+		for _, endpoint := range endpoints {
 			protocol := modelEndpointProtocol(endpoint.String())
 			if protocol != "" && !slices.Contains(protocols, protocol) {
 				protocols = append(protocols, protocol)
@@ -170,6 +177,33 @@ func parseModelProtocolCatalog(body []byte) (map[string][]string, error) {
 		return nil, fmt.Errorf("model list has no supported_endpoints")
 	}
 	return models, nil
+}
+
+// UsesOpenAIImagesForGemini preserves native Gemini unless this account's catalog
+// explicitly declares Images support without a Gemini endpoint for the mapped model.
+func (s *OpenAIGatewayService) UsesOpenAIImagesForGemini(ctx context.Context, account *Account, model string) bool {
+	if s == nil || s.httpUpstream == nil || account == nil || !account.IsGeminiThirdPartyAPIKey() {
+		return false
+	}
+	model = NormalizeGeminiModelID(account.GetMappedModel(model))
+	if !IsGeminiImageGenerationModel(model) {
+		return false
+	}
+	url := buildOpenAIModelsURL(account.GetGeminiBaseURL(""))
+	key := modelProtocolCatalogKey(account, url)
+	headers := modelProtocolCatalogHeaders(openAIImagesOutboundAccount(account), url)
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	accountID, concurrency := account.ID, account.Concurrency
+	protocols := upstreamModelProtocols.lookup(ctx, key, model, time.Now(), func() {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), modelProtocolCatalogTimeout)
+		defer cancel()
+		models, err := s.fetchModelProtocolCatalog(refreshCtx, url, headers, proxyURL, accountID, concurrency)
+		upstreamModelProtocols.store(key, models, err, time.Now())
+	})
+	return slices.Contains(protocols, modelProtocolOpenAIImages) && !slices.Contains(protocols, modelProtocolGemini)
 }
 
 // modelCatalogProtocols 返回上游模型目录中 model 支持的协议；平台不提供目录、账号固定了

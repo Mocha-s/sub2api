@@ -5,11 +5,13 @@ package handler
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -81,9 +83,13 @@ type geminiBananaBridgeHTTPUpstream struct {
 	lastURL         string
 	accountIDs      []int64
 	failAccountID   int64
+	catalog         string
 }
 
 func (u *geminiBananaBridgeHTTPUpstream) Do(req *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	if req.Method == http.MethodGet {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(u.catalog))}, nil
+	}
 	body, _ := io.ReadAll(req.Body)
 	u.lastBody = body
 	u.lastPath = req.URL.Path
@@ -91,6 +97,9 @@ func (u *geminiBananaBridgeHTTPUpstream) Do(req *http.Request, _ string, account
 	u.lastAccountID = accountID
 	u.lastURL = req.URL.String()
 	u.accountIDs = append(u.accountIDs, accountID)
+	if strings.Contains(req.URL.Path, "/v1beta/models/") {
+		return &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid request. Please check the request parameters."}}`))}, nil
+	}
 	if u.failAccountID > 0 && accountID == u.failAccountID {
 		return &http.Response{
 			StatusCode: http.StatusServiceUnavailable,
@@ -109,6 +118,19 @@ func (u *geminiBananaBridgeHTTPUpstream) Do(req *http.Request, _ string, account
 }
 
 func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
+	testGatewayHandlerGeminiImageBridge(t, "gemini-nano-banana-2.1", true)
+}
+
+func TestGatewayHandlerGeminiDeclaredImagesReturnsGeminiJSON(t *testing.T) {
+	for _, reference := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reference=%t", reference), func(t *testing.T) {
+			testGatewayHandlerGeminiImageBridge(t, "gemini-3.1-flash-image-preview", reference)
+		})
+	}
+}
+
+func testGatewayHandlerGeminiImageBridge(t *testing.T, model string, reference bool) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	groupID := int64(441)
 	account := service.Account{
@@ -121,7 +143,7 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 		Credentials: map[string]any{
 			"api_key":       "test-key",
 			"base_url":      "https://compatible.example/v1",
-			"model_mapping": map[string]any{"gemini-nano-banana-2.1": "models/gemini-nano-banana-2.1"},
+			"model_mapping": map[string]any{model: "models/" + model},
 		},
 		AccountGroups: []service.AccountGroup{{GroupID: groupID}},
 	}
@@ -134,10 +156,13 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	oauthAccount.Priority = 0
 	oauthAccount.Credentials = map[string]any{
 		"access_token":  "oauth-token",
-		"model_mapping": map[string]any{"gemini-nano-banana-2.1": "models/gemini-nano-banana-2.1"},
+		"model_mapping": map[string]any{model: "models/" + model},
+	}
+	if !service.IsGeminiBananaBridgeModel(model) {
+		oauthAccount.Priority = 99
 	}
 	account.Priority = 1
-	upstream := &geminiBananaBridgeHTTPUpstream{}
+	upstream := &geminiBananaBridgeHTTPUpstream{catalog: `{"data":[{"id":"` + model + `","supported_endpoint_types":["openai-image"]}]}`}
 	openAIService := service.NewOpenAIGatewayService(
 		geminiBananaBridgeAccountRepo{accounts: []service.Account{oauthAccount, account, fallbackAccount}},
 		nil,
@@ -197,17 +222,21 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	h := &GatewayHandler{
 		gatewayService:           gatewayService,
 		openAIGatewayService:     openAIService,
+		geminiCompatService:      service.NewGeminiMessagesCompatService(nil, nil, nil, nil, nil, nil, upstream, nil, &config.Config{}),
 		billingCacheService:      billingCacheService,
 		concurrencyHelper:        &ConcurrencyHelper{concurrencyService: service.NewConcurrencyService(nil)},
 		maxAccountSwitchesGemini: 3,
 		cfg:                      &config.Config{Gateway: config.GatewayConfig{ImageNonstreamKeepaliveInterval: 10}},
 	}
 	body := []byte(`{"contents":[{"role":"user","parts":[{"text":"draw a cat"},{"inlineData":{"mimeType":"image/png","data":"QUJD"}}]}],"generationConfig":{"imageConfig":{"imageSize":"4K","aspectRatio":"9:16"}}}`)
-	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-nano-banana-2.1:generateContent", bytes.NewReader(body))
+	if !reference {
+		body = []byte(`{"contents":[{"role":"user","parts":[{"text":"draw a cat"}]}],"generationConfig":{"imageConfig":{"imageSize":"4K","aspectRatio":"9:16"}}}`)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1beta/models/"+model+":generateContent", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Params = gin.Params{{Key: "modelAction", Value: "gemini-nano-banana-2.1:generateContent"}}
+	c.Params = gin.Params{{Key: "modelAction", Value: model + ":generateContent"}}
 	c.Request = req
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      19,
@@ -226,18 +255,36 @@ func TestGatewayHandlerGeminiBananaBridgeReturnsGeminiJSON(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, "image/png", gjson.GetBytes(rec.Body.Bytes(), "candidates.0.content.parts.0.inlineData.mimeType").String())
 	require.Equal(t, "QUJD", gjson.GetBytes(rec.Body.Bytes(), "candidates.0.content.parts.0.inlineData.data").String())
-	require.Equal(t, "/v1/images/edits", upstream.lastPath)
-	require.Equal(t, "https://compatible.example/v1/images/edits", upstream.lastURL)
 	require.Equal(t, []int64{9}, upstream.accountIDs)
+	if !reference {
+		require.Equal(t, "/v1/images/generations", upstream.lastPath)
+		require.Equal(t, "/v1/images/generations", GetUpstreamEndpoint(c, service.PlatformGemini))
+		require.Equal(t, model, gjson.GetBytes(upstream.lastBody, "model").String())
+		return
+	}
+	require.Equal(t, "/v1/images/edits", upstream.lastPath)
+	require.Equal(t, "/v1/images/edits", GetUpstreamEndpoint(c, service.PlatformGemini))
+	require.Equal(t, "https://compatible.example/v1/images/edits", upstream.lastURL)
 	mediaType, params, err := mime.ParseMediaType(upstream.lastContentType)
 	require.NoError(t, err)
 	require.Equal(t, "multipart/form-data", mediaType)
 	form, err := multipart.NewReader(bytes.NewReader(upstream.lastBody), params["boundary"]).ReadForm(int64(len(upstream.lastBody)))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = form.RemoveAll() })
-	require.Equal(t, []string{"gemini-nano-banana-2.1"}, form.Value["model"])
+	require.Equal(t, []string{model}, form.Value["model"])
 	require.Equal(t, []string{"draw a cat"}, form.Value["prompt"])
 	require.Equal(t, []string{"9:16"}, form.Value["size"])
 	require.Equal(t, []string{"4k"}, form.Value["quality"])
 	require.Len(t, form.File["image"], 1)
+}
+
+func TestGeminiImagesBridgeRequiresImagePermission(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{Group: &service.Group{AllowImageGeneration: false}})
+	h := &GatewayHandler{}
+	result, err := h.forwardGeminiBananaBridge(context.Background(), c, nil, "gemini-3.1-flash-image-preview", nil, service.ChannelMappingResult{})
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusForbidden, rec.Code)
 }

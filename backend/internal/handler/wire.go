@@ -99,6 +99,7 @@ func ProvideAdminHandlers(
 }
 
 func ProvideGatewayHandler(
+	imageLogs *service.ImageTaskLogService,
 	gatewayService *service.GatewayService,
 	openAIGatewayService *service.OpenAIGatewayService,
 	geminiCompatService *service.GeminiMessagesCompatService,
@@ -122,6 +123,7 @@ func ProvideGatewayHandler(
 		errorPassthroughService, contentModerationService, userMsgQueueService, cfg, settingService)
 	h.securityAuditCoordinator = coordinator
 	h.geminiCachedContentService = geminiCachedContentService
+	h.imageLogs = imageLogs
 	return h
 }
 
