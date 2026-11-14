@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import TaskLogsView from '../TaskLogsView.vue'
+import Select from '@/components/common/Select.vue'
 import type { TaskLog } from '@/api/taskLogs'
 
 const { get, showError, showSuccess, saveAs } = vi.hoisted(() => ({ get: vi.fn(), showError: vi.fn(), showSuccess: vi.fn(), saveAs: vi.fn() }))
@@ -22,14 +23,15 @@ const task = (overrides: Partial<TaskLog> = {}): TaskLog => ({
 })
 const page = (rows: TaskLog[]) => ({ data: { items: rows, total: rows.length, page: 1, page_size: 20, pages: 1 } })
 let wrapper: VueWrapper | undefined
-function render(admin = false) {
+function render(admin = false, realSelect = false) {
   wrapper = mount(TaskLogsView, {
     props: { admin },
     global: { stubs: {
       AppLayout: { template: '<main><slot /></main>' },
       TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
       BaseDialog: { props: ['show', 'title'], template: '<section v-if="show" role="dialog"><h2>{{ title }}</h2><slot /><slot name="footer" /></section>' },
-      DateRangePicker: true, Select: true, Pagination: true, VideoSettlementModal: true
+      DateRangePicker: true, Select: !realSelect, Pagination: true, VideoSettlementModal: true,
+      teleport: true, transition: false
     } }
   })
   return wrapper
@@ -57,6 +59,68 @@ afterEach(() => {
   wrapper = undefined
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+describe('task log user filter', () => {
+  it('searches users by email, filters by the selection and clears it', async () => {
+    get.mockImplementation(async (url: string) => url === '/admin/usage/search-users'
+      ? { data: [{ id: 42, email: 'alice@example.com', deleted: false }] }
+      : page([]))
+    render(true, true)
+    await flushPromises()
+    expect(wrapper!.find('input[type=number]').exists()).toBe(false)
+    await wrapper!.get('button[aria-label="admin.usage.userFilter"]').trigger('click')
+    const search = wrapper!.get('input[placeholder="admin.usage.searchUserPlaceholder"]')
+    await search.setValue('alice')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(get).toHaveBeenCalledWith('/admin/usage/search-users', { params: { q: 'alice' } })
+    const option = wrapper!.get('[role=option]')
+    expect(option.text()).toBe('alice@example.com')
+    await option.trigger('click')
+    await flushPromises()
+    expect(wrapper!.get('button[aria-label="admin.usage.userFilter"]').text()).toContain('alice@example.com')
+    expect(get).toHaveBeenLastCalledWith('/admin/task-logs', expect.objectContaining({
+      params: expect.objectContaining({ user_id: 42, page: 1 })
+    }))
+    await wrapper!.get('[aria-label="Clear selection"]').trigger('click')
+    await flushPromises()
+    expect(get).toHaveBeenLastCalledWith('/admin/task-logs', expect.objectContaining({
+      params: expect.objectContaining({ user_id: undefined, page: 1 })
+    }))
+  })
+
+  it('does not expose user search on the user page', async () => {
+    get.mockResolvedValue(page([]))
+    render()
+    await flushPromises()
+    expect(wrapper!.findComponent('[aria-label="admin.usage.userFilter"]').exists()).toBe(false)
+    expect(wrapper!.findAllComponents(Select)).toHaveLength(2)
+  })
+
+  it('ignores stale search responses and handles failed searches', async () => {
+    const pending = deferred<{ data: { id: number; email: string; deleted: boolean }[] }>()
+    get.mockImplementation(async (url: string, config: { params: { q?: string } }) => {
+      if (url !== '/admin/usage/search-users') return page([])
+      if (config.params.q === 'old') return pending.promise
+      if (config.params.q === 'error') throw new Error('Search unavailable')
+      return { data: [{ id: 42, email: 'alice@example.com', deleted: false }] }
+    })
+    render(true, true)
+    await flushPromises()
+    await wrapper!.get('button[aria-label="admin.usage.userFilter"]').trigger('click')
+    const search = wrapper!.get('input[placeholder="admin.usage.searchUserPlaceholder"]')
+    await search.setValue('old')
+    await vi.advanceTimersByTimeAsync(300)
+    await search.setValue('alice')
+    await vi.advanceTimersByTimeAsync(300)
+    pending.resolve({ data: [{ id: 1, email: 'old@example.com', deleted: false }] })
+    await flushPromises()
+    expect(wrapper!.get('[role=option]').text()).toBe('alice@example.com')
+    await search.setValue('error')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(wrapper!.find('[role=option]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain('common.loading')
+  })
 })
 
 describe('task log results', () => {

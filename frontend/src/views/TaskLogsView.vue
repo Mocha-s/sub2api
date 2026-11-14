@@ -24,16 +24,20 @@
             :aria-label="t('taskLogs.columns.taskId')"
             @keyup.enter="reload"
           />
-          <input
-            v-if="admin"
-            v-model.number="filters.user_id"
-            type="number"
-            min="1"
-            class="input w-28"
-            :placeholder="t('taskLogs.userId')"
-            :aria-label="t('taskLogs.userId')"
-            @keyup.enter="reload"
-          />
+          <div v-if="admin" class="w-full sm:w-60">
+            <Select
+              :model-value="filters.user_id"
+              :options="userOptions"
+              :placeholder="t('admin.usage.userFilter')"
+              :aria-label="t('admin.usage.userFilter')"
+              :search-placeholder="t('admin.usage.searchUserPlaceholder')"
+              remote
+              clearable
+              :loading="userSearchLoading"
+              @search="searchUsers"
+              @change="selectUser"
+            />
+          </div>
           <button type="button" class="btn btn-secondary" :disabled="loading" @click="load()">
             {{ t('common.refresh') }}
           </button>
@@ -213,7 +217,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import type { Column } from '@/components/common/types'
 import Pagination from '@/components/common/Pagination.vue'
-import Select from '@/components/common/Select.vue'
+import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import StatusBadge from '@/components/common/StatusBadge.vue'
@@ -222,6 +226,7 @@ import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { formatDateTime } from '@/utils/format'
 import { downloadBatchImages, fetchImageContent, fetchVideoContent, listTaskLogs, type TaskLog, type TaskLogStatus } from '@/api/taskLogs'
+import { searchUsers as searchUsageUsers, type SimpleUser } from '@/api/admin/usage'
 import {
   canSettle,
   formatTaskDuration,
@@ -252,6 +257,48 @@ const now = ref(Date.now())
 const startDate = ref(localDate(new Date(Date.now() - DAY_MS)))
 const endDate = ref(localDate(new Date()))
 const filters = reactive({ type: '', status: '', platform: '', task_id: '', user_id: undefined as number | undefined })
+const userResults = ref<SimpleUser[]>([])
+const selectedUser = ref<SelectOption | null>(null)
+const userSearchLoading = ref(false)
+let userSearchSequence = 0
+const userOptions = computed<SelectOption[]>(() => {
+  const options: SelectOption[] = userResults.value.map(user => ({
+    value: user.id,
+    label: user.email + (user.deleted ? `（${t('admin.usage.userDeletedBadge')}）` : '')
+  }))
+  if (selectedUser.value && !options.some(option => option.value === selectedUser.value?.value)) {
+    options.unshift(selectedUser.value)
+  }
+  return options
+})
+
+async function searchUsers(keyword: string) {
+  const sequence = ++userSearchSequence
+  const query = keyword.trim()
+  userResults.value = []
+  userSearchLoading.value = false
+  if (!props.admin || !query) return
+  userSearchLoading.value = true
+  try {
+    const users = await searchUsageUsers(query)
+    if (sequence === userSearchSequence) {
+      userResults.value = users.sort((a, b) => Number(a.deleted) - Number(b.deleted))
+    }
+  } catch {
+    if (sequence === userSearchSequence) userResults.value = []
+  } finally {
+    if (sequence === userSearchSequence) userSearchLoading.value = false
+  }
+}
+
+function selectUser(value: SelectOption['value'], option: SelectOption | null) {
+  ++userSearchSequence
+  userSearchLoading.value = false
+  filters.user_id = typeof value === 'number' ? value : undefined
+  selectedUser.value = option
+  userResults.value = []
+  reload()
+}
 
 const detailRow = ref<TaskLog | null>(null)
 const settleRow = ref<TaskLog | null>(null)
@@ -441,6 +488,11 @@ async function downloadResult(row: TaskLog, index = 0) {
 }
 
 watch(() => props.admin, () => {
+  ++userSearchSequence
+  userSearchLoading.value = false
+  userResults.value = []
+  selectedUser.value = null
+  filters.user_id = undefined
   downloadRequest?.abort()
   closeDetail()
   settleRow.value = null
@@ -458,6 +510,7 @@ onMounted(() => {
   }, 10_000)
 })
 onBeforeUnmount(() => {
+  ++userSearchSequence
   window.clearInterval(timer)
   listRequest?.abort()
   downloadRequest?.abort()
