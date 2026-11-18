@@ -204,6 +204,17 @@ func TestJimengOpenAIVideosAdapterVideoGenerationsRejectsUnsupportedFieldsOnCrea
 	require.Zero(t, provider.createCalls)
 }
 
+func TestJimengOpenAIVideosAdapterVideosConvertsSizeForMappedSeedanceModel(t *testing.T) {
+	provider := &fakeNamedVideoProvider{createResult: &VideoProviderCreateResult{}}
+	adapter := &jimengOpenAIVideosAdapter{provider: provider}
+	body := []byte(`{"model":"seedance2.5-bl-720p","prompt":"city","size":"1280x720"}`)
+
+	_, err := adapter.Create(context.Background(), nil, body, "application/json", "seedance2.5-bl-720p")
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"seedance2.5-bl-720p","prompt":"city","resolution":"720p","aspect_ratio":"16:9"}`, string(provider.createBody))
+}
+
 func TestAdaptJimengVideoGenerationsCompatBodyNormalizesDurationAndRatio(t *testing.T) {
 	adapted, err := adaptJimengVideoGenerationsCompatBody([]byte(`{"model":"video-ds-2.0-fast","prompt":"city","duration":8,"ratio":"9:16"}`), true)
 

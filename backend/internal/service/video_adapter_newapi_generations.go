@@ -26,7 +26,7 @@ func (a *newAPIVideoGenerationsAdapter) ValidateCreate(ctx context.Context, acco
 		return err
 	}
 	if err := validateUnifiedVideoGenerationFields(ctx, body,
-		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"size", "resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
 		"return_last_frame", "web_search", "content", "images", "videos", "audios",
 	); err != nil {
 		return err

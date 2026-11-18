@@ -591,6 +591,12 @@ func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account
 			return nil, err
 		}
 		body = adapted
+	} else {
+		normalized, err := normalizeOpenAIVideoSizeBody(body)
+		if err != nil {
+			return nil, err
+		}
+		body = normalized
 	}
 	result, err := a.provider.Create(ctx, account, body, contentType, upstreamModel)
 	if result != nil {
@@ -612,6 +618,12 @@ func (a *jimengOpenAIVideosAdapter) ValidateCreate(ctx context.Context, account 
 			return nil
 		}
 		body = adapted
+	} else {
+		var err error
+		body, err = normalizeOpenAIVideoSizeBody(body)
+		if err != nil {
+			return err
+		}
 	}
 	return validateOpenAIVideoCreateShape(body)
 }
@@ -644,6 +656,11 @@ func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Accou
 		}
 		body = adapted
 		legacy = normalizedLegacy
+	} else {
+		body, err = normalizeOpenAIVideoSizeBody(body)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if legacy {
 		if err := validateOpenAIVideoCreateShape(body); err != nil {
@@ -651,6 +668,56 @@ func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Accou
 		}
 	}
 	return localVideoEstimateResult(a.Name(), videoTaskEndpointFromContext(ctx), req.Model, body, upstreamModel)
+}
+
+func normalizeOpenAIVideoSizeBody(body []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid video create JSON: %w", err)
+	}
+	rawSize := payload["size"]
+	if len(rawSize) == 0 {
+		return body, nil
+	}
+	var size string
+	if err := json.Unmarshal(rawSize, &size); err != nil || strings.TrimSpace(size) == "" {
+		return nil, invalidVideoTaskRequest("size must be a resolution or pixel dimensions")
+	}
+	size = strings.ToLower(strings.TrimSpace(size))
+	resolution := NormalizeVideoResolutionTier(size)
+	switch resolution {
+	case "480p", "720p", "768p", "1080p", "4k":
+	default:
+		return nil, invalidVideoTaskRequest("unsupported video size %q", size)
+	}
+	if _, exists := payload["resolution"]; !exists {
+		encoded, err := json.Marshal(resolution)
+		if err != nil {
+			return nil, err
+		}
+		payload["resolution"] = encoded
+	}
+	if _, exists := payload["aspect_ratio"]; !exists {
+		ratio := rawStringField(payload, "ratio")
+		if ratio == "" {
+			ratio = videoAspectRatioFromSize(size)
+			switch size {
+			case "854x480", "1366x768":
+				ratio = "16:9"
+			case "480x854", "768x1366":
+				ratio = "9:16"
+			}
+		}
+		if ratio != "" {
+			encoded, err := json.Marshal(ratio)
+			if err != nil {
+				return nil, err
+			}
+			payload["aspect_ratio"] = encoded
+		}
+	}
+	delete(payload, "size")
+	return json.Marshal(payload)
 }
 
 func (a *jimengOpenAIVideosAdapter) Content(ctx context.Context, account *Account, task *VideoTask, headers http.Header) (*VideoContentStream, error) {

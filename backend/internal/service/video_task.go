@@ -423,7 +423,11 @@ func rejectForbiddenOpenAIVideoFields(body []byte) error {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return err
 	}
+	_, legacyModel := supportedOpenAIVideoModels[rawStringField(payload, "model")]
 	for _, field := range []string{"duration", "width", "height", "size", "mode", "model_name", "req_key"} {
+		if field == "size" && !legacyModel {
+			continue
+		}
 		if _, ok := payload[field]; ok {
 			return fmt.Errorf("%s is not supported by /v1/videos", field)
 		}

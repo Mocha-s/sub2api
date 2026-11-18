@@ -40,6 +40,16 @@ func TestOpenAIVideosDurationAdapterCreateConvertsSecondsToDuration(t *testing.T
 	require.Equal(t, VideoAdapterOpenAIVideosDuration, result.Metadata[VideoAdapterMetadataKey])
 }
 
+func TestOpenAIDurationCreateBodyConvertsSizeToResolutionAndRatio(t *testing.T) {
+	body, err := openAIDurationCreateBody(
+		[]byte(`{"model":"client-model","prompt":"rain","size":"1280x720"}`),
+		"seedance2.5-bl-720p",
+	)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"seedance2.5-bl-720p","prompt":"rain","resolution":"720p","aspect_ratio":"16:9"}`, string(body))
+}
+
 func TestOpenAIVideosDurationAdapterEstimateReturnsDurationMetadata(t *testing.T) {
 	adapter := NewOpenAIVideosDurationAdapter(nil).(*openAIVideosDurationAdapter)
 	body := []byte(`{"model":"seedance-2.0","prompt":"city","seconds":"5","aspect_ratio":"16:9"}`)

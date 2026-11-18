@@ -57,7 +57,7 @@ func (a *openAIVideosDurationAdapter) ValidateCreate(ctx context.Context, accoun
 		return err
 	}
 	if err := validateUnifiedVideoGenerationFields(ctx, body,
-		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"size", "resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
 		"content", "images", "videos", "audios",
 	); err != nil {
 		return err
@@ -162,6 +162,11 @@ func (a *openAIVideosDurationAdapter) openAIProvider() (*openAICompatibleVideoPr
 }
 
 func openAIDurationCreateBody(body []byte, upstreamModel string) ([]byte, error) {
+	var err error
+	body, err = normalizeOpenAIVideoSizeBody(body)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := openAIDurationRawPayload(body)
 	if err != nil {
 		return nil, err
