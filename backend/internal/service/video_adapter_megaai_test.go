@@ -83,6 +83,17 @@ func TestMegaAiDurationAndSizeNormalization(t *testing.T) {
 	require.JSONEq(t, `{"model":"video-model","duration":5,"resolution":"480p","ratio":"1:1"}`, string(body))
 }
 
+func TestMegaAi768pSizeNormalization(t *testing.T) {
+	body, err := megaAiCreateBody([]byte(`{"size":"1366x768"}`), "minimax-h3-f-quick")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"minimax-h3-f-quick","resolution":"768p","ratio":"16:9"}`, string(body))
+}
+
+func TestMegaAiFastModelRejects768p(t *testing.T) {
+	_, err := megaAiCreateBody([]byte(`{"resolution":"768p"}`), "minimax-h3-f-fast")
+	require.EqualError(t, err, `error: code=400 reason="VIDEO_TASK_INVALID_REQUEST" message="model minimax-h3-f-fast does not support resolution 768p" metadata=map[]`)
+}
+
 func TestMegaAiPortraitSizeMatchesBillingResolution(t *testing.T) {
 	seconds := 15
 	base, tier := 0.2, 1.2

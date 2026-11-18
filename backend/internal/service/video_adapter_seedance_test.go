@@ -43,6 +43,12 @@ func TestSeedanceAPIV1AdapterCreateConvertsRequestAndParsesAcceptedResponse(t *t
 	require.JSONEq(t, `{"id":"123","task_id":"123","object":"video","model":"seedance-2.0","status":"queued","progress":0,"duration":10,"ratio":"16:9","resolution":"720p"}`, string(result.RawBody))
 }
 
+func TestSeedanceAPIV1AdapterConvertsSizeToResolutionAndRatio(t *testing.T) {
+	body, err := seedanceCreateBody([]byte(`{"model":"seedance2.5-bl-720p","prompt":"city","size":"1280x720"}`), "seedance2.5-bl-720p")
+	require.NoError(t, err)
+	require.JSONEq(t, `{"model":"seedance2.5-bl-720p","prompt":"city","resolution":"720p","ratio":"16:9"}`, string(body))
+}
+
 func TestSeedanceAPIV1VideoAdapterEstimateReturnsMappedMetadata(t *testing.T) {
 	adapter := NewSeedanceAPIV1VideoAdapter(nil).(*seedanceAPIV1VideoAdapter)
 	body := []byte(`{"model":"seedance-2.0","prompt":"city","duration":8,"ratio":"16:9","resolution":"720p"}`)

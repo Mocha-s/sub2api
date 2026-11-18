@@ -494,6 +494,8 @@ func NormalizeVideoResolutionTier(value string) string {
 		return "480p"
 	case "1280x720", "720x1280", "720p":
 		return "720p"
+	case "1366x768", "768x1366", "768p":
+		return "768p"
 	case "1920x1080", "1080x1920", "1080p":
 		return "1080p"
 	case "3840x2160", "2160x3840", "2160p", "4k":

@@ -197,17 +197,17 @@ func megaAiCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 		size = strings.ToLower(strings.TrimSpace(size))
 		resolution := NormalizeVideoResolutionTier(size)
 		switch resolution {
-		case "480p", "720p", "1080p", "4k":
+		case "480p", "720p", "768p", "1080p", "4k":
 		default:
 			return nil, invalidVideoTaskRequest("unsupported MegaAi size %q; use resolution and ratio", size)
 		}
 		out["resolution"] = resolution
 		if ratio == "" {
 			if sizeRatio := videoAspectRatioFromSize(size); sizeRatio != "" {
-				if size == "854x480" {
+				switch size {
+				case "854x480", "1366x768":
 					sizeRatio = "16:9"
-				}
-				if size == "480x854" {
+				case "480x854", "768x1366":
 					sizeRatio = "9:16"
 				}
 				out["ratio"] = sizeRatio
@@ -223,6 +223,9 @@ func megaAiCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 			}
 			out[key] = v
 		}
+	}
+	if strings.EqualFold(strings.TrimSpace(upstreamModel), "minimax-h3-f-fast") && out["resolution"] == "768p" {
+		return nil, invalidVideoTaskRequest("model %s does not support resolution 768p", strings.TrimSpace(upstreamModel))
 	}
 	return json.Marshal(out)
 }

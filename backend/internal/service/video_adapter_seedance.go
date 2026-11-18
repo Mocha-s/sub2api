@@ -30,7 +30,7 @@ func (a *seedanceAPIV1VideoAdapter) ValidateCreate(ctx context.Context, account 
 		return err
 	}
 	if err := validateUnifiedVideoGenerationFields(ctx, body,
-		"resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
+		"size", "resolution", "ratio", "aspect_ratio", "duration", "seconds", "duration_seconds", "generate_audio",
 		"return_last_frame", "web_search", "content", "images", "videos", "audios",
 	); err != nil {
 		return err
@@ -259,6 +259,26 @@ func seedanceCreateBody(body []byte, upstreamModel string) ([]byte, error) {
 	}
 	if ratio != "" {
 		out["ratio"] = ratio
+	}
+	if size := strings.TrimSpace(rawStringField(payload, "size")); size != "" {
+		resolution := NormalizeVideoResolutionTier(size)
+		switch resolution {
+		case "480p", "720p", "768p", "1080p", "4k":
+		default:
+			return nil, invalidVideoTaskRequest("unsupported Seedance size %q; use resolution and ratio", size)
+		}
+		out["resolution"] = resolution
+		if ratio == "" {
+			if sizeRatio := videoAspectRatioFromSize(size); sizeRatio != "" {
+				switch strings.ToLower(strings.TrimSpace(size)) {
+				case "1366x768":
+					sizeRatio = "16:9"
+				case "768x1366":
+					sizeRatio = "9:16"
+				}
+				out["ratio"] = sizeRatio
+			}
+		}
 	}
 	for _, key := range []string{"resolution", "generate_audio", "return_last_frame", "web_search", "content", "images", "videos", "audios"} {
 		if raw := payload[key]; len(raw) > 0 {
