@@ -655,6 +655,7 @@ func (s *VideoTaskService) Fetch(ctx context.Context, params VideoTaskFetchParam
 	}
 	providerResult, err := s.provider.Fetch(ctx, account, task)
 	if err != nil {
+		logger.LegacyPrintf("service.video_task", "video task status fetch failed: task_id=%s account_id=%d err_type=%T err=%v", task.PublicTaskID, account.ID, err, err)
 		return nil, err
 	}
 	if providerResult == nil {

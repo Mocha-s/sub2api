@@ -215,6 +215,38 @@ func TestJimengOpenAIVideosAdapterVideosConvertsSizeForMappedSeedanceModel(t *te
 	require.JSONEq(t, `{"model":"seedance2.5-bl-720p","prompt":"city","resolution":"720p","aspect_ratio":"16:9"}`, string(provider.createBody))
 }
 
+func TestJimengOpenAIVideosAdapterVideosUsesModernShapeForNonLegacyModels(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		model string
+		body  string
+	}{
+		{name: "seedance family", model: "seedance2.5-mm-4k", body: `{"model":"seedance2.5-mm-4k","prompt":"city","duration":15,"resolution":"4k","aspect_ratio":"16:9"}`},
+		{name: "other vendor", model: "vendor-video-v3", body: `{"model":"vendor-video-v3","prompt":"city","duration":15,"resolution":"720p"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &fakeNamedVideoProvider{createResult: &VideoProviderCreateResult{}}
+			adapter := &jimengOpenAIVideosAdapter{provider: provider}
+			body := []byte(tt.body)
+
+			_, err := adapter.Create(context.Background(), nil, body, "application/json", tt.model)
+
+			require.NoError(t, err)
+			require.JSONEq(t, string(body), string(provider.createBody))
+		})
+	}
+}
+
+func TestJimengOpenAIVideosAdapterVideosKeepsDurationOnlyMismatchForFallback(t *testing.T) {
+	provider := &fakeNamedVideoProvider{createResult: &VideoProviderCreateResult{}}
+	adapter := &jimengOpenAIVideosAdapter{provider: provider}
+
+	err := adapter.ValidateCreate(context.Background(), nil, []byte(`{"model":"vendor-video-v3","prompt":"city","duration":15}`), "application/json", "vendor-video-v3")
+
+	require.ErrorContains(t, err, "duration is not supported by /v1/videos")
+	require.Zero(t, provider.createCalls)
+}
+
 func TestAdaptJimengVideoGenerationsCompatBodyNormalizesDurationAndRatio(t *testing.T) {
 	adapted, err := adaptJimengVideoGenerationsCompatBody([]byte(`{"model":"video-ds-2.0-fast","prompt":"city","duration":8,"ratio":"9:16"}`), true)
 
@@ -250,19 +282,20 @@ func TestJimengOpenAIVideosAdapterPreservesSeedance2VideoFields(t *testing.T) {
 	require.JSONEq(t, `{"model":"seedance2.0-413-mini","prompt":"classroom","duration":11,"aspect_ratio":"3:4","resolution":"480p","generate_audio":true}`, string(provider.createBody))
 }
 
-func TestIsSeedance2VideoModelRecognizesUnhyphenatedVersions(t *testing.T) {
+func TestJimengLegacyVideoRequestUsesOnlyLegacyModels(t *testing.T) {
 	for _, tt := range []struct {
-		model string
-		want  bool
+		name       string
+		body       string
+		upstream   string
+		wantLegacy bool
 	}{
-		{model: "seedance2.0-413-mini", want: true},
-		{model: "seedance2.5-480p", want: true},
-		{model: "seedance2.5-720p", want: true},
-		{model: "video-ds-2.0-fast", want: false},
-		{model: "seedance-2.5", want: false},
+		{name: "legacy requested model", body: `{"model":"video-ds-2.0-fast"}`, wantLegacy: true},
+		{name: "legacy mapped model", body: `{"model":"client-model"}`, upstream: "video-ds-2.0", wantLegacy: true},
+		{name: "seedance model", body: `{"model":"seedance2.5-720p"}`},
+		{name: "other vendor model", body: `{"model":"vendor-video-v3"}`},
 	} {
-		t.Run(tt.model, func(t *testing.T) {
-			require.Equal(t, tt.want, isSeedance2VideoModel(tt.model))
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantLegacy, isJimengLegacyVideoRequest([]byte(tt.body), tt.upstream))
 		})
 	}
 }

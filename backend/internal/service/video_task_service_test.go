@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -1978,17 +1977,19 @@ func TestVideoTaskServiceEstimateUsesSelectedChannelVideoPricing(t *testing.T) {
 	defaultPrice := 0.08
 	tierPrice := 0.12
 	tests := []struct {
-		name           string
-		body           string
-		allowed        []int
-		wantSeconds    int
-		wantResolution string
-		wantUnit       float64
-		wantGross      float64
+		name              string
+		body              string
+		allowed           []int
+		wantSeconds       int
+		wantMetadataField string
+		wantMetadataValue any
+		wantResolution    string
+		wantUnit          float64
+		wantGross         float64
 	}{
-		{name: "default seconds and price", body: `{"model":"seedance","prompt":"city"}`, wantSeconds: 10, wantResolution: "720p", wantUnit: 0.08, wantGross: 0.8},
-		{name: "resolution tier", body: `{"model":"seedance","prompt":"city","duration":5,"resolution":"1080p"}`, wantSeconds: 5, wantResolution: "1080p", wantUnit: 0.12, wantGross: 0.6},
-		{name: "allowed explicit seconds", body: `{"model":"seedance","prompt":"city","seconds":"5"}`, allowed: []int{5, 10}, wantSeconds: 5, wantResolution: "720p", wantUnit: 0.08, wantGross: 0.4},
+		{name: "default seconds and price", body: `{"model":"seedance","prompt":"city"}`, wantSeconds: 10, wantMetadataField: "seconds", wantMetadataValue: "10", wantResolution: "720p", wantUnit: 0.08, wantGross: 0.8},
+		{name: "resolution tier", body: `{"model":"seedance","prompt":"city","duration":5,"resolution":"1080p"}`, wantSeconds: 5, wantMetadataField: "duration", wantMetadataValue: float64(5), wantResolution: "1080p", wantUnit: 0.12, wantGross: 0.6},
+		{name: "allowed explicit seconds", body: `{"model":"seedance","prompt":"city","seconds":"5"}`, allowed: []int{5, 10}, wantSeconds: 5, wantMetadataField: "seconds", wantMetadataValue: "5", wantResolution: "720p", wantUnit: 0.08, wantGross: 0.4},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2011,7 +2012,7 @@ func TestVideoTaskServiceEstimateUsesSelectedChannelVideoPricing(t *testing.T) {
 			var response map[string]any
 			require.NoError(t, json.Unmarshal(result.ResponseBody, &response))
 			metadata := response["metadata"].(map[string]any)
-			require.Equal(t, fmt.Sprintf("%d", tt.wantSeconds), metadata["seconds"])
+			require.Equal(t, tt.wantMetadataValue, metadata[tt.wantMetadataField])
 			require.Equal(t, string(BillingModeVideo), response["billing_mode"])
 			require.Equal(t, "seedance", response["billing_model"])
 			effective := response["effective"].(map[string]any)

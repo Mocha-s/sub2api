@@ -701,6 +701,12 @@ func videoTaskServiceError(c *gin.Context, err error) {
 		videoTaskErrorResponse(c, status, errType, videoTaskUpstreamErrorMessage(upstreamErr))
 		return
 	}
+	var protocolErr *service.OpenAIVideoProtocolError
+	if errors.As(err, &protocolErr) {
+		service.SetOpsLocalErrorType(c, "server_error", "VIDEO_PROVIDER_PROTOCOL_ERROR")
+		videoTaskErrorResponse(c, http.StatusBadGateway, "server_error", "Video provider returned an invalid status response")
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrVideoTaskInsufficientBalance):
 		videoTaskErrorResponse(c, http.StatusPaymentRequired, "insufficient_quota", service.ErrVideoTaskInsufficientBalance.Error())

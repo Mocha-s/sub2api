@@ -610,6 +610,15 @@ func TestVideoTaskHandlerServiceErrorsMapToOpenAIErrorResponses(t *testing.T) {
 			wantType:   "rate_limit_error",
 		},
 		{
+			name:       "upstream protocol failure",
+			handler:    "fetch",
+			err:        &service.OpenAIVideoProtocolError{Operation: "fetch", ProviderTaskID: "video_123", Cause: errors.New("invalid character")},
+			wantStatus: http.StatusBadGateway,
+			wantType:   "server_error",
+			wantMsg:    "Video provider returned an invalid status response",
+			notContain: []string{"invalid character", "video_123"},
+		},
+		{
 			name:       "upstream billing detail is sanitized",
 			handler:    "fetch",
 			err:        &service.OpenAIVideoUpstreamError{StatusCode: http.StatusPaymentRequired, Body: `{"error":{"code":"insufficient_balance","message":"insufficient balance"}}`},

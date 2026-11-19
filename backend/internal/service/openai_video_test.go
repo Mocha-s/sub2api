@@ -269,6 +269,26 @@ func TestOpenAICompatibleVideoProviderFetchParsesStatusProgressAndResultURL(t *t
 	}
 }
 
+func TestOpenAICompatibleVideoProviderFetchWrapsInvalidStatusResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "upstream temporarily returned HTML")
+	}))
+	defer server.Close()
+
+	provider := NewOpenAICompatibleVideoProvider(server.Client())
+	account := &Account{Credentials: map[string]any{"base_url": server.URL, "api_key": "sk-video"}}
+	task := &VideoTask{ProviderTaskID: "video_invalid_status"}
+
+	_, err := provider.Fetch(context.Background(), account, task)
+
+	var protocolErr *OpenAIVideoProtocolError
+	require.ErrorAs(t, err, &protocolErr)
+	require.Equal(t, "fetch", protocolErr.Operation)
+	require.Equal(t, "video_invalid_status", protocolErr.ProviderTaskID)
+	require.ErrorContains(t, protocolErr, "invalid fetch response")
+}
+
 func TestOpenAICompatibleVideoProviderContentForwardsRangeAndStreamsBody(t *testing.T) {
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

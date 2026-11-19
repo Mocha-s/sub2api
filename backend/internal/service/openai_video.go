@@ -127,6 +127,40 @@ type OpenAIVideoUpstreamError struct {
 	Body       string
 }
 
+type OpenAIVideoProtocolError struct {
+	Operation      string
+	ProviderTaskID string
+	RequestID      string
+	Cause          error
+}
+
+func (e *OpenAIVideoProtocolError) Error() string {
+	if e == nil {
+		return "openai video provider returned an invalid response"
+	}
+	message := "openai video provider returned an invalid response"
+	if operation := strings.TrimSpace(e.Operation); operation != "" {
+		message = fmt.Sprintf("openai video provider returned an invalid %s response", operation)
+	}
+	if taskID := strings.TrimSpace(e.ProviderTaskID); taskID != "" {
+		message += " for task " + taskID
+	}
+	if requestID := strings.TrimSpace(e.RequestID); requestID != "" {
+		message += " (request_id " + requestID + ")"
+	}
+	if e.Cause != nil {
+		message += ": " + e.Cause.Error()
+	}
+	return message
+}
+
+func (e *OpenAIVideoProtocolError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
 func (e *OpenAIVideoUpstreamError) Error() string {
 	if e == nil {
 		return "openai video upstream error"
@@ -251,11 +285,17 @@ func (p *openAICompatibleVideoProvider) Fetch(ctx context.Context, account *Acco
 
 	rawBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, &OpenAIVideoProtocolError{Operation: "fetch", ProviderTaskID: providerTaskID, Cause: err}
 	}
-	parsed, err := parseOpenAIVideoResponse(rawBody, resp.Header.Get("X-Request-Id"))
+	requestID := resp.Header.Get("X-Request-Id")
+	parsed, err := parseOpenAIVideoResponse(rawBody, requestID)
 	if err != nil {
-		return nil, err
+		return nil, &OpenAIVideoProtocolError{
+			Operation:      "fetch",
+			ProviderTaskID: providerTaskID,
+			RequestID:      requestID,
+			Cause:          err,
+		}
 	}
 	if parsed.providerTaskID == "" {
 		parsed.providerTaskID = providerTaskID
@@ -585,8 +625,9 @@ func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account
 	if err := a.ValidateCreate(ctx, account, body, contentType, upstreamModel); err != nil {
 		return nil, err
 	}
-	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, _, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+	modernShape := isJimengModernVideoRequest(body, upstreamModel)
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations || modernShape {
+		adapted, _, err := normalizeJimengOpenAIVideoGenerationsBodyWithShape(body, upstreamModel, modernShape)
 		if err != nil {
 			return nil, err
 		}
@@ -606,8 +647,9 @@ func (a *jimengOpenAIVideosAdapter) Create(ctx context.Context, account *Account
 }
 
 func (a *jimengOpenAIVideosAdapter) ValidateCreate(ctx context.Context, account *Account, body []byte, contentType string, upstreamModel string) error {
-	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, legacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+	modernShape := isJimengModernVideoRequest(body, upstreamModel)
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations || modernShape {
+		adapted, legacy, err := normalizeJimengOpenAIVideoGenerationsBodyWithShape(body, upstreamModel, modernShape)
 		if err != nil {
 			return err
 		}
@@ -649,8 +691,9 @@ func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Accou
 		return nil, err
 	}
 	legacy := true
-	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations {
-		adapted, normalizedLegacy, err := normalizeJimengOpenAIVideoGenerationsBody(body, upstreamModel)
+	modernShape := isJimengModernVideoRequest(body, upstreamModel)
+	if videoTaskEndpointFromContext(ctx) == VideoTaskEndpointVideoGenerations || modernShape {
+		adapted, normalizedLegacy, err := normalizeJimengOpenAIVideoGenerationsBodyWithShape(body, upstreamModel, modernShape)
 		if err != nil {
 			return nil, err
 		}
@@ -668,6 +711,23 @@ func (a *jimengOpenAIVideosAdapter) Estimate(ctx context.Context, account *Accou
 		}
 	}
 	return localVideoEstimateResult(a.Name(), videoTaskEndpointFromContext(ctx), req.Model, body, upstreamModel)
+}
+
+func isJimengLegacyVideoRequest(body []byte, upstreamModel string) bool {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	_, legacyUpstreamModel := supportedOpenAIVideoModels[strings.TrimSpace(upstreamModel)]
+	_, legacyRequestedModel := supportedOpenAIVideoModels[rawStringField(payload, "model")]
+	return legacyUpstreamModel || legacyRequestedModel
+}
+
+func isJimengModernVideoRequest(body []byte, upstreamModel string) bool {
+	if isJimengLegacyVideoRequest(body, upstreamModel) {
+		return false
+	}
+	return hasJimengModernVideoFields(body)
 }
 
 func normalizeOpenAIVideoSizeBody(body []byte) ([]byte, error) {
@@ -727,7 +787,7 @@ func (a *jimengOpenAIVideosAdapter) Content(ctx context.Context, account *Accoun
 	return a.provider.Content(ctx, account, task, headers)
 }
 
-func normalizeJimengOpenAIVideoGenerationsBody(body []byte, upstreamModel string) ([]byte, bool, error) {
+func normalizeJimengOpenAIVideoGenerationsBodyWithShape(body []byte, upstreamModel string, modernShape bool) ([]byte, bool, error) {
 	var payload struct {
 		Model string `json:"model"`
 	}
@@ -735,9 +795,7 @@ func normalizeJimengOpenAIVideoGenerationsBody(body []byte, upstreamModel string
 		return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
 	}
 
-	_, legacyUpstreamModel := supportedOpenAIVideoModels[strings.TrimSpace(upstreamModel)]
-	_, legacyRequestedModel := supportedOpenAIVideoModels[strings.TrimSpace(payload.Model)]
-	if !legacyUpstreamModel && !legacyRequestedModel && (isSeedance2VideoModel(upstreamModel) || isSeedance2VideoModel(payload.Model)) {
+	if modernShape {
 		adapted, err := openAIDurationCreateBody(body, upstreamModel)
 		if err != nil {
 			return nil, false, fmt.Errorf("invalid jimeng OpenAI video create JSON: %w", err)
@@ -752,9 +810,17 @@ func normalizeJimengOpenAIVideoGenerationsBody(body []byte, upstreamModel string
 	return adapted, true, nil
 }
 
-func isSeedance2VideoModel(model string) bool {
-	model = strings.ToLower(strings.TrimSpace(model))
-	return strings.HasPrefix(model, "seedance2.")
+func hasJimengModernVideoFields(body []byte) bool {
+	var payload map[string]json.RawMessage
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	for _, field := range []string{"resolution", "generate_audio", "content"} {
+		if _, ok := payload[field]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validateJimengOpenAIVideoGenerationsFields(ctx context.Context, body []byte, legacy bool) error {
