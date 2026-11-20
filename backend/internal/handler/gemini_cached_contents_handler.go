@@ -843,6 +843,6 @@ func (h *GatewayHandler) handleGeminiCachedContentFailoverExhausted(c *gin.Conte
 		h.handleGeminiFailoverExhausted(c, failoverErr)
 		return
 	}
-	service.SetOpsUpstreamError(c, failoverErr.StatusCode, service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody), "")
+	service.SetOpsUpstreamError(c, failoverErr.StatusCode, service.SanitizeUpstreamErrorMessage(service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody)), "")
 	c.Data(failoverErr.StatusCode, "application/json", failoverErr.ResponseBody)
 }

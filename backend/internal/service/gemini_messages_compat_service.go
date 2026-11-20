@@ -1859,6 +1859,7 @@ func sleepGeminiBackoff(attempt int) {
 
 var (
 	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+	upstreamURLRegex         = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
 	retryInRegex             = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
 )
 
@@ -1866,6 +1867,7 @@ func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
 		return msg
 	}
+	msg = upstreamURLRegex.ReplaceAllString(msg, "[upstream URL redacted]")
 	return sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
 }
 

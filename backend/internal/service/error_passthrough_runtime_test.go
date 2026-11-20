@@ -37,6 +37,44 @@ func TestApplyErrorPassthroughRule_NoBoundService(t *testing.T) {
 	assert.Equal(t, "Upstream request failed", errMsg)
 }
 
+func TestApplyErrorPassthroughRule_RedactsUpstreamURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	rule := newNonFailoverPassthroughRule(http.StatusBadGateway, "private-upstream", http.StatusBadGateway, "")
+	rule.PassthroughBody = true
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	_, _, message, matched := applyErrorPassthroughRule(
+		c,
+		PlatformAnthropic,
+		http.StatusBadGateway,
+		[]byte(`{"error":{"message":"Post \"https://private-upstream.example/internal/path?token=secret\": EOF"}}`),
+		http.StatusBadGateway,
+		"upstream_error",
+		"Upstream request failed",
+	)
+
+	require.True(t, matched)
+	require.NotContains(t, message, "private-upstream.example")
+	require.NotContains(t, message, "/internal/path")
+	require.NotContains(t, message, "secret")
+	require.Contains(t, message, "EOF")
+}
+
+func TestSanitizeUpstreamErrorMessageRedactsURLsAndQuerySecrets(t *testing.T) {
+	message := SanitizeUpstreamErrorMessage(`request to https://private-upstream.example/v1/run?key=secret failed`)
+
+	require.NotContains(t, message, "private-upstream.example")
+	require.NotContains(t, message, "/v1/run")
+	require.NotContains(t, message, "secret")
+	require.Contains(t, message, "request to")
+	require.Contains(t, message, "failed")
+}
+
 func TestGatewayHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

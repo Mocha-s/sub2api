@@ -762,7 +762,7 @@ func videoTaskUpstreamErrorMessage(err *service.OpenAIVideoUpstreamError) string
 		return "Video generation request failed"
 	}
 	if message := safeVideoTaskUpstreamMessage(err.Body); message != "" {
-		return message
+		return service.SanitizeUpstreamErrorMessage(message)
 	}
 	switch err.StatusCode {
 	case http.StatusUnauthorized:
